@@ -1,0 +1,13 @@
+/target/
+**/node_modules/
+/third_party/
+/testdata/gen/
+/reports/
+*.clippro
+*.clippro-wal
+*.clippro-shm
+/.cargo/config.toml
+app/ui/dist/
+app/src-tauri/gen/
+.DS_Store
+*.log

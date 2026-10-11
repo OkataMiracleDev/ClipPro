@@ -1,0 +1,105 @@
+# ClipPro calibration constants (ALGORITHMS.md, values marked "(cal)").
+# Changing any value here bumps `version`. Code changes to the maths bump engine_version instead.
+version = 1
+
+[focus]
+sharp_s0 = -3.6          # logistic centre for Sharpness (log10 Laplacian energy)
+sharp_k = 0.35           # logistic width
+stab_mad_scale = 0.30    # focus stability: MAD (decades) that drives the score to 0
+stab_osc_weight = 1.5
+hunt_step = 0.15         # decades
+hunt_range = 0.40
+hunt_min_changes = 3
+
+[exposure]
+clip_flag_fraction = 0.015
+flicker_f_lo = 0.005
+flicker_f_hi = 0.05
+flicker_pair_lo = 0.004
+flicker_pair_hi = 0.04
+flicker_band_lo = 0.15
+flicker_band_hi = 0.45
+low_light_p50 = 0.08
+low_light_p95 = 0.25
+low_light_p50_log = 0.20
+low_light_p95_log = 0.38
+low_light_noise_ratio = 0.15
+gf_spread_lo = 0.15
+gf_spread_hi = 0.55
+gf_spread_lo_log = 0.10
+gf_spread_hi_log = 0.40
+
+[motion]
+cam_scale = 0.25         # fw/s for Camera Motion n = 1 - exp(-M/scale)
+subj_scale = 0.10
+stab_scale = 0.08        # stab_raw = exp(-J/scale)
+shaky_stab = 0.40
+shaky_conf = 0.5
+blur_px_per_frame = 3.0
+blur_sharp_drop = 0.35
+blur_dir_ratio = 0.70
+blur_conf = 0.3
+
+[similarity]
+dup_pair_mad = 0.0015
+dup_prev_mad = 0.004
+cut_min = 0.25
+cut_ratio = 3.0
+cut_conf_max = 0.3
+
+[audio]
+noise_lo_db = -70.0
+noise_hi_db = -35.0
+
+[takes]
+group_threshold = 0.80
+
+[faces]
+cluster_distance = 0.45
+
+# Quantisation ranges [lo, hi] for stored measures (ALGORITHMS §5.3). Values are clamped.
+[ranges]
+noise_sigma = [0.0, 0.25]
+sharp_full = [-7.0, 0.0]
+sharp_centre = [-7.0, 0.0]
+tenengrad = [-7.0, 1.0]
+detail_raw = [0.0, 1.0]
+mean = [0.0, 1.0]
+std = [0.0, 0.6]
+p01 = [0.0, 1.0]
+p05 = [0.0, 1.0]
+p50 = [0.0, 1.0]
+p95 = [0.0, 1.0]
+p99 = [0.0, 1.0]
+clip_black = [0.0, 1.0]
+clip_white = [0.0, 1.0]
+near_black = [0.0, 1.0]
+near_white = [0.0, 1.0]
+row_band = [0.0, 1.0]
+pair_dmean = [0.0, 2.0]
+wb_cast = [0.0, 0.75]
+cam_u_x = [-8.0, 8.0]
+cam_u_y = [-8.0, 8.0]
+cam_zr = [-8.0, 8.0]
+cam_wr = [-16.0, 16.0]
+cam_mag = [0.0, 16.0]
+cam_conf = [0.0, 1.0]
+cam_dir = [0.0, 360.0]
+avg_u_x = [-8.0, 8.0]
+avg_u_y = [-8.0, 8.0]
+avg_zr = [-8.0, 8.0]
+avg_wr = [-16.0, 16.0]
+avg_conf = [0.0, 1.0]
+subj_raw = [0.0, 8.0]
+shake_ia = [0.0, 16.0]
+blur_dir_ratio = [0.0, 4.0]
+px_per_frame = [0.0, 256.0]
+residual_rms = [0.0, 16.0]
+mad_pair = [0.0, 1.0]
+mad_prev = [0.0, 1.0]
+chi2_prev = [0.0, 1.0]
+tilt_deg = [-90.0, 90.0]
+focus_stab_raw = [0.0, 1.0]
+flicker_raw = [0.0, 1.0]
+stab_raw = [0.0, 1.0]
+stab_conf = [0.0, 1.0]
