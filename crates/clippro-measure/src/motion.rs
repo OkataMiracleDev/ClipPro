@@ -107,14 +107,17 @@ fn sad_at(img: &Image, x0: i64, y0: i64, n: usize, reference: &[f32], scratch: &
     s
 }
 
-/// Exhaustive global translation search at the coarsest level, ±`r` px.
-fn global_shift(a: &Image, b: &Image, r: i64) -> (i64, i64) {
+/// Exhaustive global translation search at the coarsest level, ±`r` px around `(cx, cy)`.
+fn global_shift(a: &Image, b: &Image, r: i64, cx: i64, cy: i64) -> (i64, i64) {
     let ma = a.mean() as f32;
     let mb = b.mean() as f32;
     let (w, h) = (a.w as i64, a.h as i64);
     let mut best = (f32::INFINITY, 0i64, 0i64);
-    for dy in -r..=r {
-        for dx in -r..=r {
+    for dy in cy - r..=cy + r {
+        for dx in cx - r..=cx + r {
+            if dx.abs() >= w / 2 || dy.abs() >= h / 2 {
+                continue;
+            }
             let x0 = 0.max(-dx);
             let x1 = w.min(w - dx);
             let y0 = 0.max(-dy);
@@ -130,7 +133,7 @@ fn global_shift(a: &Image, b: &Image, r: i64) -> (i64, i64) {
                     s += ((ra[x as usize] - ma) - (rb[(x + dx) as usize] - mb)).abs();
                 }
             }
-            let cost = s / ((x1 - x0) * (y1 - y0)) as f32 + 1e-6 * (dx * dx + dy * dy) as f32;
+            let cost = s / ((x1 - x0) * (y1 - y0)) as f32 + 1e-6 * ((dx - cx).pow(2) + (dy - cy).pow(2)) as f32;
             if cost < best.0 {
                 best = (cost, dx, dy);
             }
@@ -229,6 +232,18 @@ fn irls(ps: &[[f64; 2]], qs: &[[f64; 2]], init: Model, delta: f64) -> Model {
 
 /// Estimates motion from `prev` to `cur` (content at p in prev appears at p + v in cur).
 pub fn estimate(prev: &Pyramid, cur: &Pyramid, noise_sigma: f32, seed: u64) -> MotionEstimate {
+    estimate_with_prior(prev, cur, noise_sigma, seed, None)
+}
+
+/// As `estimate`, with an optional translation prior (level-0 px) that centres the coarse
+/// search, e.g. the pair velocity scaled to the sample interval.
+pub fn estimate_with_prior(
+    prev: &Pyramid,
+    cur: &Pyramid,
+    noise_sigma: f32,
+    seed: u64,
+    prior: Option<[f32; 2]>,
+) -> MotionEstimate {
     let a0 = prev.l0();
     let b0 = cur.l0();
     let grid = grid_for(a0.w, a0.h);
@@ -237,7 +252,8 @@ pub fn estimate(prev: &Pyramid, cur: &Pyramid, noise_sigma: f32, seed: u64) -> M
         return est;
     }
     // Coarse global prior at level 2 (±16 px there = ±64 px at level 0).
-    let (gx, gy) = global_shift(&prev.levels[2], &cur.levels[2], 16);
+    let (pcx, pcy) = prior.map(|p| ((p[0] / 4.0).round() as i64, (p[1] / 4.0).round() as i64)).unwrap_or((0, 0));
+    let (gx, gy) = global_shift(&prev.levels[2], &cur.levels[2], 16, pcx, pcy);
 
     let (gw, gh) = grid;
     let tex_thr = (2.0 * noise_sigma).max(0.015);
@@ -252,6 +268,7 @@ pub fn estimate(prev: &Pyramid, cur: &Pyramid, noise_sigma: f32, seed: u64) -> M
     let mut ref1 = vec![0f32; 64];
     let mut scr1 = vec![0f32; 64];
     let (a1, b1) = (&prev.levels[1], &cur.levels[1]);
+    let (a2, b2) = (&prev.levels[2], &cur.levels[2]);
     for j in 0..gh {
         for i in 0..gw {
             let bx = if gw > 1 { i * (a0.w - BLOCK) / (gw - 1) } else { (a0.w - BLOCK) / 2 };
@@ -261,13 +278,28 @@ pub fn estimate(prev: &Pyramid, cur: &Pyramid, noise_sigma: f32, seed: u64) -> M
                 continue;
             }
             textured += 1;
-            // Level 1 refinement around the global prior (8×8 block, ±3 px).
+            // Level 2 per-block search around the global prior (8×8 block, ±6 px = ±24 px at
+            // level 0), so subjects moving against the camera are still matched.
+            let (bx2, by2) = ((bx / 4).saturating_sub(2).min(a2.w.saturating_sub(8)), (by / 4).saturating_sub(2).min(a2.h.saturating_sub(8)));
+            patch(a2, bx2, by2, 8, &mut ref1);
+            let mut best2 = (f32::INFINITY, gx, gy);
+            for dy in -6..=6i64 {
+                for dx in -6..=6i64 {
+                    let (vx, vy) = (gx + dx, gy + dy);
+                    let s = sad_at(b2, bx2 as i64 + vx, by2 as i64 + vy, 8, &ref1, &mut scr1)
+                        + 1e-4 * (dx * dx + dy * dy) as f32;
+                    if s < best2.0 {
+                        best2 = (s, vx, vy);
+                    }
+                }
+            }
+            // Level 1 refinement (8×8 block, ±3 px).
             let (bx1, by1) = ((bx / 2).min(a1.w.saturating_sub(8)), (by / 2).min(a1.h.saturating_sub(8)));
             patch(a1, bx1, by1, 8, &mut ref1);
-            let mut best1 = (f32::INFINITY, 2 * gx, 2 * gy);
+            let mut best1 = (f32::INFINITY, 2 * best2.1, 2 * best2.2);
             for dy in -3..=3i64 {
                 for dx in -3..=3i64 {
-                    let (vx, vy) = (2 * gx + dx, 2 * gy + dy);
+                    let (vx, vy) = (2 * best2.1 + dx, 2 * best2.2 + dy);
                     let s = sad_at(b1, bx1 as i64 + vx, by1 as i64 + vy, 8, &ref1, &mut scr1)
                         + 1e-4 * (dx * dx + dy * dy) as f32;
                     if s < best1.0 {

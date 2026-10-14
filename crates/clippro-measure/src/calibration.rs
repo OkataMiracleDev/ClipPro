@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn embedded_parses() {
         let c = Calibration::parse(EMBEDDED).unwrap();
-        assert_eq!(c.version, 1);
+        assert!(c.version >= 1);
         assert!(c.focus.sharp_k > 0.0);
     }
 

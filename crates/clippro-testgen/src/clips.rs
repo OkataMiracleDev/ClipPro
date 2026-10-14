@@ -393,11 +393,14 @@ impl Gen {
             f
         }), json!({"intervals": [{"t": [0.6, 5.4], "expect": {"stab_min": 0.8, "no_flags": ["shaky"]}}]}))?;
 
-        let sprite_r = 0.15 * h as f32;
+        let sprite_r = 0.30 * h as f32;
         self.clip("subject_motion", 6.0, Enc::H264, None, Box::new(move |n| {
             let t = n as f32 / FPS;
             let mut f = sf.clone();
-            let cx = 0.2 * w as f32 + 0.3 * w as f32 * t / 6.0 * 2.0;
+            // Triangle wave: 0.6 w in 2 s each way = 0.3 frame widths per second.
+            let ph = (t / 4.0).fract();
+            let tri = if ph < 0.5 { 2.0 * ph } else { 2.0 - 2.0 * ph };
+            let cx = 0.2 * w as f32 + 0.6 * w as f32 * tri;
             let cy = 0.5 * h as f32;
             for y in 0..h {
                 for x in 0..w {

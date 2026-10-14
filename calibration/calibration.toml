@@ -1,6 +1,6 @@
 # ClipPro calibration constants (ALGORITHMS.md, values marked "(cal)").
 # Changing any value here bumps `version`. Code changes to the maths bump engine_version instead.
-version = 1
+version = 2
 
 [focus]
 sharp_s0 = -3.6          # logistic centre for Sharpness (log10 Laplacian energy)
@@ -33,7 +33,7 @@ gf_spread_hi_log = 0.40
 cam_scale = 0.25         # fw/s for Camera Motion n = 1 - exp(-M/scale)
 subj_scale = 0.10
 stab_scale = 0.08        # stab_raw = exp(-J/scale)
-shaky_stab = 0.40
+shaky_stab = 0.45
 shaky_conf = 0.5
 blur_px_per_frame = 3.0
 blur_sharp_drop = 0.35
@@ -41,7 +41,7 @@ blur_dir_ratio = 0.70
 blur_conf = 0.3
 
 [similarity]
-dup_pair_mad = 0.0015
+dup_pair_mad = 0.0002   # full-resolution pair MAD; frozen frames measure ~0
 dup_prev_mad = 0.004
 cut_min = 0.25
 cut_ratio = 3.0

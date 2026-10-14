@@ -33,6 +33,8 @@ pub struct Texture {
     pub y: Vec<f32>,
     pub cb: Vec<f32>,
     pub cr: Vec<f32>,
+    /// Box-filtered mip levels 1.. (level k is size >> k), used to avoid aliasing.
+    pub mips: Vec<Texture>,
 }
 
 impl Texture {
@@ -67,7 +69,7 @@ impl Texture {
                 (ly, lb, lr)
             })
             .collect();
-        let mut t = Texture { size, y: Vec::with_capacity(size * size), cb: Vec::new(), cr: Vec::new() };
+        let mut t = Texture { size, y: Vec::with_capacity(size * size), cb: Vec::new(), cr: Vec::new(), mips: Vec::new() };
         t.cb.reserve(size * size);
         t.cr.reserve(size * size);
         for (a, b, c) in rows {
@@ -75,7 +77,58 @@ impl Texture {
             t.cb.extend(b);
             t.cr.extend(c);
         }
+        let mut cur = t.half();
+        while cur.size >= 64 {
+            let next = cur.half();
+            t.mips.push(cur);
+            cur = next;
+        }
         t
+    }
+
+    fn half(&self) -> Texture {
+        let n = self.size / 2;
+        let down = |p: &[f32]| -> Vec<f32> {
+            let mut o = Vec::with_capacity(n * n);
+            for y in 0..n {
+                for x in 0..n {
+                    let i = 2 * y * self.size + 2 * x;
+                    o.push(0.25 * (p[i] + p[i + 1] + p[i + self.size] + p[i + self.size + 1]));
+                }
+            }
+            o
+        };
+        Texture { size: n, y: down(&self.y), cb: down(&self.cb), cr: down(&self.cr), mips: Vec::new() }
+    }
+
+    fn mip(&self, k: usize) -> &Texture {
+        if k == 0 {
+            self
+        } else {
+            &self.mips[(k - 1).min(self.mips.len() - 1)]
+        }
+    }
+
+    /// Trilinear sample of one plane (0 = Y, 1 = Cb, 2 = Cr) at texel coords for `lod`.
+    #[inline]
+    fn sample_lod(&self, plane: usize, x: f32, y: f32, lod: f32) -> f32 {
+        let lod = lod.clamp(0.0, self.mips.len() as f32);
+        let k = lod.floor() as usize;
+        let f = lod - k as f32;
+        let pick = |t: &Texture, d: f32| {
+            let p = match plane {
+                0 => &t.y,
+                1 => &t.cb,
+                _ => &t.cr,
+            };
+            t.sample(p, x / d, y / d)
+        };
+        let a = pick(self.mip(k), (1u32 << k) as f32);
+        if f < 1e-3 || k >= self.mips.len() {
+            return a;
+        }
+        let b = pick(self.mip(k + 1), (1u32 << (k + 1)) as f32);
+        a + (b - a) * f
     }
 
     #[inline]
@@ -119,6 +172,7 @@ impl Frame {
     /// Renders the texture through a camera with the given pose. `scale` is texture px per
     /// frame px at zoom 1.
     pub fn render(tex: &Texture, w: usize, h: usize, pose: Pose, scale: f32) -> Frame {
+        let lod = (scale / pose.zoom).max(1.0).log2();
         let (c, s) = (pose.rot.cos(), pose.rot.sin());
         let rows: Vec<(Vec<f32>, Vec<f32>, Vec<f32>)> = (0..h)
             .into_par_iter()
@@ -131,9 +185,9 @@ impl Frame {
                     // Inverse rotate then scale: content appears rotated by +rot.
                     let (rx, ry) = (c * px + s * py, -s * px + c * py);
                     let (tx, ty) = (pose.cx + rx * scale / pose.zoom, pose.cy + ry * scale / pose.zoom);
-                    ly.push(tex.sample(&tex.y, tx, ty));
-                    lb.push(tex.sample(&tex.cb, tx, ty));
-                    lr.push(tex.sample(&tex.cr, tx, ty));
+                    ly.push(tex.sample_lod(0, tx, ty, lod));
+                    lb.push(tex.sample_lod(1, tx, ty, lod));
+                    lr.push(tex.sample_lod(2, tx, ty, lod));
                 }
                 (ly, lb, lr)
             })

@@ -176,12 +176,24 @@ pub fn temporal_pass(
         let (lo, hi) = win.at(k, w05);
         let rms = (detr[lo..=hi].iter().map(|v| v * v).sum::<f32>() / (hi - lo + 1) as f32).sqrt();
         let f = rms / med_mu[k].max(0.02);
+        // Frame-to-frame brightness change beyond what the sample-level trend predicts
+        // (a smooth exposure ramp is not flicker).
         let pd = if pair_dmean[k].is_nan() {
             0.0
         } else {
-            smoothstep(ecal.flicker_pair_lo, ecal.flicker_pair_hi, pair_dmean[k])
+            let (lo, hi) = win.at(k, 1);
+            let trend = if hi > lo {
+                let dt = (ms.time_us[hi] - ms.time_us[lo]) as f32 / 1e6;
+                ((mean[hi] - mean[lo]) / dt.max(1e-3)).abs() / ctx.fps.max(1.0) as f32 / mean[k].max(0.02)
+            } else {
+                0.0
+            };
+            smoothstep(ecal.flicker_pair_lo, ecal.flicker_pair_hi, (pair_dmean[k] - trend).max(0.0))
         };
-        flicker[k] = smoothstep(ecal.flicker_f_lo, ecal.flicker_f_hi, f)
+        // Under fast camera motion, sample-level brightness changes mostly come from new content.
+        let cm = ms.get(Col::CamMag, k);
+        let motion_damp = if cm.is_nan() { 1.0 } else { 1.0 - smoothstep(0.05, 0.25, cm) };
+        flicker[k] = (smoothstep(ecal.flicker_f_lo, ecal.flicker_f_hi, f) * motion_damp)
             .max(pd)
             .max(smoothstep(ecal.flicker_band_lo, ecal.flicker_band_hi, row_band[k]));
     }
@@ -192,42 +204,30 @@ pub fn temporal_pass(
     let uy = col(&ms, Col::CamUy);
     let shake_ia = col(&ms, Col::ShakeIa);
     let conf = col(&ms, Col::CamConf);
-    let times: Vec<f64> = ms.time_us.iter().map(|t| *t as f64 / 1e6).collect();
-    let mut trend = vec![(0f32, 0f32); n];
-    for k in 0..n {
-        let (lo, hi) = win.at(k, w1);
-        let (mut sx, mut sy, mut sw) = (0f64, 0f64, 0f64);
-        for i in lo..=hi {
-            if ux[i].is_nan() {
-                continue;
+    // High-frequency velocity jitter: deviation of each sample's velocity from the mean of its
+    // neighbours (zero for smooth moves, ramps and single speed steps).
+    let lap: Vec<f32> = (0..n)
+        .map(|k| {
+            if k == 0 || k + 1 >= n || cut_before[k] || cut_before[k + 1] {
+                return f32::NAN;
             }
-            let dt = times[i] - times[k];
-            let wgt = (-(dt * dt) / (2.0 * 0.25)).exp();
-            sx += wgt * ux[i] as f64;
-            sy += wgt * uy[i] as f64;
-            sw += wgt;
-        }
-        trend[k] = if sw > 0.0 { ((sx / sw) as f32, (sy / sw) as f32) } else { (0.0, 0.0) };
-    }
+            let (a, b, c) = (k - 1, k, k + 1);
+            if ux[a].is_nan() || ux[b].is_nan() || ux[c].is_nan() {
+                return f32::NAN;
+            }
+            (ux[b] - 0.5 * (ux[a] + ux[c])).hypot(uy[b] - 0.5 * (uy[a] + uy[c]))
+        })
+        .collect();
     let mut stab = vec![f32::NAN; n];
     let mut stab_conf = vec![0f32; n];
     let alias = if ctx.pair_sampling { 1.0 } else { (r / 8.0).min(1.0) as f32 };
     for k in 0..n {
         let (lo, hi) = win.at(k, w05);
-        let mut sq = 0f32;
-        let mut cnt = 0;
-        for i in lo..=hi {
-            if ux[i].is_nan() {
-                continue;
-            }
-            let d = (ux[i] - trend[i].0).hypot(uy[i] - trend[i].1);
-            sq += d * d;
-            cnt += 1;
-        }
-        if cnt == 0 {
+        if ux[k].is_nan() && lap[lo..=hi].iter().all(|v| v.is_nan()) {
             continue;
         }
-        let j1 = (sq / cnt as f32).sqrt();
+        let j1 = median(&lap[lo..=hi]);
+        let j1 = if j1.is_nan() { 0.0 } else { j1 };
         let j2 = median(&shake_ia[lo..=hi]);
         let j = j1.max(if j2.is_nan() { 0.0 } else { j2 });
         stab[k] = (-j / mcal.stab_scale).exp();

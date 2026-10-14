@@ -21,7 +21,22 @@ fn main() {
             path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
             secs,
             info.duration_us as f32 / 1e6 / secs,
-            r.map(|m| format!("{} samples", m.len())).unwrap_or_else(|e| e.to_string())
+            r.as_ref().map(|m| format!("{} samples", m.len())).unwrap_or_else(|e| e.to_string())
         );
+        if let Ok(m) = &r {
+            use clippro_measure::columns::Col;
+            let med = |c: Col| clippro_measure::util::median(m.col(c));
+            println!(
+                "    row_band {:.3} flicker {:.3} stab {:.3} stab_conf {:.2} zr {:.3} wr {:.3} subj {:.4} cam {:.4} mad_pair {:.5} noise {:.4}",
+                med(Col::RowBand), med(Col::FlickerRaw), med(Col::StabRaw), med(Col::StabConf), med(Col::CamZr),
+                med(Col::CamWr), med(Col::SubjRaw), med(Col::CamMag), med(Col::MadPair), med(Col::NoiseSigma)
+            );
+            if let Ok(key) = std::env::var("TIMECLIP_COL") {
+                if let Some(c) = Col::from_key(&key) {
+                    let v: Vec<String> = (0..m.len()).map(|k| format!("{:.2}:{:.5}", m.time_us[k] as f64 / 1e6, m.get(c, k))).collect();
+                    println!("    {key}: {}", v.join(" "));
+                }
+            }
+        }
     }
 }

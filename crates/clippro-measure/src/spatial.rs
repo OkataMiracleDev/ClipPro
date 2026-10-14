@@ -284,14 +284,19 @@ fn hist_percentile(hist: &[u32], total: u64, q: f64) -> f32 {
     1.0
 }
 
-/// Rolling-shutter banding score (ALGORITHMS §1.3.1), via a direct DFT at integer
-/// frequencies in cycles per frame height.
-pub fn row_band(a: &Image) -> f32 {
-    let h = a.h;
+/// Row means of an image.
+pub fn row_means(a: &Image) -> Vec<f64> {
+    (0..a.h).map(|y| pairwise_sum(a.row(y)) / a.w.max(1) as f64).collect()
+}
+
+/// Narrow-band peakiness of a per-row signal (ALGORITHMS §1.3.1): detrend, gate on residual
+/// energy, DFT at integer cycles per frame height, compare each candidate peak (2–40 cycles)
+/// with the median of its spectral neighbours.
+pub fn band_score(r: &[f64]) -> f32 {
+    let h = r.len();
     if h < 16 {
         return 0.0;
     }
-    let r: Vec<f64> = (0..h).map(|y| pairwise_sum(a.row(y)) / a.w as f64).collect();
     let win = (h / 8).max(1);
     let half = win / 2;
     let mut prefix = vec![0f64; h + 1];
@@ -311,24 +316,87 @@ pub fn row_band(a: &Image) -> f32 {
     if gate == 0.0 {
         return 0.0;
     }
-    let nyq = h / 2;
-    let mut total = 0f64;
-    let mut peak = 0f64;
+    let nyq = (h / 2).min(64);
+    let mut mags = Vec::with_capacity(nyq);
     for f in 1..=nyq {
         let w = 2.0 * std::f64::consts::PI * f as f64 / h as f64;
         let (mut re, mut im) = (0f64, 0f64);
-        for (y, v) in e.iter().enumerate() {
-            let ang = w * y as f64;
-            re += v * ang.cos();
-            im -= v * ang.sin();
+        let (c, sn) = (w.cos(), w.sin());
+        // Rotating phasor (avoids a sin/cos per sample).
+        let (mut pc, mut ps) = (1f64, 0f64);
+        for v in &e {
+            re += v * pc;
+            im -= v * ps;
+            let t = pc * c - ps * sn;
+            ps = ps * c + pc * sn;
+            pc = t;
         }
-        let m = (re * re + im * im).sqrt();
-        total += m;
-        if (2..=40).contains(&f) {
-            peak = peak.max(m);
-        }
+        mags.push((re * re + im * im).sqrt());
     }
-    ((peak / (total + 1e-6)) as f32 * gate).clamp(0.0, 1.0)
+    let mut ratio = 1f64;
+    for f in 2..=40usize.min(nyq) {
+        let lo = f.saturating_sub(4).max(1);
+        let hi = (f + 4).min(nyq);
+        let mut neigh: Vec<f64> = (lo..=hi).filter(|&g| g != f).map(|g| mags[g - 1]).collect();
+        if neigh.is_empty() {
+            continue;
+        }
+        neigh.sort_by(f64::total_cmp);
+        let m = neigh[neigh.len() / 2].max(1e-12);
+        ratio = ratio.max(mags[f - 1] / m);
+    }
+    (((ratio - 1.0) / (ratio + 9.0)) as f32 * gate).clamp(0.0, 1.0)
+}
+
+/// Means of `a` and `b` over the region where content at p in `a` appears at p + (dx, dy)
+/// in `b` (integer-rounded shift). Falls back to whole-frame means when the overlap is small.
+pub fn overlap_means(a: &Image, b: &Image, dx: f32, dy: f32) -> (f32, f32) {
+    let (w, h) = (a.w as i64, a.h as i64);
+    let (sx, sy) = (dx.round() as i64, dy.round() as i64);
+    let (x0, x1) = (0.max(-sx), w.min(w - sx));
+    let (y0, y1) = (0.max(-sy), h.min(h - sy));
+    if a.w != b.w || a.h != b.h || (x1 - x0) * (y1 - y0) < w * h / 4 {
+        return (a.mean() as f32, b.mean() as f32);
+    }
+    let (mut sa, mut sb) = (0f64, 0f64);
+    for y in y0..y1 {
+        let ra = &a.row(y as usize)[x0 as usize..x1 as usize];
+        let rb = &b.row((y + sy) as usize)[(x0 + sx) as usize..(x1 + sx) as usize];
+        sa += pairwise_sum(ra);
+        sb += pairwise_sum(rb);
+    }
+    let n = ((x1 - x0) * (y1 - y0)) as f64;
+    ((sa / n) as f32, (sb / n) as f32)
+}
+
+/// Spatial banding score of a single frame (used when no pair frame is available).
+pub fn row_band(a: &Image) -> f32 {
+    band_score(&row_means(a))
+}
+
+/// Temporal banding score: banding in the row-mean difference between a frame and the next.
+/// Rolling flicker bands move between frames; static scene structure cancels out. `dy` is the
+/// measured vertical image motion from `a` to `b` (px), compensated before differencing.
+pub fn row_band_temporal(a: &Image, b: &Image, dy: f32) -> f32 {
+    if a.h != b.h || a.w != b.w {
+        return 0.0;
+    }
+    let (ra, rb) = (row_means(a), row_means(b));
+    let h = ra.len() as i64;
+    let dy = if dy.is_finite() { dy as f64 } else { 0.0 };
+    // Content at row y in `a` appears at y + dy in `b`.
+    let d: Vec<f64> = (0..h)
+        .filter_map(|y| {
+            let yb = y as f64 + dy;
+            let y0 = yb.floor() as i64;
+            if y0 < 0 || y0 + 1 >= h {
+                return None;
+            }
+            let f = yb - y0 as f64;
+            Some(ra[y as usize] - (rb[y0 as usize] * (1.0 - f) + rb[y0 as usize + 1] * f))
+        })
+        .collect();
+    band_score(&d)
 }
 
 /// White-balance cast from chroma thumbs and a luma thumb of the same size (ALGORITHMS §1.3.2).
@@ -630,6 +698,14 @@ mod tests {
     fn banding_detected_only_for_bands() {
         let band = Image::from_fn(320, 180, |_, y| 0.5 + 0.05 * (y as f32 * 6.0 * 6.283 / 180.0).sin());
         assert!(row_band(&band) > 0.3, "{}", row_band(&band));
+        let band2 = Image::from_fn(320, 180, |_, y| 0.5 + 0.05 * (y as f32 * 6.0 * 6.283 / 180.0 + 0.5).sin());
+        assert!(row_band_temporal(&band, &band2, 0.0) > 0.3, "{}", row_band_temporal(&band, &band2, 0.0));
+        assert_eq!(row_band_temporal(&band, &band, 0.0), 0.0);
+        // A vertically shifted textured frame is not banding once motion is compensated.
+        let tex = texture(320, 200, 9);
+        let shifted = Image::from_fn(320, 180, |x, y| tex.at(x, y + 7));
+        let base = Image::from_fn(320, 180, |x, y| tex.at(x, y));
+        assert!(row_band_temporal(&shifted, &base, 7.0) < 0.05);
         let grad = Image::from_fn(320, 180, |_, y| y as f32 / 180.0);
         assert!(row_band(&grad) < 0.05, "{}", row_band(&grad));
     }

@@ -3,7 +3,7 @@
 
 use crate::columns::{Col, NCOLS};
 use crate::image::{Image, Rect};
-use crate::motion::{estimate, MotionEstimate, Pyramid};
+use crate::motion::{estimate, estimate_with_prior, MotionEstimate, Pyramid};
 use crate::spatial::{chi2, colour_bars, mad, phash, solid_colour, spatial, wb_cast};
 use crate::util::hash2;
 use serde::{Deserialize, Serialize};
@@ -135,21 +135,34 @@ impl SampleMeasurer {
         let mut pair_est = None;
         if let Some(pair) = input.pair {
             let pa = crop_active(pair, ctx.active);
-            let pthumb = pa.resize_area(Rect::full(pa.w, pa.h), THUMB_W, THUMB_H);
-            let pmean = pa.mean() as f32;
-            set(Col::MadPair, mad(&thumb, &pthumb));
-            set(Col::PairDmean, (e.mean - pmean).abs() / e.mean.max(0.02));
+            // Full-resolution difference: thumbnails would average sensor noise away and make
+            // distinct static frames look identical (ALGORITHMS §1.5).
+            set(Col::MadPair, mad(&a, &pa));
             if ctx.motion {
                 let ppyr = Pyramid::build(&pa);
                 pair_est = Some(estimate(&pyr, &ppyr, sp.noise_sigma, seed.wrapping_mul(2)));
             }
+            // Rolling bands move between frames: measure banding on the motion-compensated
+            // row difference with the pair frame.
+            let dy = pair_est.as_ref().map(|p| p.ty * a.h as f32 / pyr.l0().h.max(1) as f32).unwrap_or(0.0);
+            let dx = pair_est.as_ref().map(|p| p.tx * a.w as f32 / pyr.l0().w.max(1) as f32).unwrap_or(0.0);
+            // Brightness change between the frames over the motion-compensated overlap.
+            let (m0, m1) = crate::spatial::overlap_means(&a, &pa, dx, dy);
+            set(Col::PairDmean, (m0 - m1).abs() / m0.max(0.02));
+            set(Col::RowBand, crate::spatial::row_band_temporal(&a, &pa, dy));
         }
         let mut avg_est = None;
         let mut avg_dt = 0.0;
         if let Some(prev) = &self.prev {
             avg_dt = ((input.time_us - prev.time_us) as f64 / 1e6).max(frame_dt);
             if ctx.motion {
-                avg_est = Some(estimate(&prev.pyr, &pyr, sp.noise_sigma, seed.wrapping_mul(2) + 1));
+                // Seed the sample-interval search with the pair velocity so fast pans stay
+                // within the search range.
+                let prior = pair_est.as_ref().filter(|p| p.conf > 0.3).map(|p| {
+                    let k = (avg_dt / frame_dt) as f32;
+                    [p.tx * k, p.ty * k]
+                });
+                avg_est = Some(estimate_with_prior(&prev.pyr, &pyr, sp.noise_sigma, seed.wrapping_mul(2) + 1, prior));
             }
             set(Col::MadPrev, mad(&thumb, &prev.thumb));
             set(Col::Chi2Prev, chi2(&e.hist64, &prev.hist));
@@ -182,10 +195,16 @@ impl SampleMeasurer {
             set(Col::CamConf, est.conf);
             let dir = (uy).atan2(-ux).to_degrees();
             set(Col::CamDir, if dir < 0.0 { dir + 360.0 } else { dir });
-            let w0 = est.w0.max(1) as f64;
+            // Subject motion prefers the sample interval: its larger displacements make slow
+            // subjects measurable (ALGORITHMS §1.4.5).
+            let (sest, sdt) = match &avg_est {
+                Some(a) => (a, avg_dt),
+                None => (est, dt),
+            };
+            let w0 = sest.w0.max(1) as f64;
             set(
                 Col::SubjRaw,
-                est.moving_frac * (est.moving_median_px as f64 / w0 / dt.max(1e-6)) as f32,
+                sest.moving_frac * (sest.moving_median_px as f64 / w0 / sdt.max(1e-6)) as f32,
             );
             set(Col::ResidualRms, est.residual_rms);
             // Directional blur ratio along the image-motion direction.
@@ -210,8 +229,12 @@ impl SampleMeasurer {
                 .collect();
         }
         if let (Some(p), Some(q)) = (pair_n, avg_n) {
-            let du = (p[0] - q[0]).hypot(p[1] - q[1]);
-            set(Col::ShakeIa, du + 0.5 * ((p[3] - q[3]).abs() + (p[2] - q[2]).abs()));
+            // Velocity estimates carry ~5 % relative error, so allow that much disagreement.
+            let du = ((p[0] - q[0]).hypot(p[1] - q[1]) - 0.05 * p[0].hypot(p[1])).max(0.0);
+            // Zoom/rotation over a single frame interval are noisy; only clear deviations count.
+            let zw = (p[3] - q[3]).abs() - 0.05;
+            let zz = (p[2] - q[2]).abs() - 0.05;
+            set(Col::ShakeIa, du + 0.2 * (zw.max(0.0) + zz.max(0.0)));
         } else if pair_n.is_none() && avg_n.is_some() {
             set(Col::ShakeIa, 0.0);
         }

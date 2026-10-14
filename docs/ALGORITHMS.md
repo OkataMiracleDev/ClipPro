@@ -90,14 +90,16 @@ Computed over `A` on full-precision L (10-bit sources keep their precision; hist
 | `clip_white` | fraction of pixels with `L ≥ 0.996` |
 | `near_black`, `near_white` | fraction with `L ≤ 0.02` / `L ≥ 0.95` |
 | `row_band` | banding score, §1.3.1 |
-| `pair_dmean` | `|mean(L_t) − mean(L_pair)| / max(0.02, mean(L_t))` (only with pair sampling) |
+| `pair_dmean` | `|m_t − m_pair| / max(0.02, m_t)`, where the means are taken over the overlap after compensating the pair's measured translation (only with pair sampling) |
 | `hist64` | 64-bin normalised histogram (for cuts), stored as u8 per bin |
 
 **1.3.1 Row banding (rolling-shutter flicker).**
+With pair sampling the signal is the row-mean *difference* between the sample and its pair frame, after shifting the pair's rows by the measured vertical motion: rolling bands move between frames, while static scene structure cancels out. Without a pair, the frame's own row means are used.
 - `r_y` = the mean of row `y` within `A`.
 - Detrend: `e_y = r_y − movavg_{H_A/8}(r)_y`.
 - Take a direct DFT of `e` at integer frequencies `f = 1 … H_A/2`, measured in cycles per frame height, giving the magnitude spectrum `|E_f|`.
-- `row_band = max_{f∈[2,40]} |E_f| / (Σ_{f∈[1, N/2]} |E_f| + 1e-6)`, multiplied by `smoothstep(0.002, 0.01, std(e))`. The multiplier makes plain gradients score zero.
+- `ratio = max_{f∈[2,40]} |E_f| / median_{g∈[f−4, f+4], g≠f} |E_g|`. Banding is a narrow peak; scene structure gives a broad, roughly 1/f spectrum, so each frequency is compared with its neighbours.
+- `row_band = (ratio − 1) / (ratio + 9)`, multiplied by `smoothstep(0.002, 0.01, std(e))`. The multiplier makes plain gradients score zero.
 
 **1.3.2 White-balance cast (PLUS, informative).** From the chroma thumbnail, using pixels whose luma-thumbnail value is in [0.2, 0.8]:
 `wb_cast = sqrt((mean(Cb)−0.5)² + (mean(Cr)−0.5)²)`.
@@ -107,7 +109,7 @@ Computed over `A` on full-precision L (10-bit sources keep their precision; hist
 - Grid of `16 × 9` blocks (or `9 × 16` when portrait) of 16×16 px, placed uniformly over the level-0 (320 px) image and clamped inside.
 - Before matching, each block is zero-meaned and divided by `(std + 0.01)`, which makes matching robust to lighting changes.
 - A block is **textured** if its pre-normalisation std ≥ `max(0.015, 2·σ_n)`. Only textured blocks are matched.
-- Coarse-to-fine: at level 2 (80 px), exhaustive SAD search ±8 px. At levels 1 and 0, refine ±2 px around the upscaled estimate.
+- Coarse-to-fine: a global translation search at level 2 (80 px, ±16 px around the prior); then per block, an 8×8 search at level 2 (±6 px), level 1 (±3 px) and a 16×16 refinement at level 0 (±2 px) around the upscaled estimate.
 - Sub-pixel refinement: fit a parabola to SAD at the best offset ±1 on each axis.
 - Output: displacement vectors `v_b`, block centres `p_b` (relative to the image centre) and matching cost `c_b`.
 
@@ -143,11 +145,12 @@ The values are stored as `cam_u_x, cam_u_y, cam_zr, cam_wr, cam_mag, cam_conf`.
 **1.4.5 Subject motion.** Residuals of textured blocks against the global model: `r_b = |v_b − v_model(p_b)| / W_m / Δt` (frame widths per second).
 - `moving_frac` = the fraction of textured blocks with `|v_b − v_model(p_b)| > 1.5 px`.
 - `subj_raw = moving_frac · median_{moving}(r_b)`. This is 0 if no blocks are moving.
-- Uses pair motion when available, otherwise sample motion.
+- Uses sample motion when available (its larger displacements make slow subjects measurable), otherwise pair motion.
 
 **1.4.6 Shake measures** (temporal ones are in §2.4).
-- **Instant/average discrepancy**, only with pair sampling: `shake_ia = |u_pair − u_avg|`, where `u_avg` is the sample-motion velocity. A smooth pan gives roughly 0; handheld shake gives large values.
-- Rotation and zoom jitter terms `|wr_pair − wr_avg|` and `|zr_pair − zr_avg|` are folded into the same measure with weight 0.5.
+- **Instant/average discrepancy**, only with pair sampling: `shake_ia = max(0, |u_pair − u_avg| − 0.05·|u_pair|)`, where `u_avg` is the sample-motion velocity. The 5% allowance covers relative estimation error. A smooth pan gives roughly 0; handheld shake gives large values.
+- Rotation and zoom jitter terms are folded into the same measure as `0.2·(max(0, |wr_pair − wr_avg| − 0.05) + max(0, |zr_pair − zr_avg| − 0.05))`. Single-frame zoom and rotation estimates are noisy, so only clear deviations count.
+- The sample-interval estimate's coarse search is centred on the pair translation scaled to the sample interval (when the pair confidence > 0.3), so fast pans stay within range.
 
 **1.4.7 Directional blur ratio.**
 - Structure tensor over `A` (Sobel gradients, sum over pixels): `J = Σ [Gx², GxGy; GxGy, Gy²]`.
@@ -157,7 +160,7 @@ The values are stored as `cam_u_x, cam_u_y, cam_zr, cam_wr, cam_mag, cam_conf`.
 - Also stored: `px_per_frame = |u| · W · (1/fps)`, the motion in working-image (960 px) pixels per frame interval.
 
 ### 1.5 Similarity measures (for duplicates and cuts)
-- `mad_pair` = mean |thumb_t − thumb_pair| (only with pair sampling).
+- `mad_pair` = mean |L_t − L_pair| over the full active area (only with pair sampling). Thumbnails aren't used here because they average sensor noise away, which would make distinct static frames look identical.
 - `mad_prev` = mean |thumb_t − thumb_{t−1}|.
 - `chi2_prev` = χ² distance between `hist64_t` and `hist64_{t−1}`: `½ Σ (h−g)² / (h+g+1e-9)`.
 - `phash64` = 64-bit DCT pHash of the luma thumbnail (resized to 32×32, 8×8 low-frequency DCT block, median threshold).
@@ -184,17 +187,19 @@ The values are stored as `cam_u_x, cam_u_y, cam_zr, cam_wr, cam_mag, cam_conf`.
 ### 2.3 Flicker
 - `μ_k = mean_k`. `m_k = μ_k − median_{w(1.5)}(μ)`.
 - `F_k = RMS_{w(0.5)}(m) / max(0.02, median_{w(1.5)}(μ))`.
-- `flicker_raw_k = max( smoothstep(0.005, 0.05, F_k), smoothstep(0.004, 0.04, pair_dmean_k), smoothstep(0.15, 0.45, row_band_k) )` **(cal)**.
+- `trend_k = |μ_{k+1} − μ_{k−1}| / (t_{k+1} − t_{k−1}) / fps / max(0.02, μ_k)`: the per-frame relative change the sample-level trend predicts (a smooth exposure ramp is not flicker).
+- `damp_k = 1 − smoothstep(0.05, 0.25, cam_mag_k)`: under fast camera motion, sample-level brightness changes mostly come from new content.
+- `flicker_raw_k = max( damp_k · smoothstep(0.005, 0.05, F_k), smoothstep(0.004, 0.04, max(0, pair_dmean_k − trend_k)), smoothstep(0.15, 0.45, row_band_k) )` **(cal)**.
 - Without pair sampling, the `pair_dmean` term is 0.
 
 ### 2.4 Motion stability (shake)
-- `u_k` = the stored camera velocity. Trend `ū_k` = Gaussian-weighted mean of `u` over `w(1.0)` with σ = 0.5 s.
-- `J1_k = RMS_{w(0.5)}(|u − ū|)`.
+- `u_k` = the stored camera velocity. `lap_k = |u_k − ½(u_{k−1} + u_{k+1})|`, the deviation from the neighbours' mean. It is zero for smooth moves, ramps and single speed steps, and large for jitter. It is NaN at clip ends and next to cuts.
+- `J1_k = median_{w(0.5)}(lap)` (a median, so an isolated acceleration doesn't read as shake).
 - `J2_k = median_{w(0.5)}(shake_ia)` (0 without pair sampling).
 - `J_k = max(J1_k, J2_k)`.
 - `stab_raw_k = exp(−J_k / 0.08)` **(cal)** (1 = perfectly stable).
 - `stab_conf_k = median_{w(0.5)}(cam_conf)`. Without pair sampling, multiply it by `min(1, R/8)`, because low rates alias shake.
-- **Shaky flag** at `k`: `stab_raw < 0.40` and `stab_conf ≥ 0.5`, sustained for ≥ `w(0.5)` consecutive samples **(cal)**.
+- **Shaky flag** at `k`: `stab_raw < 0.45` and `stab_conf ≥ 0.5`, sustained for ≥ `w(0.5)` consecutive samples **(cal)**.
 
 ### 2.5 Motion blur flag
 - `S_ref_k = P90_{w(3.0)}(S)`.
@@ -214,8 +219,8 @@ The values are stored as `cam_u_x, cam_u_y, cam_zr, cam_wr, cam_mag, cam_conf`.
 - Hard cuts are computed **before** the other temporal measures, because windows stop at cuts.
 
 ### 2.7 Duplicate flag
-- With pair sampling: `mad_pair < 0.0015` and `mad_prev < 0.004`. A frozen or held frame has near-zero inter-frame difference, below even sensor noise.
-- Without pair sampling: `mad_prev < 0.0015`. **(cal)**
+- With pair sampling: `mad_pair < 0.0002` and `mad_prev < 0.004`. `mad_pair` is full-resolution, so frozen frames measure about 0 while real static footage keeps measurable sensor noise. A frozen or held frame has near-zero inter-frame difference, below even sensor noise.
+- Without pair sampling: `mad_prev < 0.0002`. **(cal)**
 
 ### 2.8 Clipping flag
 `clip_black ≥ 0.015` or `clip_white ≥ 0.015`. The flag detail records which.
