@@ -1,0 +1,32 @@
+{
+  "duration_s": 6.0,
+  "file": "clip_white.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "flags": [
+          "clipping"
+        ]
+      },
+      "t": [
+        0.2,
+        1.8
+      ]
+    },
+    {
+      "expect": {
+        "no_flags": [
+          "clipping"
+        ]
+      },
+      "t": [
+        2.2,
+        5.8
+      ]
+    }
+  ],
+  "name": "clip_white",
+  "width": 854
+}

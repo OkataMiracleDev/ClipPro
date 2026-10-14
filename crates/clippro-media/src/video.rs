@@ -1,0 +1,613 @@
+//! Video decoding along a sampling plan (ALGORITHMS §0, SPEC §9.3, P1.2/P1.4).
+
+use crate::ffi::{check, q2d, ts_to_us, us_to_ts, Decoder, Frame, Input, MediaError, Packet, Result, EAGAIN, EOF};
+use crate::probe::MediaInfo;
+use clippro_measure::image::{PlaneData, PlaneRef};
+use clippro_types::{FrameRate, SampleRate};
+use ffmpeg_sys_next as ff;
+use std::path::Path;
+use std::ptr;
+
+/// Sample times (µs relative to the first frame) for a clip (ALGORITHMS §0.1).
+pub fn sample_plan(duration_us: i64, fps: FrameRate, rate: SampleRate) -> Vec<i64> {
+    let frame_us = fps.frame_duration_us();
+    if duration_us <= 0 {
+        return vec![0];
+    }
+    let nframes = ((duration_us as f64 / frame_us).round() as i64).max(1);
+    let last = fps.frames_to_us(nframes - 1);
+    match rate.hz() {
+        None => (0..nframes).map(|k| fps.frames_to_us(k)).collect(),
+        Some(r) => {
+            let step = 1e6 / r;
+            let mut v: Vec<i64> = (0..).map(|k| (k as f64 * step).round() as i64).take_while(|t| *t <= last).collect();
+            if v.is_empty() {
+                v.push(0);
+            }
+            if (last - *v.last().unwrap_or(&0)) as f64 > 0.5 * frame_us {
+                v.push(last);
+            }
+            v
+        }
+    }
+}
+
+/// Hardware decode preference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum HwMode {
+    /// D3D11VA when the codec/profile is supported, otherwise CPU.
+    #[default]
+    Auto,
+    Off,
+}
+
+#[derive(Clone, Debug)]
+pub struct DecodeOptions {
+    pub threads: i32,
+    pub hw: HwMode,
+}
+
+impl Default for DecodeOptions {
+    fn default() -> Self {
+        DecodeOptions { threads: 2, hw: HwMode::Auto }
+    }
+}
+
+/// Borrowed view of a decoded frame in system memory.
+pub struct FrameView<'a> {
+    pub width: usize,
+    pub height: usize,
+    pub pts_us: i64,
+    pub luma: PlaneRef<'a>,
+    pub chroma: Option<(PlaneRef<'a>, PlaneRef<'a>)>,
+}
+
+/// One sample delivered to the caller.
+pub struct SampleFrames<'a> {
+    /// Index in the clip's sample plan.
+    pub index: usize,
+    pub target_us: i64,
+    pub frame: FrameView<'a>,
+    pub pair: Option<FrameView<'a>>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DecodeStats {
+    pub frames_decoded: u64,
+    pub seeks: u64,
+    pub samples: u64,
+    pub missing: u64,
+    pub corrupt_packets: u64,
+    pub hw: bool,
+}
+
+struct Sws {
+    ctx: *mut ff::SwsContext,
+}
+
+impl Drop for Sws {
+    fn drop(&mut self) {
+        unsafe { ff::sws_freeContext(self.ctx) };
+    }
+}
+
+unsafe extern "C" fn pick_d3d11(_ctx: *mut ff::AVCodecContext, fmts: *const ff::AVPixelFormat) -> ff::AVPixelFormat {
+    let mut p = fmts;
+    let mut first_sw = ff::AVPixelFormat::AV_PIX_FMT_NONE;
+    unsafe {
+        while *p != ff::AVPixelFormat::AV_PIX_FMT_NONE {
+            if *p == ff::AVPixelFormat::AV_PIX_FMT_D3D11 {
+                return *p;
+            }
+            let d = ff::av_pix_fmt_desc_get(*p);
+            if first_sw == ff::AVPixelFormat::AV_PIX_FMT_NONE
+                && !d.is_null()
+                && (*d).flags & ff::AV_PIX_FMT_FLAG_HWACCEL as u64 == 0
+            {
+                first_sw = *p;
+            }
+            p = p.add(1);
+        }
+    }
+    first_sw
+}
+
+/// Decoder bound to one file's best video stream.
+pub struct VideoDecoder {
+    input: Input,
+    dec: Decoder,
+    stream: usize,
+    tb: ff::AVRational,
+    start_ts: i64,
+    fps: FrameRate,
+    intra_only: bool,
+    pkt: Packet,
+    eof_sent: bool,
+    gop_us: i64,
+    last_key_us: Option<i64>,
+    key_intervals: Vec<i64>,
+    sws: Option<Sws>,
+    sws_key: (i32, i32, i32),
+    sw_frame: Frame,
+    conv: Frame,
+    pub stats: DecodeStats,
+    hw_device: *mut ff::AVBufferRef,
+}
+
+unsafe impl Send for VideoDecoder {}
+
+impl Drop for VideoDecoder {
+    fn drop(&mut self) {
+        if !self.hw_device.is_null() {
+            unsafe { ff::av_buffer_unref(&mut self.hw_device) };
+        }
+    }
+}
+
+impl VideoDecoder {
+    pub fn open(path: &Path, info: &MediaInfo, opts: &DecodeOptions) -> Result<VideoDecoder> {
+        let input = Input::open(path)?;
+        let stream = input.best_stream(ff::AVMediaType::AVMEDIA_TYPE_VIDEO).ok_or(MediaError::NoStream("video"))?;
+        let st = input.stream(stream);
+        let tb = st.time_base;
+        let start_ts = if st.start_time != ff::AV_NOPTS_VALUE { st.start_time } else { 0 };
+        let par = st.codecpar;
+        let mut hw_device: *mut ff::AVBufferRef = ptr::null_mut();
+        if opts.hw == HwMode::Auto {
+            let r = unsafe {
+                ff::av_hwdevice_ctx_create(
+                    &mut hw_device,
+                    ff::AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA,
+                    ptr::null(),
+                    ptr::null_mut(),
+                    0,
+                )
+            };
+            if r < 0 {
+                hw_device = ptr::null_mut();
+            }
+        }
+        let hwdev = hw_device;
+        let threads = if hw_device.is_null() { opts.threads } else { 1 };
+        let dec = Decoder::open(par, threads, |ctx| unsafe {
+            if !hwdev.is_null() {
+                (*ctx).hw_device_ctx = ff::av_buffer_ref(hwdev);
+                (*ctx).get_format = Some(pick_d3d11);
+            }
+        })?;
+        let intra_only = info.video.as_ref().map(|v| v.intra_only).unwrap_or(false);
+        let fps = info.fps();
+        Ok(VideoDecoder {
+            input,
+            dec,
+            stream,
+            tb,
+            start_ts,
+            fps,
+            intra_only,
+            pkt: Packet::new(),
+            eof_sent: false,
+            gop_us: if intra_only { fps.frame_duration_us() as i64 } else { 2_000_000 },
+            last_key_us: None,
+            key_intervals: Vec::new(),
+            sws: None,
+            sws_key: (0, 0, -1),
+            sw_frame: Frame::new(),
+            conv: Frame::new(),
+            stats: DecodeStats::default(),
+            hw_device,
+        })
+    }
+
+    pub fn fps(&self) -> FrameRate {
+        self.fps
+    }
+
+    fn rel_us(&self, ts: i64) -> i64 {
+        ts_to_us(ts - self.start_ts, self.tb)
+    }
+
+    /// Latest indexed keyframe at or before `rel_us`, if the container has an index.
+    fn keyframe_before(&self, rel_us: i64) -> Option<i64> {
+        let st = self.input.streams()[self.stream];
+        let ts = self.start_ts + us_to_ts(rel_us, self.tb);
+        let e = unsafe { ff::avformat_index_get_entry_from_timestamp(st, ts, ff::AVSEEK_FLAG_BACKWARD as i32) };
+        if e.is_null() {
+            None
+        } else {
+            Some(self.rel_us(unsafe { (*e).timestamp }))
+        }
+    }
+
+    fn seek_to(&mut self, rel_us: i64) -> Result<()> {
+        let ts = self.start_ts + us_to_ts(rel_us, self.tb);
+        self.input.seek(self.stream, ts)?;
+        self.dec.flush();
+        self.eof_sent = false;
+        self.stats.seeks += 1;
+        Ok(())
+    }
+
+    /// Pulls the next decoded frame into `out`. `Ok(false)` at end of stream.
+    fn next_frame(&mut self, out: &mut Frame) -> Result<bool> {
+        loop {
+            let r = self.dec.receive(out);
+            if r == 0 {
+                self.stats.frames_decoded += 1;
+                return Ok(true);
+            }
+            if r == EOF {
+                return Ok(false);
+            }
+            if r != EAGAIN {
+                // A corrupt frame: skip it and keep going.
+                self.stats.corrupt_packets += 1;
+                continue;
+            }
+            if self.eof_sent {
+                return Ok(false);
+            }
+            loop {
+                let r = self.input.read(&mut self.pkt);
+                if r < 0 {
+                    self.dec.send(None);
+                    self.eof_sent = true;
+                    break;
+                }
+                if self.pkt.stream() == self.stream {
+                    if self.pkt.is_key() && !self.intra_only {
+                        let t = self.rel_us(self.pkt.pts());
+                        if let Some(prev) = self.last_key_us {
+                            if t > prev {
+                                self.key_intervals.push(t - prev);
+                                if self.key_intervals.len() > 16 {
+                                    self.key_intervals.remove(0);
+                                }
+                                let mut v = self.key_intervals.clone();
+                                v.sort_unstable();
+                                self.gop_us = v[v.len() / 2].max(1);
+                            }
+                        }
+                        self.last_key_us = Some(t);
+                    }
+                    let s = self.dec.send(Some(&self.pkt));
+                    self.pkt.unref();
+                    if s < 0 && s != EAGAIN {
+                        self.stats.corrupt_packets += 1;
+                    }
+                    break;
+                }
+                self.pkt.unref();
+            }
+        }
+    }
+
+    /// Ensures `f` is in system memory and a directly readable format; returns the frame to view.
+    fn to_viewable<'a>(&'a mut self, f: &'a Frame) -> Result<&'a Frame> {
+        let mut src = f;
+        if f.raw().format == ff::AVPixelFormat::AV_PIX_FMT_D3D11 as i32 {
+            self.sw_frame.unref();
+            check(unsafe { ff::av_hwframe_transfer_data(self.sw_frame.ptr, f.ptr, 0) })?;
+            unsafe {
+                (*self.sw_frame.ptr).pts = (*f.ptr).pts;
+                (*self.sw_frame.ptr).best_effort_timestamp = (*f.ptr).best_effort_timestamp;
+                (*self.sw_frame.ptr).color_range = (*f.ptr).color_range;
+            }
+            self.stats.hw = true;
+            src = &self.sw_frame;
+        }
+        let fmt: ff::AVPixelFormat = unsafe { std::mem::transmute(src.raw().format) };
+        if directly_viewable(fmt) {
+            return Ok(src);
+        }
+        // Convert RGB / big-endian / exotic layouts to planar 16-bit 4:4:4.
+        let (w, h) = (src.raw().width, src.raw().height);
+        let key = (w, h, src.raw().format);
+        if self.sws.is_none() || self.sws_key != key {
+            let ctx = unsafe {
+                ff::sws_getContext(
+                    w,
+                    h,
+                    fmt,
+                    w,
+                    h,
+                    ff::AVPixelFormat::AV_PIX_FMT_YUV444P16LE,
+                    ff::SwsFlags::SWS_POINT as i32,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null(),
+                )
+            };
+            if ctx.is_null() {
+                return Err(MediaError::Unsupported(format!("pixel format {fmt:?}")));
+            }
+            self.sws = Some(Sws { ctx });
+            self.sws_key = key;
+        }
+        self.conv.unref();
+        unsafe {
+            let c = &mut *self.conv.ptr;
+            c.width = w;
+            c.height = h;
+            c.format = ff::AVPixelFormat::AV_PIX_FMT_YUV444P16LE as i32;
+            check(ff::av_frame_get_buffer(self.conv.ptr, 0))?;
+            let s = src.raw();
+            #[allow(clippy::unwrap_used)]
+            ff::sws_scale(
+                self.sws.as_ref().unwrap().ctx,
+                s.data.as_ptr() as *const *const u8,
+                s.linesize.as_ptr(),
+                0,
+                h,
+                c.data.as_ptr(),
+                c.linesize.as_ptr(),
+            );
+            c.pts = s.pts;
+            c.best_effort_timestamp = s.best_effort_timestamp;
+            c.color_range = ff::AVColorRange::AVCOL_RANGE_JPEG;
+        }
+        Ok(&self.conv)
+    }
+
+    /// Decodes the frames for `targets` (sorted, µs relative to the first frame) and calls `f`
+    /// for each. Sample indices start at `first_index`. `f` returns `false` to stop early.
+    pub fn decode_samples(
+        &mut self,
+        targets: &[i64],
+        first_index: usize,
+        pair: bool,
+        mut f: impl FnMut(SampleFrames) -> bool,
+    ) -> Result<DecodeStats> {
+        if targets.is_empty() {
+            return Ok(self.stats.clone());
+        }
+        let frame_us = self.fps.frame_duration_us() as i64;
+        if targets[0] > frame_us * 2 {
+            self.seek_to(targets[0])?;
+        }
+        let mut ti = 0usize;
+        let mut cur = Frame::new();
+        // Samples waiting for their pair frame: (plan index, target, frame ref).
+        let mut pending: Vec<(usize, i64, Frame)> = Vec::new();
+        let mut last: Option<Frame> = None;
+        let mut stop = false;
+        while ti < targets.len() || !pending.is_empty() {
+            // Skip/seek decisions only when no pair is outstanding.
+            if pending.is_empty() && ti < targets.len() {
+                let pos = last.as_ref().map(|l| self.rel_us(l.pts())).unwrap_or(0);
+                let gap = targets[ti] - pos;
+                let seek = match self.keyframe_before(targets[ti]) {
+                    // With a keyframe index: seek when the keyframe before the target is ahead
+                    // of where sequential decoding already is.
+                    Some(kf) => kf > pos + frame_us && gap > 2 * frame_us,
+                    None => {
+                        let thr = if self.intra_only { 3 * frame_us } else { (2 * self.gop_us).max(1_000_000) };
+                        gap > thr
+                    }
+                };
+                if last.is_some() && seek {
+                    self.seek_to(targets[ti])?;
+                }
+                self.dec.set_skip_nonref(!self.intra_only && gap > 300_000 + 8 * frame_us);
+            } else {
+                self.dec.set_skip_nonref(false);
+            }
+            cur.unref();
+            if !self.next_frame(&mut cur)? {
+                break;
+            }
+            let pts = self.rel_us(cur.pts());
+            // Resolve pending samples with this frame as their pair.
+            if !pending.is_empty() {
+                let pend = std::mem::take(&mut pending);
+                for (idx, tgt, sf) in pend {
+                    if stop {
+                        break;
+                    }
+                    if !self.emit(&sf, Some(&cur), idx, tgt, &mut f)? {
+                        stop = true;
+                    }
+                }
+            }
+            if stop {
+                break;
+            }
+            while ti < targets.len() && pts >= targets[ti] {
+                let idx = first_index + ti;
+                if pair {
+                    pending.push((idx, targets[ti], cur.clone_ref()?));
+                } else if !self.emit(&cur, None, idx, targets[ti], &mut f)? {
+                    stop = true;
+                    break;
+                }
+                ti += 1;
+            }
+            if stop {
+                break;
+            }
+            last = Some(cur.clone_ref()?);
+        }
+        if !stop {
+            for (idx, tgt, sf) in std::mem::take(&mut pending) {
+                if !self.emit(&sf, None, idx, tgt, &mut f)? {
+                    stop = true;
+                    break;
+                }
+            }
+        }
+        // Targets past the last decodable frame use the last frame if it is close enough.
+        if !stop {
+            if let Some(l) = last {
+                let lp = self.rel_us(l.pts());
+                while ti < targets.len() {
+                    if lp + 2 * frame_us >= targets[ti] {
+                        if !self.emit(&l, None, first_index + ti, targets[ti], &mut f)? {
+                            break;
+                        }
+                    } else {
+                        self.stats.missing += 1;
+                    }
+                    ti += 1;
+                }
+            } else {
+                self.stats.missing += (targets.len() - ti) as u64;
+            }
+        }
+        Ok(self.stats.clone())
+    }
+
+    fn emit(
+        &mut self,
+        sf: &Frame,
+        pf: Option<&Frame>,
+        idx: usize,
+        target: i64,
+        f: &mut impl FnMut(SampleFrames) -> bool,
+    ) -> Result<bool> {
+        // Convert the pair first into its own owned frame so both views can coexist.
+        let pair_owned = match pf {
+            Some(p) => Some(self.owned_viewable(p)?),
+            None => None,
+        };
+        let sample_owned = self.owned_viewable(sf)?;
+        let pts_s = self.rel_us(sf.pts());
+        let frame = view(&sample_owned, pts_s)?;
+        let pair = match &pair_owned {
+            Some(p) => Some(view(p, self.rel_us(p.pts()))?),
+            None => None,
+        };
+        self.stats.samples += 1;
+        Ok(f(SampleFrames { index: idx, target_us: target, frame, pair }))
+    }
+
+    fn owned_viewable(&mut self, f: &Frame) -> Result<Frame> {
+        let v = self.to_viewable(f)?;
+        v.clone_ref()
+    }
+
+    /// Decodes the frame at or after `us` (seeking), for previews and thumbnails.
+    pub fn frame_at(&mut self, us: i64) -> Result<Option<Frame>> {
+        self.seek_to(us)?;
+        let mut cur = Frame::new();
+        loop {
+            cur.unref();
+            if !self.next_frame(&mut cur)? {
+                return Ok(None);
+            }
+            if self.rel_us(cur.pts()) + (self.fps.frame_duration_us() as i64) / 2 >= us {
+                let owned = self.owned_viewable(&cur)?;
+                return Ok(Some(owned));
+            }
+        }
+    }
+
+    pub fn rel_pts_us(&self, f: &Frame) -> i64 {
+        self.rel_us(f.pts())
+    }
+
+    pub fn stream_fps(&self) -> f64 {
+        q2d(self.input.stream(self.stream).avg_frame_rate)
+    }
+}
+
+fn directly_viewable(fmt: ff::AVPixelFormat) -> bool {
+    let d = unsafe { ff::av_pix_fmt_desc_get(fmt) };
+    if d.is_null() {
+        return false;
+    }
+    let d = unsafe { &*d };
+    let bad = (ff::AV_PIX_FMT_FLAG_RGB | ff::AV_PIX_FMT_FLAG_PAL | ff::AV_PIX_FMT_FLAG_BE | ff::AV_PIX_FMT_FLAG_HWACCEL
+        | ff::AV_PIX_FMT_FLAG_BITSTREAM | ff::AV_PIX_FMT_FLAG_FLOAT) as u64;
+    d.flags & bad == 0 && d.comp[0].depth <= 16 && d.comp[0].depth >= 8
+}
+
+/// Builds plane views over a viewable (system-memory, YUV/gray) frame.
+pub fn view(f: &Frame, pts_us: i64) -> Result<FrameView<'_>> {
+    let r = f.raw();
+    let fmt: ff::AVPixelFormat = unsafe { std::mem::transmute(r.format) };
+    let d = unsafe { ff::av_pix_fmt_desc_get(fmt) };
+    if d.is_null() {
+        return Err(MediaError::Unsupported("unknown pixel format".into()));
+    }
+    let d = unsafe { &*d };
+    let (w, h) = (r.width.max(0) as usize, r.height.max(0) as usize);
+    let full_range = r.color_range == ff::AVColorRange::AVCOL_RANGE_JPEG
+        || crate::ffi::cstr(d.name).starts_with("yuvj");
+    let plane = |ci: usize, pw: usize, ph: usize, chroma: bool| -> Result<PlaneRef<'_>> {
+        let c = d.comp[ci];
+        let depth = c.depth as u8;
+        let wide = depth > 8;
+        let esz = if wide { 2 } else { 1 };
+        let p = c.plane as usize;
+        let ls = r.linesize[p];
+        if ls <= 0 || r.data[p].is_null() {
+            return Err(MediaError::Unsupported("negative or missing linesize".into()));
+        }
+        let stride = ls as usize / esz;
+        let step = (c.step as usize / esz).max(1);
+        let off = c.offset as usize / esz;
+        let len_el = stride * ph;
+        let data = unsafe {
+            if wide {
+                let s = std::slice::from_raw_parts(r.data[p] as *const u16, len_el);
+                PlaneData::U16(&s[off.min(len_el)..])
+            } else {
+                let s = std::slice::from_raw_parts(r.data[p] as *const u8, len_el);
+                PlaneData::U8(&s[off.min(len_el)..])
+            }
+        };
+        Ok(PlaneRef {
+            data,
+            width: pw,
+            height: ph,
+            stride,
+            step,
+            bit_depth: depth,
+            msb_aligned: c.shift > 0,
+            full_range,
+            chroma,
+        })
+    };
+    let luma = plane(0, w, h, false)?;
+    let chroma = if d.nb_components >= 3 && d.flags & ff::AV_PIX_FMT_FLAG_RGB as u64 == 0 {
+        let cw = (w + (1 << d.log2_chroma_w) - 1) >> d.log2_chroma_w;
+        let ch = (h + (1 << d.log2_chroma_h) - 1) >> d.log2_chroma_h;
+        Some((plane(1, cw, ch, true)?, plane(2, cw, ch, true)?))
+    } else {
+        None
+    };
+    Ok(FrameView { width: w, height: h, pts_us, luma, chroma })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plan_standard_rate() {
+        let fps = FrameRate::new(25, 1);
+        let p = sample_plan(10_000_000, fps, SampleRate::Standard);
+        assert_eq!(p[0], 0);
+        assert_eq!(p[1], 250_000);
+        // last frame (9.96 s) is always sampled
+        assert_eq!(*p.last().unwrap(), fps.frames_to_us(249));
+        assert!(p.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn plan_ntsc_and_all() {
+        let fps = FrameRate::new(30000, 1001);
+        let p = sample_plan(5_005_000, fps, SampleRate::All);
+        assert_eq!(p.len(), 150);
+        assert_eq!(p[1], fps.frames_to_us(1));
+        let p = sample_plan(5_005_000, fps, SampleRate::Draft);
+        assert_eq!(&p[..3], &[0, 1_000_000, 2_000_000]);
+        assert_eq!(*p.last().unwrap(), fps.frames_to_us(149));
+    }
+
+    #[test]
+    fn plan_short_clip() {
+        let p = sample_plan(40_000, FrameRate::new(25, 1), SampleRate::Standard);
+        assert_eq!(p, vec![0]);
+    }
+}

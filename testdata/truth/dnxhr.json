@@ -1,0 +1,10 @@
+{
+  "codec": "dnxhd",
+  "duration_s": 1.0,
+  "file": "dnxhr.mxf",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [],
+  "name": "dnxhr",
+  "width": 854
+}

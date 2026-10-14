@@ -1,0 +1,40 @@
+{
+  "duration_s": 6.0,
+  "file": "tilt_down.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "cam_dir_deg": 270.0,
+        "cam_speed_fw_s": 0.10000000149011612
+      },
+      "t": [
+        0.25,
+        1.75
+      ]
+    },
+    {
+      "expect": {
+        "cam_dir_deg": 270.0,
+        "cam_speed_fw_s": 0.30000001192092896
+      },
+      "t": [
+        2.25,
+        3.75
+      ]
+    },
+    {
+      "expect": {
+        "cam_dir_deg": 270.0,
+        "cam_speed_fw_s": 1.0
+      },
+      "t": [
+        4.25,
+        5.75
+      ]
+    }
+  ],
+  "name": "tilt_down",
+  "width": 854
+}

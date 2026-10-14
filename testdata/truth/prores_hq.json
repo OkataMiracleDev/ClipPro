@@ -1,0 +1,12 @@
+{
+  "codec": "prores",
+  "duration_s": 2.0,
+  "file": "prores_hq.mov",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [],
+  "name": "prores_hq",
+  "reel": "A001C003",
+  "timecode": "01:00:00:00",
+  "width": 854
+}

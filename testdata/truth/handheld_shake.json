@@ -1,0 +1,22 @@
+{
+  "duration_s": 6.0,
+  "file": "handheld_shake.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "flags": [
+          "shaky"
+        ],
+        "stab_max": 0.35
+      },
+      "t": [
+        0.6,
+        5.4
+      ]
+    }
+  ],
+  "name": "handheld_shake",
+  "width": 854
+}

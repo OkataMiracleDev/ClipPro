@@ -142,6 +142,12 @@ impl fmt::Display for Rational {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FrameRate(pub Rational);
 
+impl Default for FrameRate {
+    fn default() -> Self {
+        FrameRate(Rational { num: 25, den: 1 })
+    }
+}
+
 impl FrameRate {
     pub const fn new(num: i64, den: i64) -> Self {
         FrameRate(Rational { num, den })

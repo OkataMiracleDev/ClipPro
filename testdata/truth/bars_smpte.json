@@ -1,0 +1,21 @@
+{
+  "duration_s": 3.0,
+  "file": "bars_smpte.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "flags": [
+          "colour_bars"
+        ]
+      },
+      "t": [
+        0.2,
+        2.8
+      ]
+    }
+  ],
+  "name": "bars_smpte",
+  "width": 854
+}

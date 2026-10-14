@@ -1,0 +1,12 @@
+{
+  "bit_depth": 10,
+  "chroma": "4:2:2",
+  "codec": "h264",
+  "duration_s": 2.0,
+  "file": "h264_422_10.mov",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [],
+  "name": "h264_422_10",
+  "width": 854
+}

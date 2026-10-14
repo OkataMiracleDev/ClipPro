@@ -1,0 +1,34 @@
+{
+  "duration_s": 7.0,
+  "file": "expo_ramp.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "flags": [
+          "clipping"
+        ]
+      },
+      "t": [
+        6.2,
+        6.9
+      ]
+    },
+    {
+      "expect": {
+        "no_flags": [
+          "clipping"
+        ]
+      },
+      "t": [
+        2.5,
+        4.0
+      ]
+    }
+  ],
+  "metric": "p50",
+  "monotonic": "increasing",
+  "name": "expo_ramp",
+  "width": 854
+}

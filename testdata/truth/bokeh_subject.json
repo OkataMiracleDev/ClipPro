@@ -1,0 +1,19 @@
+{
+  "duration_s": 4.0,
+  "file": "bokeh_subject.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "centre_ge_full": true
+      },
+      "t": [
+        0.2,
+        3.8
+      ]
+    }
+  ],
+  "name": "bokeh_subject",
+  "width": 854
+}

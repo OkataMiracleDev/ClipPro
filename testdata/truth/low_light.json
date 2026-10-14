@@ -1,0 +1,20 @@
+{
+  "duration_s": 4.0,
+  "file": "low_light.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "low_light": true,
+        "noise_min": 0.01
+      },
+      "t": [
+        0.2,
+        3.8
+      ]
+    }
+  ],
+  "name": "low_light",
+  "width": 854
+}

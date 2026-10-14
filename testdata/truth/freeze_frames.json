@@ -1,0 +1,43 @@
+{
+  "duration_s": 6.0,
+  "file": "freeze_frames.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "flags": [
+          "duplicate"
+        ]
+      },
+      "t": [
+        2.3,
+        3.7
+      ]
+    },
+    {
+      "expect": {
+        "no_flags": [
+          "duplicate"
+        ]
+      },
+      "t": [
+        0.3,
+        1.7
+      ]
+    },
+    {
+      "expect": {
+        "no_flags": [
+          "duplicate"
+        ]
+      },
+      "t": [
+        4.3,
+        5.7
+      ]
+    }
+  ],
+  "name": "freeze_frames",
+  "width": 854
+}

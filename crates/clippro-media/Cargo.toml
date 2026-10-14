@@ -10,3 +10,11 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+clippro-types = { path = "../clippro-types" }
+ffmpeg-sys-next = { version = "9.0.1", default-features = false, features = ["avcodec", "avformat", "swresample", "swscale"] }
+serde = { version = "1", features = ["derive"] }
+clippro-measure = { path = "../clippro-measure" }
+libc = "0.2"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+serde_json = "1"
+thiserror = "2"

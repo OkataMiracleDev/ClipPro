@@ -1,0 +1,33 @@
+{
+  "duration_s": 4.0,
+  "file": "whip_pan.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "cam_speed_min": 2.0,
+        "flags": [
+          "motion_blur"
+        ]
+      },
+      "t": [
+        1.2,
+        1.8
+      ]
+    },
+    {
+      "expect": {
+        "no_flags": [
+          "motion_blur"
+        ]
+      },
+      "t": [
+        2.5,
+        3.8
+      ]
+    }
+  ],
+  "name": "whip_pan",
+  "width": 854
+}

@@ -1,0 +1,19 @@
+{
+  "duration_s": 4.0,
+  "file": "zoom_in.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "zr": 0.30000001192092896
+      },
+      "t": [
+        0.3,
+        3.7
+      ]
+    }
+  ],
+  "name": "zoom_in",
+  "width": 854
+}

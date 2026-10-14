@@ -1,0 +1,19 @@
+{
+  "duration_s": 6.0,
+  "file": "subject_motion.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "subj_gt_cam": 3.0
+      },
+      "t": [
+        0.5,
+        5.5
+      ]
+    }
+  ],
+  "name": "subject_motion",
+  "width": 854
+}

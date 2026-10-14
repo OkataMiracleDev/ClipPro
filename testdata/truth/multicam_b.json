@@ -1,0 +1,12 @@
+{
+  "audio_start_in_master_s": 3.4800000190734863,
+  "duration_s": 8.0,
+  "file": "multicam_b.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [],
+  "name": "multicam_b",
+  "sync_group": "multicam",
+  "sync_offset_s": 3.4800000190734863,
+  "width": 854
+}

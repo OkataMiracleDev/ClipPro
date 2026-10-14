@@ -1,0 +1,11 @@
+{
+  "bit_depth": 10,
+  "codec": "hevc",
+  "duration_s": 2.0,
+  "file": "hevc10.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [],
+  "name": "hevc10",
+  "width": 854
+}

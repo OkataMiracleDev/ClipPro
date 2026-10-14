@@ -1,0 +1,10 @@
+{
+  "duration_s": 5.0,
+  "file": "vfr.mkv",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [],
+  "name": "vfr",
+  "vfr": true,
+  "width": 854
+}

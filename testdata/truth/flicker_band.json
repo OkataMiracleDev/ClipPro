@@ -1,0 +1,20 @@
+{
+  "duration_s": 4.0,
+  "file": "flicker_band.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "flicker_min": 0.5,
+        "row_band_min": 0.15
+      },
+      "t": [
+        0.5,
+        3.5
+      ]
+    }
+  ],
+  "name": "flicker_band",
+  "width": 854
+}

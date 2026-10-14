@@ -1,0 +1,78 @@
+{
+  "audio": [
+    {
+      "expect": {
+        "no_audio_flags": [
+          "audio_clipping",
+          "silence",
+          "wind",
+          "hum"
+        ]
+      },
+      "t": [
+        0.2,
+        1.8
+      ]
+    },
+    {
+      "expect": {
+        "audio_flags": [
+          "audio_clipping"
+        ]
+      },
+      "t": [
+        2.1,
+        2.9
+      ]
+    },
+    {
+      "expect": {
+        "audio_flags": [
+          "silence"
+        ]
+      },
+      "t": [
+        3.3,
+        4.7
+      ]
+    },
+    {
+      "expect": {
+        "audio_flags": [
+          "wind"
+        ]
+      },
+      "t": [
+        5.2,
+        6.3
+      ]
+    },
+    {
+      "expect": {
+        "audio_flags": [
+          "hum"
+        ]
+      },
+      "t": [
+        6.8,
+        8.3
+      ]
+    },
+    {
+      "expect": {
+        "speech": true
+      },
+      "t": [
+        8.7,
+        9.9
+      ]
+    }
+  ],
+  "duration_s": 10.0,
+  "file": "audio_mix.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [],
+  "name": "audio_mix",
+  "width": 854
+}

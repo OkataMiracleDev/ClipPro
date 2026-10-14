@@ -1,0 +1,22 @@
+{
+  "duration_s": 3.0,
+  "file": "solid_black.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "flags": [
+          "solid_colour"
+        ],
+        "no_select": true
+      },
+      "t": [
+        0.2,
+        2.8
+      ]
+    }
+  ],
+  "name": "solid_black",
+  "width": 854
+}

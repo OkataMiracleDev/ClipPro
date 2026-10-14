@@ -1,0 +1,10 @@
+{
+  "duration_s": 120.0,
+  "file": "long_clip.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [],
+  "long": true,
+  "name": "long_clip",
+  "width": 854
+}

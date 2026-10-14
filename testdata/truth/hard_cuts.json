@@ -1,0 +1,14 @@
+{
+  "cut_times": [
+    1.5,
+    3.0,
+    4.5
+  ],
+  "duration_s": 6.0,
+  "file": "hard_cuts.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [],
+  "name": "hard_cuts",
+  "width": 854
+}

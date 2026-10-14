@@ -15,6 +15,8 @@ pub struct PlaneRef<'a> {
     pub height: usize,
     /// Row stride in elements (not bytes).
     pub stride: usize,
+    /// Elements between consecutive samples in a row (1 for planar, 2 for interleaved NV12 chroma).
+    pub step: usize,
     /// Significant bits (8, 10, 12, 16).
     pub bit_depth: u8,
     /// Value stored in the most significant bits of each u16 (P010/P016 layout).
@@ -47,14 +49,16 @@ impl<'a> PlaneRef<'a> {
     pub fn row_f32(&self, y: usize, out: &mut [f32]) {
         let (s, o) = self.norm();
         let start = y * self.stride;
+        let step = self.step.max(1);
+        let end = start + (self.width - 1) * step + 1;
         match self.data {
             PlaneData::U8(d) => {
-                for (dst, &v) in out.iter_mut().zip(&d[start..start + self.width]) {
+                for (dst, &v) in out.iter_mut().zip(d[start..end].iter().step_by(step)) {
                     *dst = (v as f32 * s + o).clamp(0.0, 1.0);
                 }
             }
             PlaneData::U16(d) => {
-                for (dst, &v) in out.iter_mut().zip(&d[start..start + self.width]) {
+                for (dst, &v) in out.iter_mut().zip(d[start..end].iter().step_by(step)) {
                     *dst = (v as f32 * s + o).clamp(0.0, 1.0);
                 }
             }
@@ -291,6 +295,7 @@ mod tests {
             width: 4,
             height: 1,
             stride: 4,
+            step: 1,
             bit_depth: 8,
             msb_aligned: false,
             full_range: false,
@@ -308,6 +313,7 @@ mod tests {
             width: 2,
             height: 1,
             stride: 2,
+            step: 1,
             bit_depth: 10,
             msb_aligned: true,
             full_range: false,
@@ -319,6 +325,28 @@ mod tests {
     }
 
     #[test]
+    fn interleaved_chroma_step() {
+        // NV12 UV row: U0 V0 U1 V1 …
+        let data: Vec<u8> = vec![10, 200, 20, 210, 30, 220, 40, 230];
+        let mk = |off: usize| PlaneRef {
+            data: PlaneData::U8(&data[off..]),
+            width: 4,
+            height: 1,
+            stride: 8,
+            step: 2,
+            bit_depth: 8,
+            msb_aligned: false,
+            full_range: true,
+            chroma: true,
+        };
+        let mut u = vec![0f32; 4];
+        let mut v = vec![0f32; 4];
+        mk(0).row_f32(0, &mut u);
+        mk(1).row_f32(0, &mut v);
+        assert!((u[3] * 255.0 - 40.0).abs() < 1e-3 && (v[0] * 255.0 - 200.0).abs() < 1e-3);
+    }
+
+    #[test]
     fn resize_plane_matches_image_resize() {
         let data: Vec<u8> = (0..(40 * 30)).map(|i| (i * 7 % 256) as u8).collect();
         let p = PlaneRef {
@@ -326,6 +354,7 @@ mod tests {
             width: 40,
             height: 30,
             stride: 40,
+            step: 1,
             bit_depth: 8,
             msb_aligned: false,
             full_range: true,

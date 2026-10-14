@@ -1,0 +1,19 @@
+{
+  "duration_s": 4.0,
+  "file": "rotate_ccw.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "wr": 0.1745329201221466
+      },
+      "t": [
+        0.3,
+        3.7
+      ]
+    }
+  ],
+  "name": "rotate_ccw",
+  "width": 854
+}

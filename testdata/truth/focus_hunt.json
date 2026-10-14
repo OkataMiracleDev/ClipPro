@@ -1,0 +1,43 @@
+{
+  "duration_s": 8.0,
+  "file": "focus_hunt.mp4",
+  "fps": 25.0,
+  "height": 480,
+  "intervals": [
+    {
+      "expect": {
+        "flags": [
+          "focus_hunting"
+        ]
+      },
+      "t": [
+        2.6,
+        5.4
+      ]
+    },
+    {
+      "expect": {
+        "no_flags": [
+          "focus_hunting"
+        ]
+      },
+      "t": [
+        0.2,
+        1.4
+      ]
+    },
+    {
+      "expect": {
+        "no_flags": [
+          "focus_hunting"
+        ]
+      },
+      "t": [
+        6.6,
+        7.8
+      ]
+    }
+  ],
+  "name": "focus_hunt",
+  "width": 854
+}
