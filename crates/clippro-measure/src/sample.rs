@@ -17,6 +17,8 @@ pub struct ClipContext {
     /// Seed base for RANSAC (derived from the media fingerprint).
     pub seed_base: u64,
     pub pair_sampling: bool,
+    /// Run motion estimation (the Motion compute group; by far the heaviest).
+    pub motion: bool,
 }
 
 /// One sample's inputs.
@@ -133,18 +135,22 @@ impl SampleMeasurer {
         let mut pair_est = None;
         if let Some(pair) = input.pair {
             let pa = crop_active(pair, ctx.active);
-            let ppyr = Pyramid::build(&pa);
             let pthumb = pa.resize_area(Rect::full(pa.w, pa.h), THUMB_W, THUMB_H);
             let pmean = pa.mean() as f32;
             set(Col::MadPair, mad(&thumb, &pthumb));
             set(Col::PairDmean, (e.mean - pmean).abs() / e.mean.max(0.02));
-            pair_est = Some(estimate(&pyr, &ppyr, sp.noise_sigma, seed.wrapping_mul(2)));
+            if ctx.motion {
+                let ppyr = Pyramid::build(&pa);
+                pair_est = Some(estimate(&pyr, &ppyr, sp.noise_sigma, seed.wrapping_mul(2)));
+            }
         }
         let mut avg_est = None;
         let mut avg_dt = 0.0;
         if let Some(prev) = &self.prev {
             avg_dt = ((input.time_us - prev.time_us) as f64 / 1e6).max(frame_dt);
-            avg_est = Some(estimate(&prev.pyr, &pyr, sp.noise_sigma, seed.wrapping_mul(2) + 1));
+            if ctx.motion {
+                avg_est = Some(estimate(&prev.pyr, &pyr, sp.noise_sigma, seed.wrapping_mul(2) + 1));
+            }
             set(Col::MadPrev, mad(&thumb, &prev.thumb));
             set(Col::Chi2Prev, chi2(&e.hist64, &prev.hist));
         }

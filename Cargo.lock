@@ -231,6 +231,16 @@ version = "0.1.0"
 [[package]]
 name = "clippro-analysis"
 version = "0.1.0"
+dependencies = [
+ "clippro-measure",
+ "clippro-media",
+ "clippro-score",
+ "clippro-types",
+ "rayon",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "clippro-audio"

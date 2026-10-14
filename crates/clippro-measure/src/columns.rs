@@ -110,6 +110,9 @@ pub struct MeasurementSet {
     pub pair_sampling: bool,
     pub active: crate::image::Rect,
     pub working: (u32, u32),
+    /// Compute groups that were analysed.
+    #[serde(default)]
+    pub groups: clippro_types::GroupMask,
 }
 
 impl MeasurementSet {

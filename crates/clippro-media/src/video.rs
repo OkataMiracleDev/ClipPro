@@ -132,6 +132,7 @@ pub struct VideoDecoder {
     conv: Frame,
     pub stats: DecodeStats,
     hw_device: *mut ff::AVBufferRef,
+    errors_in_row: u32,
 }
 
 unsafe impl Send for VideoDecoder {}
@@ -196,6 +197,7 @@ impl VideoDecoder {
             conv: Frame::new(),
             stats: DecodeStats::default(),
             hw_device,
+            errors_in_row: 0,
         })
     }
 
@@ -234,17 +236,23 @@ impl VideoDecoder {
             let r = self.dec.receive(out);
             if r == 0 {
                 self.stats.frames_decoded += 1;
+                self.errors_in_row = 0;
                 return Ok(true);
             }
             if r == EOF {
                 return Ok(false);
             }
             if r != EAGAIN {
-                // A corrupt frame: skip it and keep going.
+                // A decode error: count it and feed more input rather than spinning on receive.
                 self.stats.corrupt_packets += 1;
-                continue;
-            }
-            if self.eof_sent {
+                self.errors_in_row += 1;
+                if self.errors_in_row > 256 {
+                    return Err(MediaError::Ffmpeg(format!("decoder keeps failing: {}", crate::ffi::err_string(r))));
+                }
+                if self.eof_sent {
+                    return Ok(false);
+                }
+            } else if self.eof_sent {
                 return Ok(false);
             }
             loop {
@@ -371,6 +379,7 @@ impl VideoDecoder {
         let mut pending: Vec<(usize, i64, Frame)> = Vec::new();
         let mut last: Option<Frame> = None;
         let mut stop = false;
+        let mut seeked_for: Option<usize> = None;
         while ti < targets.len() || !pending.is_empty() {
             // Skip/seek decisions only when no pair is outstanding.
             if pending.is_empty() && ti < targets.len() {
@@ -385,8 +394,11 @@ impl VideoDecoder {
                         gap > thr
                     }
                 };
-                if last.is_some() && seek {
+                // Seek at most once per target: after a seek the decoder may land slightly before
+                // the indexed keyframe, which must not trigger another seek.
+                if last.is_some() && seek && seeked_for != Some(ti) {
                     self.seek_to(targets[ti])?;
+                    seeked_for = Some(ti);
                 }
                 self.dec.set_skip_nonref(!self.intra_only && gap > 300_000 + 8 * frame_us);
             } else {

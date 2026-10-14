@@ -6,7 +6,7 @@ use crate::submetric::SubMetric;
 use clippro_measure::calibration::Calibration;
 use clippro_measure::columns::{Col, MeasurementSet};
 use clippro_measure::util::{logistic, smoothstep};
-use clippro_types::{ColourProfile, FlagKind};
+use clippro_types::{ColourProfile, FlagKind, MetricGroup};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -153,6 +153,22 @@ pub fn normalise(input: &ClipInput, centre_weighting: f32, cal: &Calibration) ->
     for (sm, v) in &input.extra {
         if v.len() == n {
             out.n[*sm as usize] = v.to_vec();
+        }
+    }
+
+    // Groups that weren't analysed are unavailable.
+    for (g, subs) in [
+        (MetricGroup::Focus, &[SubMetric::Sharpness, SubMetric::Detail, SubMetric::FocusStability][..]),
+        (
+            MetricGroup::Exposure,
+            &[SubMetric::GradingFlexibility, SubMetric::Flicker, SubMetric::Luma, SubMetric::Contrast, SubMetric::Noise, SubMetric::WbCast][..],
+        ),
+        (MetricGroup::Motion, &[SubMetric::CameraMotion, SubMetric::SubjectMotion, SubMetric::MotionStability][..]),
+    ] {
+        if !ms.groups.contains(g) {
+            for sm in subs {
+                out.n[*sm as usize].clear();
+            }
         }
     }
 

@@ -10,3 +10,13 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+clippro-types = { path = "../clippro-types" }
+clippro-measure = { path = "../clippro-measure" }
+clippro-media = { path = "../clippro-media" }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+clippro-score = { path = "../clippro-score" }
+serde_json = "1"
+rayon = "1"
