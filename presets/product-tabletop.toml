@@ -1,0 +1,46 @@
+[preset]
+name = "Product / Tabletop"
+version = 1
+description = "Pin-sharp, well-exposed product and tabletop shots."
+
+[thresholds]
+score = [0.65, 1.0]
+segment_length = ["2s", "none"]
+max_per_clip = "none"
+
+[weights]
+focus = 45.0
+exposure = 40.0
+motion = 15.0
+audio = 0.0
+content = 0.0
+
+[focus]
+sharpness = 1.0
+detail = 0.8
+
+[exposure]
+grading_flexibility = 0.8
+
+[motion]
+camera_motion = -0.3
+
+[flags]
+clipping = "force_exclude"
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "0.75s"
+centre_weighting = 0.6
+stability_emphasis = 0.4
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

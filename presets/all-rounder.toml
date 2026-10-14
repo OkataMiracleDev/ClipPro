@@ -1,0 +1,33 @@
+[preset]
+name = "All-Rounder"
+version = 1
+description = "Balanced default for any footage."
+
+[thresholds]
+score = [0.55, 1.0]
+segment_length = ["2s", "none"]
+max_per_clip = "none"
+
+[weights]
+focus = 35.0
+exposure = 30.0
+motion = 25.0
+audio = 10.0
+content = 0.0
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "0.75s"
+centre_weighting = 0.2
+stability_emphasis = 0.4
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

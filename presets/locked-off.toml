@@ -1,0 +1,40 @@
+[preset]
+name = "Locked-Off"
+version = 1
+description = "Only tripod-steady, static shots."
+
+[thresholds]
+score = [0.6, 1.0]
+segment_length = ["3s", "none"]
+max_per_clip = "none"
+
+[weights]
+focus = 40.0
+exposure = 30.0
+motion = 30.0
+audio = 0.0
+content = 0.0
+
+[motion]
+camera_motion = -1.0
+motion_stability = 1.0
+
+[flags]
+shaky = "force_exclude"
+
+[camera_filter]
+enabled = true
+static_only = true
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "1s"
+centre_weighting = 0.2
+stability_emphasis = 1.0
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

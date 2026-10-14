@@ -1,0 +1,37 @@
+[preset]
+name = "B-roll"
+version = 1
+description = "Clean, steady cutaways of a usable length."
+
+[thresholds]
+score = [0.58, 1.0]
+segment_length = ["3s", "12s"]
+max_per_clip = "4"
+
+[weights]
+focus = 40.0
+exposure = 30.0
+motion = 30.0
+audio = 0.0
+content = 0.0
+
+[motion]
+motion_stability = 0.7
+camera_motion = 0.2
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "0.75s"
+centre_weighting = 0.2
+stability_emphasis = 0.4
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "trim_best"

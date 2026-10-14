@@ -1,0 +1,42 @@
+[preset]
+name = "Wedding / Event"
+version = 1
+description = "Ceremonies and parties: tolerant of dim venues, wary of LED flicker."
+
+[thresholds]
+score = [0.5, 1.0]
+segment_length = ["2s", "30s"]
+max_per_clip = "none"
+
+[weights]
+focus = 35.0
+exposure = 35.0
+motion = 25.0
+audio = 5.0
+content = 0.0
+
+[exposure]
+flicker = -0.8
+
+[motion]
+subject_motion = 0.2
+
+[flags]
+low_light = "neutral"
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "0.75s"
+centre_weighting = 0.2
+stability_emphasis = 0.4
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

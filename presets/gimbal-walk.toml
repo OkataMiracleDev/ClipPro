@@ -1,0 +1,40 @@
+[preset]
+name = "Gimbal Walk"
+version = 1
+description = "Smooth moving gimbal shots."
+
+[thresholds]
+score = [0.55, 1.0]
+segment_length = ["3s", "none"]
+max_per_clip = "none"
+
+[weights]
+focus = 35.0
+exposure = 25.0
+motion = 40.0
+audio = 0.0
+content = 0.0
+
+[motion]
+motion_stability = 1.0
+camera_motion = 0.5
+
+[flags]
+shaky = "force_exclude"
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "0.75s"
+centre_weighting = 0.2
+stability_emphasis = 0.9
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

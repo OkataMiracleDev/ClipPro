@@ -10,3 +10,19 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+clippro-types = { path = "../clippro-types" }
+clippro-measure = { path = "../clippro-measure" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+schemars = "1"
+thiserror = "2"
+rayon = "1"
+
+[dev-dependencies]
+proptest = "1"
+criterion = "0.7"
+
+[[bench]]
+name = "rescore"
+harness = false

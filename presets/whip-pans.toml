@@ -1,0 +1,44 @@
+[preset]
+name = "Whip Pans"
+version = 1
+description = "Finds fast horizontal whip pans in either direction."
+
+[thresholds]
+score = [0.45, 1.0]
+segment_length = ["0.3s", "3s"]
+max_per_clip = "none"
+
+[weights]
+focus = 10.0
+exposure = 20.0
+motion = 70.0
+audio = 0.0
+content = 0.0
+
+[focus]
+sharpness = 0.0
+
+[motion]
+camera_motion = 1.0
+motion_stability = 0.0
+
+[flags]
+motion_blur = "neutral"
+shaky = "neutral"
+
+[camera_filter]
+enabled = true
+static_only = false
+mirror = true
+radius = 0.7
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "0.2s"
+centre_weighting = 0.2
+stability_emphasis = 0.0
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

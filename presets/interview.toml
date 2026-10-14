@@ -1,0 +1,51 @@
+[preset]
+name = "Interview"
+version = 1
+description = "Talking Head plus faces in focus and complete sentences (uses AI modules when on)."
+
+[thresholds]
+score = [0.62, 1.0]
+segment_length = ["3s", "none"]
+max_per_clip = "none"
+
+[weights]
+focus = 35.0
+exposure = 25.0
+motion = 15.0
+audio = 10.0
+content = 15.0
+
+[exposure]
+flicker = -0.7
+
+[motion]
+camera_motion = -0.6
+subject_motion = 0.0
+
+[audio]
+speech_presence = 0.8
+
+[content]
+face_focus = 0.8
+face_size = 0.3
+
+[flags]
+flub = "disfavour"
+no_face = "disfavour"
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "1s"
+centre_weighting = 0.5
+stability_emphasis = 0.5
+handles_samples = 3
+snap_to_sentences = true
+long_segment_mode = "split"

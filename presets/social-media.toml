@@ -1,0 +1,37 @@
+[preset]
+name = "Social Media"
+version = 1
+description = "Short, punchy, well-exposed moments for short-form edits."
+
+[thresholds]
+score = [0.6, 1.0]
+segment_length = ["1s", "15s"]
+max_per_clip = "3"
+
+[weights]
+focus = 35.0
+exposure = 30.0
+motion = 30.0
+audio = 5.0
+content = 0.0
+
+[motion]
+subject_motion = 0.4
+camera_motion = 0.2
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "0.4s"
+centre_weighting = 0.4
+stability_emphasis = 0.3
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "trim_best"

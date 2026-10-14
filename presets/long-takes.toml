@@ -1,0 +1,39 @@
+[preset]
+name = "Long Takes"
+version = 1
+description = "Holds out for long, stable shots."
+
+[thresholds]
+score = [0.6, 1.0]
+segment_length = ["10s", "none"]
+max_per_clip = "none"
+
+[weights]
+focus = 35.0
+exposure = 30.0
+motion = 35.0
+audio = 0.0
+content = 0.0
+
+[focus]
+focus_stability = 0.8
+
+[motion]
+motion_stability = 0.9
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "1.5s"
+centre_weighting = 0.2
+stability_emphasis = 0.8
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

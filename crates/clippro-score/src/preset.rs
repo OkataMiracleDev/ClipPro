@@ -25,6 +25,7 @@ pub struct Preset {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub content: BTreeMap<String, SubPref>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[schemars(with = "BTreeMap<String, String>")]
     pub flags: BTreeMap<String, Tier>,
     #[serde(default)]
     pub camera_filter: CameraFilterToml,
@@ -389,7 +390,7 @@ mod tests {
     fn rejects_bad_values() {
         let t = BUILTIN[0].1.replace("score = [0.55, 1.0]", "score = [0.9, 0.2]");
         assert!(Preset::parse(&t).is_err());
-        let t = format!("{}\n", BUILTIN[0].1).replace("[focus]\n", "[focus]\nbogus = 0.5\n");
+        let t = format!("{}\n[focus]\nbogus = 0.5\n", BUILTIN[0].1);
         assert!(Preset::parse(&t).is_err());
     }
 

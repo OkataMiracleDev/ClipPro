@@ -1,0 +1,58 @@
+[preset]
+name = "Cleanup"
+version = 1
+description = "Keeps almost everything, removing only junk: leaders, frozen frames, blur and black."
+
+[thresholds]
+score = [0.25, 1.0]
+segment_length = ["0.5s", "none"]
+max_per_clip = "none"
+
+[weights]
+focus = 34.0
+exposure = 33.0
+motion = 33.0
+audio = 0.0
+content = 0.0
+
+[focus]
+sharpness = 0.35
+detail = 0.15
+focus_stability = 0.25
+
+[exposure]
+grading_flexibility = 0.25
+flicker = -0.25
+noise = -0.1
+
+[motion]
+motion_stability = 0.3
+
+[audio]
+clean = 0.3
+noise_floor = -0.15
+wind = -0.25
+hum = -0.15
+
+[flags]
+solid_colour = "force_exclude"
+duplicate = "force_exclude"
+motion_blur = "force_exclude"
+low_light = "force_exclude"
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "0.25s"
+centre_weighting = 0.0
+stability_emphasis = 0.2
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

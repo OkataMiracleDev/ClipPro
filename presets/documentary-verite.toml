@@ -1,0 +1,42 @@
+[preset]
+name = "Documentary Verité"
+version = 1
+description = "Handheld observational footage where content beats polish."
+
+[thresholds]
+score = [0.45, 1.0]
+segment_length = ["4s", "none"]
+max_per_clip = "none"
+
+[weights]
+focus = 30.0
+exposure = 30.0
+motion = 20.0
+audio = 20.0
+content = 0.0
+
+[motion]
+motion_stability = 0.3
+
+[audio]
+speech_presence = 0.6
+
+[flags]
+shaky = "neutral"
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "1.5s"
+centre_weighting = 0.2
+stability_emphasis = 0.4
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

@@ -1,0 +1,36 @@
+[preset]
+name = "Tilt"
+version = 1
+description = "Vertical camera moves, up or down."
+
+[thresholds]
+score = [0.5, 1.0]
+segment_length = ["1s", "none"]
+max_per_clip = "none"
+
+[weights]
+focus = 30.0
+exposure = 25.0
+motion = 45.0
+audio = 0.0
+content = 0.0
+
+[motion]
+camera_motion = 0.5
+
+[camera_filter]
+enabled = true
+static_only = false
+mirror = true
+radius = 0.7
+direction = 90.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "0.5s"
+centre_weighting = 0.2
+stability_emphasis = 0.4
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

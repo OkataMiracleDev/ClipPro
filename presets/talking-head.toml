@@ -1,0 +1,43 @@
+[preset]
+name = "Talking Head"
+version = 1
+description = "Interviews and dialogue: steady, sharp, well exposed; ignores small subject movement."
+
+[thresholds]
+score = [0.62, 1.0]
+segment_length = ["3s", "none"]
+max_per_clip = "none"
+
+[weights]
+focus = 40.0
+exposure = 30.0
+motion = 20.0
+audio = 10.0
+content = 0.0
+
+[exposure]
+flicker = -0.7
+
+[motion]
+camera_motion = -0.6
+subject_motion = 0.0
+
+[audio]
+speech_presence = 0.5
+
+[camera_filter]
+enabled = false
+static_only = false
+mirror = false
+radius = 0.0
+direction = 0.0
+zoom = 0.0
+rotate = 0.0
+
+[advanced]
+gap_tolerance = "1s"
+centre_weighting = 0.5
+stability_emphasis = 0.5
+handles_samples = 3
+snap_to_sentences = false
+long_segment_mode = "split"

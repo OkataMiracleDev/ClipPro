@@ -486,7 +486,7 @@ subject_motion = 0.0
 
 [audio]
 loudness = { enabled = true, target_lufs = -23, tolerance_lu = 8 }
-clipping = -1.0
+clean = 1.0                     # reward no clipping
 speech_presence = 0.5
 
 [flags]                         # force_exclude | disfavour | neutral | favour | force_include
