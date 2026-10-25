@@ -10,6 +10,45 @@ const BLOCK: usize = 16;
 #[derive(Clone, Debug, Default)]
 pub struct Pyramid {
     pub levels: Vec<Image>,
+    /// Integral images (sum, sum of squares) per level, for O(1) patch statistics.
+    pub ii: Vec<Integral>,
+}
+
+/// Summed-area tables of an image and its square, (w+1)×(h+1), in f64.
+#[derive(Clone, Debug, Default)]
+pub struct Integral {
+    w: usize,
+    s: Vec<f64>,
+    s2: Vec<f64>,
+}
+
+impl Integral {
+    pub fn new(img: &Image) -> Integral {
+        let (w, h) = (img.w, img.h);
+        let stride = w + 1;
+        let mut s = vec![0f64; stride * (h + 1)];
+        let mut s2 = vec![0f64; stride * (h + 1)];
+        for y in 0..h {
+            let (mut rs, mut rs2) = (0f64, 0f64);
+            let row = img.row(y);
+            for x in 0..w {
+                let v = row[x] as f64;
+                rs += v;
+                rs2 += v * v;
+                s[(y + 1) * stride + x + 1] = s[y * stride + x + 1] + rs;
+                s2[(y + 1) * stride + x + 1] = s2[y * stride + x + 1] + rs2;
+            }
+        }
+        Integral { w, s, s2 }
+    }
+
+    /// (sum, sum of squares) over the n×n patch at (x0, y0).
+    #[inline]
+    fn rect(&self, x0: usize, y0: usize, n: usize) -> (f64, f64) {
+        let st = self.w + 1;
+        let (a, b, c, d) = (y0 * st + x0, y0 * st + x0 + n, (y0 + n) * st + x0, (y0 + n) * st + x0 + n);
+        (self.s[d] - self.s[b] - self.s[c] + self.s[a], self.s2[d] - self.s2[b] - self.s2[c] + self.s2[a])
+    }
 }
 
 impl Pyramid {
@@ -21,7 +60,8 @@ impl Pyramid {
         let l0 = active.resize_area(Rect::full(active.w, active.h), w0, h0);
         let l1 = l0.half();
         let l2 = l1.half();
-        Pyramid { levels: vec![l0, l1, l2] }
+        let ii = vec![Integral::new(&l0), Integral::new(&l1), Integral::new(&l2)];
+        Pyramid { levels: vec![l0, l1, l2], ii }
     }
 
     pub fn l0(&self) -> &Image {
@@ -94,25 +134,36 @@ fn patch(img: &Image, x0: usize, y0: usize, n: usize, out: &mut [f32]) -> (f32, 
     (m, sd)
 }
 
-/// SAD between a normalised reference patch and the normalised candidate patch at (x0,y0).
-fn sad_at(img: &Image, x0: i64, y0: i64, n: usize, reference: &[f32], scratch: &mut [f32]) -> f32 {
+/// SAD between a normalised reference patch and the candidate patch at (x0, y0), normalised
+/// on the fly (mean and std from the integral images, so no copy per candidate).
+fn sad_at(img: &Image, ii: &Integral, x0: i64, y0: i64, n: usize, reference: &[f32]) -> f32 {
     if x0 < 0 || y0 < 0 || x0 as usize + n > img.w || y0 as usize + n > img.h {
         return f32::INFINITY;
     }
-    patch(img, x0 as usize, y0 as usize, n, scratch);
+    let (x0, y0) = (x0 as usize, y0 as usize);
+    let nn = (n * n) as f64;
+    let (sum, sum2) = ii.rect(x0, y0, n);
+    let m = sum / nn;
+    let sd = ((sum2 / nn - m * m).max(0.0)).sqrt();
+    let (m, inv) = (m as f32, (1.0 / (sd + 0.01)) as f32);
     let mut s = 0f32;
-    for (a, b) in reference.iter().zip(scratch.iter()) {
-        s += (a - b).abs();
+    for y in 0..n {
+        let row = &img.row(y0 + y)[x0..x0 + n];
+        let r = &reference[y * n..(y + 1) * n];
+        for (a, b) in r.iter().zip(row) {
+            s += (a - (b - m) * inv).abs();
+        }
     }
     s
 }
 
-/// Exhaustive global translation search at the coarsest level, ±`r` px around `(cx, cy)`.
-fn global_shift(a: &Image, b: &Image, r: i64, cx: i64, cy: i64) -> (i64, i64) {
+/// Exhaustive global translation search, ±`r` px around `(cx, cy)`. Returns the `k` best
+/// (cost, dx, dy) candidates, cheapest first.
+fn global_shift(a: &Image, b: &Image, r: i64, cx: i64, cy: i64, k: usize) -> Vec<(f32, i64, i64)> {
     let ma = a.mean() as f32;
     let mb = b.mean() as f32;
     let (w, h) = (a.w as i64, a.h as i64);
-    let mut best = (f32::INFINITY, 0i64, 0i64);
+    let mut all: Vec<(f32, i64, i64)> = Vec::new();
     for dy in cy - r..=cy + r {
         for dx in cx - r..=cx + r {
             if dx.abs() >= w / 2 || dy.abs() >= h / 2 {
@@ -134,12 +185,15 @@ fn global_shift(a: &Image, b: &Image, r: i64, cx: i64, cy: i64) -> (i64, i64) {
                 }
             }
             let cost = s / ((x1 - x0) * (y1 - y0)) as f32 + 1e-6 * ((dx - cx).pow(2) + (dy - cy).pow(2)) as f32;
-            if cost < best.0 {
-                best = (cost, dx, dy);
-            }
+            all.push((cost, dx, dy));
         }
     }
-    (best.1, best.2)
+    all.sort_by(|p, q| p.0.total_cmp(&q.0).then(p.1.cmp(&q.1)).then(p.2.cmp(&q.2)));
+    all.truncate(k.max(1));
+    if all.is_empty() {
+        all.push((f32::INFINITY, cx, cy));
+    }
+    all
 }
 
 fn parabola(sm: f32, s0: f32, sp: f32) -> f32 {
@@ -251,9 +305,27 @@ pub fn estimate_with_prior(
     if a0.w != b0.w || a0.h != b0.h || a0.w < 2 * BLOCK || a0.h < 2 * BLOCK {
         return est;
     }
-    // Coarse global prior at level 2 (±16 px there = ±64 px at level 0).
+    // Coarse global prior (covers ±16 px at level 2 = ±64 px at level 0, around the prior).
     let (pcx, pcy) = prior.map(|p| ((p[0] / 4.0).round() as i64, (p[1] / 4.0).round() as i64)).unwrap_or((0, 0));
-    let (gx, gy) = global_shift(&prev.levels[2], &cur.levels[2], 16, pcx, pcy);
+    // Coarse-to-fine: ±8 px on a half-size copy of level 2 (= ±16 at level 2), then ±2 px at
+    // level 2. Same range as an exhaustive ±16 search at a fraction of the cost.
+    // The coarse level can alias on fine texture, so the 4 best coarse candidates and the prior
+    // itself are each refined, and the cheapest refined result wins.
+    let (a3, b3) = (prev.levels[2].half(), cur.levels[2].half());
+    let mut seeds: Vec<(i64, i64)> = vec![(pcx, pcy)];
+    if a3.w >= 16 && a3.h >= 8 {
+        let c3 = global_shift(&a3, &b3, 8, (pcx as f64 / 2.0).round() as i64, (pcy as f64 / 2.0).round() as i64, 4);
+        seeds.extend(c3.iter().map(|c| (2 * c.1, 2 * c.2)));
+    }
+    let (mut gx, mut gy, mut gbest) = (pcx, pcy, f32::INFINITY);
+    for (sx, sy) in seeds {
+        let c = global_shift(&prev.levels[2], &cur.levels[2], 2, sx, sy, 1)[0];
+        if c.0 < gbest {
+            gbest = c.0;
+            gx = c.1;
+            gy = c.2;
+        }
+    }
 
     let (gw, gh) = grid;
     let tex_thr = (2.0 * noise_sigma).max(0.015);
@@ -264,9 +336,7 @@ pub fn estimate_with_prior(
     let mut idx = Vec::new();
     let mut textured = 0usize;
     let mut refp = vec![0f32; BLOCK * BLOCK];
-    let mut scratch = vec![0f32; BLOCK * BLOCK];
     let mut ref1 = vec![0f32; 64];
-    let mut scr1 = vec![0f32; 64];
     let (a1, b1) = (&prev.levels[1], &cur.levels[1]);
     let (a2, b2) = (&prev.levels[2], &cur.levels[2]);
     for j in 0..gh {
@@ -286,7 +356,7 @@ pub fn estimate_with_prior(
             for dy in -6..=6i64 {
                 for dx in -6..=6i64 {
                     let (vx, vy) = (gx + dx, gy + dy);
-                    let s = sad_at(b2, bx2 as i64 + vx, by2 as i64 + vy, 8, &ref1, &mut scr1)
+                    let s = sad_at(b2, &cur.ii[2], bx2 as i64 + vx, by2 as i64 + vy, 8, &ref1)
                         + 1e-4 * (dx * dx + dy * dy) as f32;
                     if s < best2.0 {
                         best2 = (s, vx, vy);
@@ -300,7 +370,7 @@ pub fn estimate_with_prior(
             for dy in -3..=3i64 {
                 for dx in -3..=3i64 {
                     let (vx, vy) = (2 * best2.1 + dx, 2 * best2.2 + dy);
-                    let s = sad_at(b1, bx1 as i64 + vx, by1 as i64 + vy, 8, &ref1, &mut scr1)
+                    let s = sad_at(b1, &cur.ii[1], bx1 as i64 + vx, by1 as i64 + vy, 8, &ref1)
                         + 1e-4 * (dx * dx + dy * dy) as f32;
                     if s < best1.0 {
                         best1 = (s, vx, vy);
@@ -314,7 +384,7 @@ pub fn estimate_with_prior(
             for dy in -3..=3i64 {
                 for dx in -3..=3i64 {
                     let (vx, vy) = (px + dx, py + dy);
-                    let s = sad_at(b0, bx as i64 + vx, by as i64 + vy, BLOCK, &refp, &mut scratch);
+                    let s = sad_at(b0, &cur.ii[0], bx as i64 + vx, by as i64 + vy, BLOCK, &refp);
                     costs[(dy + 3) as usize][(dx + 3) as usize] = s;
                     if dx.abs() <= 2 && dy.abs() <= 2 && s < best0.0 {
                         best0 = (s, vx, vy);

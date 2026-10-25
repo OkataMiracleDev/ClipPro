@@ -235,9 +235,157 @@ pub fn working_dims(w: usize, h: usize, max_long: usize) -> (usize, usize) {
     (even(w as f64 * scale), even(h as f64 * scale))
 }
 
-/// Area-filter resize of a decoded plane straight to f32 (one pass over source rows).
-/// `src` is a rectangle in source pixel coordinates (may be fractional for chroma mapping).
+/// Flattened box-filter weights: output `i` reads source indices `start[i]..start[i]+len[i]`
+/// with weights `w[off[i]..off[i]+len[i]]`.
+struct FlatWeights {
+    start: Vec<usize>,
+    len: Vec<usize>,
+    off: Vec<usize>,
+    w: Vec<f32>,
+}
+
+fn flat_weights(start: f64, len: f64, out: usize, limit: usize) -> FlatWeights {
+    let nested = area_weights(start, len, out);
+    let mut fw = FlatWeights {
+        start: Vec::with_capacity(out),
+        len: Vec::with_capacity(out),
+        off: Vec::with_capacity(out),
+        w: Vec::new(),
+    };
+    for ws in nested {
+        let first = ws.first().map(|x| x.0).unwrap_or(0).min(limit.saturating_sub(1));
+        fw.start.push(first);
+        fw.off.push(fw.w.len());
+        let mut n = 0;
+        for (i, wt) in ws {
+            if i < limit {
+                fw.w.push(wt);
+                n += 1;
+            } else if n > 0 {
+                // Past the edge: fold into the last valid sample (edge clamp).
+                if let Some(last) = fw.w.last_mut() {
+                    *last += wt;
+                }
+            }
+        }
+        if n == 0 {
+            fw.w.push(1.0);
+            n = 1;
+        }
+        fw.len.push(n);
+    }
+    fw
+}
+
+/// Raw code-value range that maps into [0,1]. Clamping codes is equivalent to clamping
+/// normalised values because the mapping is monotonic.
+fn code_range(p: &PlaneRef) -> (f32, f32, u32, u32) {
+    let (s, o) = p.norm();
+    let lo = ((-o / s) - 1e-3).ceil().max(0.0);
+    let hi = (((1.0 - o) / s) + 1e-3).floor().min(65535.0);
+    (s, o, lo as u32, hi as u32)
+}
+
+/// Area-filter resize of a decoded plane straight to f32. `src` is a rectangle in source pixel
+/// coordinates (may be fractional for chroma mapping). Works on raw code values and normalises
+/// once per output pixel; integer downscale factors take a pure integer box-sum path.
 pub fn resize_plane(p: &PlaneRef, src: (f64, f64, f64, f64), ow: usize, oh: usize) -> Image {
+    let (sx, sy, sw, sh) = src;
+    let (s, o, lo, hi) = code_range(p);
+    let step = p.step.max(1);
+    let mut out = Image::new(ow, oh);
+    if ow == 0 || oh == 0 || p.width == 0 || p.height == 0 {
+        return out;
+    }
+    let integral = sx.fract() == 0.0 && sy.fract() == 0.0 && sw.fract() == 0.0 && sh.fract() == 0.0;
+    let (x0, y0, iw, ih) = (sx as usize, sy as usize, sw as usize, sh as usize);
+    if integral && iw % ow == 0 && ih % oh == 0 && x0 + iw <= p.width && y0 + ih <= p.height {
+        let (kx, ky) = (iw / ow, ih / oh);
+        let scale = s / (kx * ky) as f32;
+        let mut sums = vec![0u32; ow];
+        for oy in 0..oh {
+            sums.iter_mut().for_each(|v| *v = 0);
+            for r in 0..ky {
+                let base = (y0 + oy * ky + r) * p.stride + x0 * step;
+                match &p.data {
+                    PlaneData::U8(d) => {
+                        for (ox, acc) in sums.iter_mut().enumerate() {
+                            let b = base + ox * kx * step;
+                            let mut t = 0u32;
+                            for k in 0..kx {
+                                t += (d[b + k * step] as u32).clamp(lo, hi);
+                            }
+                            *acc += t;
+                        }
+                    }
+                    PlaneData::U16(d) => {
+                        for (ox, acc) in sums.iter_mut().enumerate() {
+                            let b = base + ox * kx * step;
+                            let mut t = 0u32;
+                            for k in 0..kx {
+                                t += (d[b + k * step] as u32).clamp(lo, hi);
+                            }
+                            *acc += t;
+                        }
+                    }
+                }
+            }
+            let row = &mut out.data[oy * ow..(oy + 1) * ow];
+            for (dst, sum) in row.iter_mut().zip(&sums) {
+                *dst = (*sum as f32 * scale + o).clamp(0.0, 1.0);
+            }
+        }
+        return out;
+    }
+    // General separable path with flattened weights on raw codes.
+    // Each source row's horizontal pass is computed once and scattered to the output rows that
+    // use it (non-integer factors share rows between neighbouring outputs).
+    let wx = flat_weights(sx, sw, ow, p.width);
+    let wy = flat_weights(sy, sh, oh, p.height);
+    let mut users: Vec<Vec<(usize, f32)>> = vec![Vec::new(); p.height];
+    for oy in 0..oh {
+        for j in 0..wy.len[oy] {
+            users[wy.start[oy] + j].push((oy, wy.w[wy.off[oy] + j]));
+        }
+    }
+    let mut tmp = vec![0f32; ow];
+    for (y, us) in users.iter().enumerate() {
+        if us.is_empty() {
+            continue;
+        }
+        let base = y * p.stride;
+        match &p.data {
+            PlaneData::U8(d) => horizontal(d, base, step, &wx, lo, hi, &mut tmp),
+            PlaneData::U16(d) => horizontal(d, base, step, &wx, lo, hi, &mut tmp),
+        }
+        for &(oy, wyv) in us {
+            let dst = &mut out.data[oy * ow..(oy + 1) * ow];
+            for (d, t) in dst.iter_mut().zip(&tmp) {
+                *d += t * wyv;
+            }
+        }
+    }
+    for d in out.data.iter_mut() {
+        *d = (*d * s + o).clamp(0.0, 1.0);
+    }
+    out
+}
+
+#[inline]
+fn horizontal<T: Copy + Into<u32>>(d: &[T], base: usize, step: usize, wx: &FlatWeights, lo: u32, hi: u32, out: &mut [f32]) {
+    for (ox, t) in out.iter_mut().enumerate() {
+        let (st, off, n) = (wx.start[ox], wx.off[ox], wx.len[ox]);
+        let mut acc = 0f32;
+        for i in 0..n {
+            let v: u32 = d[base + (st + i) * step].into();
+            acc += v.clamp(lo, hi) as f32 * wx.w[off + i];
+        }
+        *t = acc;
+    }
+}
+
+/// Reference implementation (normalise every source pixel, then filter); used by tests.
+pub fn resize_plane_reference(p: &PlaneRef, src: (f64, f64, f64, f64), ow: usize, oh: usize) -> Image {
     let (sx, sy, sw, sh) = src;
     let wx = area_weights(sx, sw, ow);
     let wy = area_weights(sy, sh, oh);
@@ -322,6 +470,46 @@ mod tests {
         let mut row = vec![0f32; 2];
         p.row_f32(0, &mut row);
         assert!(row[0].abs() < 1e-6 && (row[1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn fast_resize_matches_reference() {
+        let (w, h) = (96usize, 54usize);
+        let d8: Vec<u8> = (0..w * h).map(|i| ((i * 37 + i / w * 11) % 256) as u8).collect();
+        let d16: Vec<u16> = (0..w * h).map(|i| (((i * 97) % 1024) << 6) as u16).collect();
+        let mk = |data, width, step, bit_depth, msb, full, chroma| PlaneRef {
+            data,
+            width,
+            height: h,
+            stride: w,
+            step,
+            bit_depth,
+            msb_aligned: msb,
+            full_range: full,
+            chroma,
+        };
+        let planes = [
+            mk(PlaneData::U8(&d8), w, 1, 8, false, false, false),
+            mk(PlaneData::U8(&d8), w, 1, 8, false, true, false),
+            mk(PlaneData::U16(&d16), w, 1, 10, true, false, false),
+            mk(PlaneData::U8(&d8), w / 2, 2, 8, false, false, true),
+        ];
+        for p in &planes {
+            let full = (0.0, 0.0, p.width as f64, p.height as f64);
+            for (ow, oh) in [(p.width / 2, p.height / 2), (p.width / 3, p.height / 3), (17, 11), (p.width, p.height)] {
+                let a = resize_plane(p, full, ow, oh);
+                let b = resize_plane_reference(p, full, ow, oh);
+                for (x, y) in a.data.iter().zip(&b.data) {
+                    assert!((x - y).abs() < 2e-5, "{ow}x{oh}: {x} vs {y}");
+                }
+            }
+            let sub = (3.5, 2.25, p.width as f64 / 2.0, p.height as f64 / 2.0);
+            let a = resize_plane(p, sub, 9, 7);
+            let b = resize_plane_reference(p, sub, 9, 7);
+            for (x, y) in a.data.iter().zip(&b.data) {
+                assert!((x - y).abs() < 2e-5, "sub: {x} vs {y}");
+            }
+        }
     }
 
     #[test]
