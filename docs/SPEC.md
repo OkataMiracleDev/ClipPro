@@ -443,7 +443,7 @@ export_history(id, format, path, settings_json, created_at)
 ```
 
 ### 12.3 Measurement encoding
-Columnar per run: `time_us: i64[]`, then one column per measure. Values are quantised to u16 over the measure's documented range (ALGORITHMS §1.0, about 1.5e-5 relative step). Booleans are bitsets. Motion vectors (optional, for the overlay) are stored as i8 pairs at 16×9 grid resolution. Columns are compressed with zstd level 3. Size estimate: 100 h at 4 Hz ≈ 1.44 M samples × ~40 columns × 2 B ≈ 115 MB raw, about 40 MB compressed. On load, columns are decoded into SoA `Vec<f32>` in memory (≈230 MB for 100 h; acceptable; documented as about 2.3 MB per footage hour).
+Columnar per run: `time_us: i64[]`, then one column per measure. Values are quantised to u16 over the measure's documented range (ALGORITHMS §1.0, about 1.5e-5 relative step). Booleans are bitsets. Motion vectors (optional, for the overlay) are stored as i8 pairs at 16×9 grid resolution. Columns are compressed with zstd level 3. Measured size (ADR-001): 2–3.3 MB per footage hour including tiles, motion vectors and histograms; budget ≤ 4 MB per hour (about 400 MB for 100 h). On load, columns are decoded into SoA `Vec<f32>` in memory (≈230 MB for 100 h, about 2.3 MB per footage hour).
 
 ## 13. Presets
 

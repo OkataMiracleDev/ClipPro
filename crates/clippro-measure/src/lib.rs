@@ -2,6 +2,7 @@
 //! Every function here implements a section of docs/ALGORITHMS.md; see the doc comments.
 
 pub mod calibration;
+pub mod codec;
 pub mod columns;
 pub mod image;
 pub mod motion;

@@ -25,6 +25,9 @@ fn main() {
         );
         if let Ok(m) = &r {
             use clippro_measure::columns::Col;
+            if let Ok(blob) = clippro_measure::codec::encode(m, Calibration::embedded()) {
+                println!("    encoded {} KB = {:.2} MB per footage hour", blob.len() / 1024, blob.len() as f64 / 1e6 * 3.6e9 / info.duration_us as f64);
+            }
             let med = |c: Col| clippro_measure::util::median(m.col(c));
             println!(
                 "    row_band {:.3} flicker {:.3} stab {:.3} stab_conf {:.2} zr {:.3} wr {:.3} subj {:.4} cam {:.4} mad_pair {:.5} noise {:.4}",
