@@ -86,10 +86,33 @@ pub fn measure_section(
     cancel: &AtomicBool,
     mut progress: impl FnMut(usize),
 ) -> Result<Vec<SampleRaw>> {
+    let mut out: Vec<SampleRaw> = Vec::with_capacity(end.saturating_sub(start));
+    measure_section_each(path, info, plan, start, end, ctx, opts, cancel, |raw| {
+        progress(raw.index);
+        out.push(raw);
+    })?;
+    Ok(out)
+}
+
+/// As `measure_section`, delivering each measured sample (in order) to `on_sample` instead of
+/// collecting them. Returns `Cancelled` if `cancel` was set; samples already delivered stand.
+pub fn measure_section_each(
+    path: &Path,
+    info: &MediaInfo,
+    plan: &[i64],
+    start: usize,
+    end: usize,
+    ctx: &ClipContext,
+    opts: &AnalyzeOptions,
+    cancel: &AtomicBool,
+    mut on_sample: impl FnMut(SampleRaw),
+) -> Result<()> {
+    if start >= end {
+        return Ok(());
+    }
     let mut dec = VideoDecoder::open(path, info, &opts.decode)?;
     let mut measurer = SampleMeasurer::new(ctx.clone());
     let from = start.saturating_sub(1);
-    let mut out: Vec<SampleRaw> = Vec::with_capacity(end - start);
     let mut cancelled = false;
     let working = ctx.working;
     dec.decode_samples(&plan[from..end], from, opts.pair_sampling, |s| {
@@ -108,15 +131,14 @@ pub fn measure_section(
             chroma,
         });
         if s.index >= start {
-            out.push(raw);
-            progress(s.index);
+            on_sample(raw);
         }
         true
     })?;
     if cancelled {
         return Err(AnalyzeError::Cancelled);
     }
-    Ok(out)
+    Ok(())
 }
 
 /// Clip-level context for a file.
