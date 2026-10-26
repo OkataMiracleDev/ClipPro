@@ -1,0 +1,467 @@
+//! A project session: the database, the analysis scheduler and the scoring engine together.
+//! Used by both `clippro-cli` and the desktop app.
+
+use crate::import::{discover, looks_like_proxy, proxy_matches};
+use crate::store::{lock, CacheKey, ProjectStore};
+use clippro_analysis::clip::{seed_from_fingerprint, AnalyzeOptions};
+use clippro_analysis::jobs::{Event, JobSpec, JobStatus, Scheduler, SchedulerConfig};
+use clippro_measure::calibration::Calibration;
+use clippro_measure::codec;
+use clippro_measure::columns::MeasurementSet;
+use clippro_media::{fingerprint, probe, MediaInfo};
+use clippro_project::{Db, MeasureCache, MediaRow, NewMedia, OpenReport, RunParams, RunState};
+use clippro_score::{ClipInput, Engine, Override, OverrideKind, Selects, Settings};
+use clippro_types::{ClipId, ColourProfile, MediaId};
+use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SessionError {
+    #[error(transparent)]
+    Project(#[from] clippro_project::ProjectError),
+    #[error(transparent)]
+    Media(#[from] clippro_media::MediaError),
+    #[error("{0}")]
+    Other(String),
+}
+
+pub type Result<T> = std::result::Result<T, SessionError>;
+
+#[derive(Clone, Debug)]
+pub struct SessionOptions {
+    pub analyze: AnalyzeOptions,
+    pub scheduler: SchedulerConfig,
+    /// Global measurement cache location (SPEC ING-8); `None` disables it.
+    pub cache_path: Option<PathBuf>,
+}
+
+impl Default for SessionOptions {
+    fn default() -> Self {
+        SessionOptions {
+            analyze: AnalyzeOptions::default(),
+            scheduler: SchedulerConfig::default(),
+            cache_path: Some(MeasureCache::default_path()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ImportReport {
+    pub added: Vec<(PathBuf, ClipId)>,
+    /// Files whose content is already in the project (SPEC ING-9); not added again.
+    pub duplicates: Vec<(PathBuf, MediaId)>,
+    /// (original, proxy)
+    pub proxies_linked: Vec<(PathBuf, PathBuf)>,
+    pub failed: Vec<(PathBuf, String)>,
+    /// Media whose measurements came from the global cache.
+    pub cache_hits: usize,
+}
+
+/// Per-clip analysis status for UIs and the CLI.
+#[derive(Clone, Debug)]
+pub struct ClipStatus {
+    pub clip: ClipId,
+    pub media: MediaId,
+    pub name: String,
+    pub path: String,
+    pub state: RunState,
+    pub progress: f64,
+    pub error: Option<String>,
+}
+
+struct Probed {
+    path: PathBuf,
+    info: MediaInfo,
+    fp: String,
+    cfp: String,
+}
+
+pub struct Session {
+    pub db: Arc<Mutex<Db>>,
+    store: Arc<ProjectStore>,
+    sched: Scheduler,
+    events: Mutex<Receiver<Event>>,
+    engine: Mutex<Engine>,
+    opts: SessionOptions,
+    cal: Calibration,
+    loaded: Mutex<HashMap<i64, Arc<MeasurementSet>>>,
+}
+
+impl Session {
+    fn build(db: Db, opts: SessionOptions) -> Session {
+        let cal = Calibration::embedded().clone();
+        let cache = opts.cache_path.as_ref().and_then(|p| MeasureCache::open(p).ok()).map(|c| Arc::new(Mutex::new(c)));
+        let db = Arc::new(Mutex::new(db));
+        let store = Arc::new(ProjectStore {
+            db: db.clone(),
+            cache,
+            cal: cal.clone(),
+            keys: Mutex::new(HashMap::new()),
+            errors: Mutex::new(Vec::new()),
+        });
+        let (tx, rx) = mpsc::channel();
+        let sched = Scheduler::new(opts.scheduler.clone(), cal.clone(), store.clone(), Some(tx));
+        Session {
+            db,
+            store,
+            sched,
+            events: Mutex::new(rx),
+            engine: Mutex::new(Engine::new(cal.clone())),
+            opts,
+            cal,
+            loaded: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn create(path: &Path, name: &str, opts: SessionOptions) -> Result<Session> {
+        Ok(Self::build(Db::create(path, name)?, opts))
+    }
+
+    pub fn open(path: &Path, opts: SessionOptions) -> Result<(Session, OpenReport)> {
+        let (db, rep) = Db::open(path)?;
+        Ok((Self::build(db, opts), rep))
+    }
+
+    /// Stops analysis (checkpoints are kept) and closes the project cleanly.
+    pub fn close(self) -> Result<()> {
+        let Session { db, store, sched, .. } = self;
+        drop(sched);
+        drop(store);
+        let db = Arc::try_unwrap(db).map_err(|_| SessionError::Other("project still in use".into()))?;
+        db.into_inner().unwrap_or_else(|p| p.into_inner()).close()?;
+        Ok(())
+    }
+
+    pub fn run_params(&self) -> RunParams {
+        RunParams {
+            engine_version: clippro_measure::ENGINE_VERSION,
+            calibration_version: self.cal.version,
+            rate: self.opts.analyze.rate,
+            pair_sampling: self.opts.analyze.pair_sampling,
+            groups: self.opts.analyze.groups,
+        }
+    }
+
+    pub fn scheduler(&self) -> &Scheduler {
+        &self.sched
+    }
+
+    /// Storage errors raised inside analysis callbacks since the last call.
+    pub fn take_storage_errors(&self) -> Vec<String> {
+        std::mem::take(&mut lock(&self.store.errors))
+    }
+
+    // ---------- Import ----------
+
+    /// Imports files and folders. Proxies are linked to their originals rather than added;
+    /// files already in the project are reported as duplicates.
+    pub fn import(&self, inputs: &[PathBuf]) -> Result<ImportReport> {
+        let mut rep = ImportReport::default();
+        let mut probed = Vec::new();
+        for path in discover(inputs) {
+            let info = match probe(&path) {
+                Ok(i) => i,
+                Err(e) => {
+                    rep.failed.push((path, e.to_string()));
+                    continue;
+                }
+            };
+            match (fingerprint::fingerprint(&path), fingerprint::content_fingerprint(&path)) {
+                (Ok(fp), Ok(cfp)) => probed.push(Probed { path, info, fp, cfp }),
+                (Err(e), _) | (_, Err(e)) => rep.failed.push((path, e.to_string())),
+            }
+        }
+        let (proxies, originals): (Vec<Probed>, Vec<Probed>) = probed.into_iter().partition(|p| looks_like_proxy(&p.path));
+        let params = self.run_params();
+        let mut db = lock(&self.db);
+        for p in originals {
+            self.add_original(&mut db, p, &params, &mut rep)?;
+        }
+        // Match proxies against every original in the project.
+        let candidates: Vec<(MediaRow, MediaInfo)> = db
+            .media_all()?
+            .into_iter()
+            .filter(|m| !m.is_proxy)
+            .filter_map(|m| serde_json::from_str::<MediaInfo>(&m.probe_json).ok().map(|i| (m, i)))
+            .collect();
+        for p in proxies {
+            let hit = candidates.iter().find(|(m, i)| proxy_matches((Path::new(&m.path), i), (&p.path, &p.info)));
+            match hit {
+                Some((orig, _)) => {
+                    if !db.media_by_fingerprint(&p.cfp)?.is_empty() {
+                        continue;
+                    }
+                    let pj = probe_json(&p)?;
+                    let pid = db.add_media(&new_media(&p, &pj))?;
+                    db.set_proxy(orig.id, Some(pid))?;
+                    rep.proxies_linked.push((PathBuf::from(&orig.path), p.path));
+                }
+                None => self.add_original(&mut db, p, &params, &mut rep)?,
+            }
+        }
+        Ok(rep)
+    }
+
+    fn add_original(&self, db: &mut Db, p: Probed, params: &RunParams, rep: &mut ImportReport) -> Result<()> {
+        if let Some(existing) = db.media_by_fingerprint(&p.cfp)?.first() {
+            rep.duplicates.push((p.path, existing.id));
+            return Ok(());
+        }
+        let pj = probe_json(&p)?;
+        let id = db.add_media(&new_media(&p, &pj))?;
+        let name = p.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let clip = db.add_clip(id, &name)?;
+        if let Some(cache) = &self.store.cache {
+            let hit = lock(cache).get(&p.cfp, &params.key());
+            if let Ok(Some(blob)) = hit {
+                if codec::decode(&blob).is_ok() {
+                    let run = db.run_for(id, params)?;
+                    db.save_measurements(run.id, &blob, "{\"from_cache\":true}")?;
+                    rep.cache_hits += 1;
+                }
+            }
+        }
+        rep.added.push((p.path, clip));
+        Ok(())
+    }
+
+    /// Updates a missing media item's path (relink); the content must match.
+    pub fn relink(&self, media: MediaId, new_path: &Path) -> Result<()> {
+        let db = lock(&self.db);
+        let row = db.media(media)?.ok_or_else(|| SessionError::Other("no such media".into()))?;
+        let cfp = fingerprint::content_fingerprint(new_path).map_err(|e| SessionError::Other(e.to_string()))?;
+        if cfp != row.content_fingerprint {
+            return Err(SessionError::Other(format!("{} has different content", new_path.display())));
+        }
+        let fp = fingerprint::fingerprint(new_path).map_err(|e| SessionError::Other(e.to_string()))?;
+        db.set_media_path(media, new_path, &fp)?;
+        Ok(())
+    }
+
+    /// Relinks every missing media item found under `roots` (by name + content).
+    pub fn relink_missing(&self, roots: &[PathBuf]) -> Result<Vec<(MediaId, PathBuf)>> {
+        let missing: Vec<MediaRow> = lock(&self.db).media_all()?.into_iter().filter(|m| !Path::new(&m.path).exists()).collect();
+        let mut done = Vec::new();
+        for m in missing {
+            let name = Path::new(&m.path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            if let Some(found) = crate::import::relink_search(&name, &m.content_fingerprint, roots) {
+                self.relink(m.id, &found)?;
+                done.push((m.id, found));
+            }
+        }
+        Ok(done)
+    }
+
+    pub fn set_profile(&self, media: MediaId, profile: ColourProfile) -> Result<()> {
+        let name = serde_json::to_string(&profile).map_err(|e| SessionError::Other(e.to_string()))?;
+        lock(&self.db).set_profile(media, name.trim_matches('"'))?;
+        Ok(())
+    }
+
+    // ---------- Analysis ----------
+
+    /// Queues every media item without a finished run for the current analysis settings.
+    /// Returns how many jobs were queued.
+    pub fn queue_analysis(&self) -> Result<usize> {
+        let params = self.run_params();
+        let key = params.key();
+        let db = lock(&self.db);
+        let mut n = 0;
+        for m in db.media_all()? {
+            if m.is_proxy {
+                continue;
+            }
+            let run = db.run_for(m.id, &params)?;
+            if run.state == RunState::Done {
+                continue;
+            }
+            // Analyse the proxy when one is linked (export still points at the original).
+            let src = match m.proxy_media_id {
+                Some(pid) => db.media(pid)?.unwrap_or_else(|| m.clone()),
+                None => m.clone(),
+            };
+            let Ok(info) = serde_json::from_str::<MediaInfo>(&src.probe_json) else { continue };
+            if info.video.is_none() || info.proxy_required {
+                db.set_run_state(run.id, RunState::Failed, Some(if info.proxy_required { "Proxy required" } else { "No video stream" }))?;
+                continue;
+            }
+            lock(&self.store.keys).insert(run.id.0 as u64, CacheKey { content_fingerprint: m.content_fingerprint.clone(), run_key: key.clone() });
+            db.set_run_state(run.id, RunState::Queued, None)?;
+            self.sched.add(JobSpec {
+                id: run.id.0 as u64,
+                path: PathBuf::from(&src.path),
+                info,
+                seed_base: seed_from_fingerprint(&m.content_fingerprint),
+                opts: self.opts.analyze.clone(),
+            });
+            n += 1;
+        }
+        Ok(n)
+    }
+
+    /// Drains pending events, mirrors progress into the project, and returns them.
+    pub fn poll_events(&self) -> Vec<Event> {
+        let events: Vec<Event> = lock(&self.events).try_iter().collect();
+        let db = lock(&self.db);
+        for e in &events {
+            if let Event::Progress { job, done, total } = e {
+                let _ = db.set_run_progress(clippro_types::RunId(*job as i64), *done as f64 / (*total).max(1) as f64);
+            }
+        }
+        events
+    }
+
+    /// Blocks until analysis is idle, calling `on_event` for each event.
+    pub fn wait(&self, mut on_event: impl FnMut(&Event)) {
+        loop {
+            let first = lock(&self.events).recv_timeout(Duration::from_millis(200)).ok();
+            if let Some(e) = first {
+                on_event(&e);
+                if let Event::Progress { job, done, total } = &e {
+                    let _ = lock(&self.db).set_run_progress(clippro_types::RunId(*job as i64), *done as f64 / (*total).max(1) as f64);
+                }
+            }
+            for e in self.poll_events() {
+                on_event(&e);
+            }
+            if self.sched.is_idle() {
+                for e in self.poll_events() {
+                    on_event(&e);
+                }
+                return;
+            }
+        }
+    }
+
+    pub fn pause(&self) {
+        self.sched.pause();
+    }
+
+    pub fn resume(&self) {
+        self.sched.resume();
+    }
+
+    pub fn clip_statuses(&self) -> Result<Vec<ClipStatus>> {
+        let params = self.run_params();
+        let key = params.key();
+        let db = lock(&self.db);
+        let mut out = Vec::new();
+        for c in db.clips()? {
+            let Some(m) = db.media(c.media_id)? else { continue };
+            let run = db.run_by_key(m.id, &key)?;
+            let (mut state, progress, error) =
+                run.as_ref().map(|r| (r.state, r.progress, r.error.clone())).unwrap_or((RunState::Queued, 0.0, None));
+            if let Some(r) = &run {
+                if let Some(s) = self.sched.status(r.id.0 as u64) {
+                    if s == JobStatus::Running && state != RunState::Done {
+                        state = RunState::Running;
+                    }
+                }
+            }
+            out.push(ClipStatus { clip: c.id, media: m.id, name: c.name, path: m.path, state, progress, error });
+        }
+        Ok(out)
+    }
+
+    // ---------- Scoring ----------
+
+    /// Engine inputs for every clip with finished measurements (clip order).
+    pub fn clip_inputs(&self) -> Result<Vec<ClipInput>> {
+        let key = self.run_params().key();
+        let db = lock(&self.db);
+        let mut out = Vec::new();
+        for c in db.clips()? {
+            let Some(m) = db.media(c.media_id)? else { continue };
+            let Some(run) = db.run_by_key(m.id, &key)? else { continue };
+            if run.state != RunState::Done {
+                continue;
+            }
+            let ms = {
+                let mut cache = lock(&self.loaded);
+                match cache.get(&run.id.0) {
+                    Some(ms) => ms.clone(),
+                    None => {
+                        let Some(blob) = db.measurements(run.id)? else { continue };
+                        let ms = Arc::new(codec::decode(&blob).map_err(|e| SessionError::Other(e.to_string()))?);
+                        cache.insert(run.id.0, ms.clone());
+                        ms
+                    }
+                }
+            };
+            let profile: ColourProfile = serde_json::from_str(&format!("\"{}\"", m.profile)).unwrap_or_default();
+            out.push(ClipInput {
+                id: c.id,
+                version: run.id.0 as u64,
+                ms,
+                duration_us: m.duration_us,
+                profile,
+                extra: BTreeMap::new(),
+                extra_flags: None,
+            });
+        }
+        Ok(out)
+    }
+
+    pub fn overrides(&self) -> Result<HashMap<ClipId, Vec<Override>>> {
+        let mut map: HashMap<ClipId, Vec<Override>> = HashMap::new();
+        for o in lock(&self.db).overrides()? {
+            let kind = match o.kind.as_str() {
+                "force_in" => OverrideKind::ForceIn,
+                "force_out" => OverrideKind::ForceOut,
+                "trim" => OverrideKind::Trim,
+                _ => OverrideKind::ManualSegment,
+            };
+            map.entry(o.clip_id).or_default().push(Override { kind, start_us: o.start_us, end_us: o.end_us });
+        }
+        Ok(map)
+    }
+
+    /// Scores every analysed clip with `settings`.
+    pub fn score(&self, settings: &Settings) -> Result<Selects> {
+        let clips = self.clip_inputs()?;
+        let overrides = self.overrides()?;
+        let mut engine = lock(&self.engine);
+        engine.retain(&clips.iter().map(|c| c.id).collect::<Vec<_>>());
+        engine
+            .score(&clips, settings, &overrides, &AtomicBool::new(false))
+            .ok_or_else(|| SessionError::Other("scoring was cancelled".into()))
+    }
+
+    pub fn clip_names(&self) -> Result<HashMap<ClipId, (String, String)>> {
+        let db = lock(&self.db);
+        let mut out = HashMap::new();
+        for c in db.clips()? {
+            if let Some(m) = db.media(c.media_id)? {
+                out.insert(c.id, (c.name, m.path));
+            }
+        }
+        Ok(out)
+    }
+}
+
+fn probe_json(p: &Probed) -> Result<String> {
+    serde_json::to_string(&p.info).map_err(|e| SessionError::Other(e.to_string()))
+}
+
+fn new_media<'a>(p: &'a Probed, probe_json: &'a str) -> NewMedia<'a> {
+    let v = p.info.video.as_ref();
+    let fps = p.info.fps().0;
+    NewMedia {
+        path: &p.path,
+        fingerprint: &p.fp,
+        content_fingerprint: &p.cfp,
+        size: p.info.size,
+        probe_json,
+        duration_us: p.info.duration_us,
+        width: v.map(|v| v.width).unwrap_or(0),
+        height: v.map(|v| v.height).unwrap_or(0),
+        fps: (fps.num, fps.den),
+        reel: p.info.reel.as_deref(),
+        camera: p.info.camera_model.as_deref(),
+        start_tc: p.info.start_timecode.as_deref(),
+    }
+}

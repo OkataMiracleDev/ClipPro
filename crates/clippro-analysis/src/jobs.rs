@@ -550,6 +550,14 @@ impl Scheduler {
         lock(&self.inner.state).queue.iter().copied().collect()
     }
 
+    /// True when nothing is running and nothing runnable remains (or paused and drained).
+    pub fn is_idle(&self) -> bool {
+        let st = lock(&self.inner.state);
+        let pending = !st.paused
+            && st.queue.iter().any(|id| st.jobs.get(id).map(|j| matches!(j.status, JobStatus::Queued | JobStatus::Running)).unwrap_or(false));
+        st.running == 0 && !pending
+    }
+
     /// Blocks until nothing is running and nothing runnable remains (or paused and drained).
     pub fn wait_idle(&self) {
         let mut st = lock(&self.inner.state);

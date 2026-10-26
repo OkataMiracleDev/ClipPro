@@ -253,6 +253,21 @@ name = "clippro-cli"
 version = "0.1.0"
 
 [[package]]
+name = "clippro-core"
+version = "0.1.0"
+dependencies = [
+ "clippro-analysis",
+ "clippro-measure",
+ "clippro-media",
+ "clippro-project",
+ "clippro-score",
+ "clippro-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "clippro-gpu"
 version = "0.1.0"
 
