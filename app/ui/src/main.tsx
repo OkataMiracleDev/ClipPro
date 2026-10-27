@@ -3,10 +3,14 @@ import { createRoot } from "react-dom/client";
 import "./styles/app.css";
 import { App } from "./App";
 import { isTauri } from "./api";
+import { useApp } from "./store";
 
 // `?theme=dark|light` forces a theme (screenshots, settings later); default follows the OS.
 const theme = new URLSearchParams(location.search).get("theme");
 if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
+// `?overlay=zebras|false_colour|peaking` starts with a viewer overlay on (screenshots).
+const overlay = new URLSearchParams(location.search).get("overlay");
+if (overlay === "zebras" || overlay === "false_colour" || overlay === "peaking") useApp.setState({ overlay });
 
 function mount() {
   const root = document.getElementById("root");

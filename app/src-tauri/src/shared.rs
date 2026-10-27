@@ -26,8 +26,8 @@ pub fn post(window: &tauri::WebviewWindow, data: Vec<u8>, meta: String) -> Resul
                 }
                 Ok(())
             })();
-            let _ = tx.send(r.map_err(|e| e.to_string()));
+            let _ = tx.send(r.map_err(|e| format!("SharedBuffer: {e}")));
         })
-        .map_err(|e| e.to_string())?;
-    rx.recv().map_err(|e| e.to_string())?
+        .map_err(|e| format!("SharedBuffer: {e}"))?;
+    rx.recv().map_err(|e| format!("SharedBuffer: {e}"))?
 }

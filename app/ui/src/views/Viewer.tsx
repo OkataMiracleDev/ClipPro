@@ -1,5 +1,5 @@
-// Viewer (P6, ADR-002): native <video> for codecs WebView2 plays, decoded JPEG frames from the
-// backend for everything else. The store playhead is the single source of truth: playback
+// Viewer (P6, ADR-002): native <video> for codecs WebView2 plays, backend-decoded frames in a
+// WebGL view (with shader overlays) for everything else. The store playhead is the single source of truth: playback
 // writes it, scrubbing anywhere else seeks to it.
 
 import { ChevronLeft, ChevronRight, Film, Pause, Play } from "lucide-react";
@@ -7,6 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type MediaSource } from "../api";
 import { scoreColor } from "../components/ui";
 import { FLAGS } from "../lib/domain";
+import { fetchFrame } from "../lib/frames";
+import { GlView, type Overlay } from "../lib/glview";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
 
@@ -56,13 +58,14 @@ function useFitBox(aspect: number) {
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
 
 export function Viewer() {
-  const { clips, scored, selectedClip, playheadUs, playing, setPlaying, setPlayhead } = useApp();
+  const { clips, scored, selectedClip, playheadUs, playing, setPlaying, setPlayhead, overlay, toggleOverlay } = useApp();
   const clip = clips.find((c) => c.clip === selectedClip);
   const sc = scored?.clips.find((c) => c.clip === selectedClip);
   const media = useMediaSource(clip?.media ?? null);
   const src = media?.src ?? null;
   const [fallback, setFallback] = useState<Record<number, boolean>>({});
-  const native = src?.nativeUrl && clip && !fallback[clip.media] ? src.nativeUrl : null;
+  // Overlays read pixels, which the cross-origin <video> doesn't allow: they use frames.
+  const native = src?.nativeUrl && clip && !fallback[clip.media] && overlay === "none" ? src.nativeUrl : null;
   const durationUs = src?.durationUs ?? sc?.durationUs ?? 0;
   const frameUs = 1e6 / (src?.fps || 25);
   const { ref, box } = useFitBox(src ? src.width / Math.max(1, src.height) : 16 / 9);
@@ -100,6 +103,12 @@ export function Viewer() {
         setPlaying(false);
         const step = e.shiftKey ? 1e6 : frameUs;
         seek(at + (e.key === "ArrowLeft" ? -step : step));
+      } else if (e.key === "z" || e.key === "Z") {
+        toggleOverlay("zebras");
+      } else if (e.key === "c" || e.key === "C") {
+        toggleOverlay("false_colour");
+      } else if (e.key === "p" || e.key === "P") {
+        toggleOverlay("peaking");
       } else if (e.key === "Home") {
         seek(0);
       } else if (e.key === "End") {
@@ -109,7 +118,7 @@ export function Viewer() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [clip, durationUs, frameUs, seek, setPlaying]);
+  }, [clip, durationUs, frameUs, seek, setPlaying, toggleOverlay]);
 
   const togglePlay = () => {
     if (!playing && playheadUs >= durationUs - frameUs) seek(0);
@@ -149,8 +158,11 @@ export function Viewer() {
           </div>
         )}
         {clip && src && (
-          <div className="absolute top-3 right-3 rounded-md bg-black/45 px-2 py-1 font-mono text-[10px] text-white/60 backdrop-blur" title={native ? "Native playback" : "Decoded frames"}>
-            {src.codec.toUpperCase()} · {src.width}×{src.height} · {native ? "native" : "frames"}
+          <div className="absolute top-3 right-3 flex items-center gap-2">
+            <OverlayBar value={overlay} onToggle={toggleOverlay} />
+            <div className="rounded-md bg-black/45 px-2 py-1 font-mono text-[10px] text-white/60 backdrop-blur" title={native ? "Native playback" : "Decoded frames"}>
+              {src.codec.toUpperCase()} · {src.width}×{src.height} · {native ? "native" : "frames"}
+            </div>
           </div>
         )}
         {error && <div className="absolute bottom-3 rounded-md bg-black/60 px-2.5 py-1 text-[11px] text-white/80">{error}</div>}
@@ -179,6 +191,30 @@ export function Viewer() {
           <span className="truncate text-white/55">{flags.length ? flags.join(" · ") : "No flags"}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+const OVERLAYS: { value: Overlay; label: string; key: string }[] = [
+  { value: "zebras", label: "Zebras", key: "Z" },
+  { value: "false_colour", label: "False colour", key: "C" },
+  { value: "peaking", label: "Focus peaking", key: "P" },
+];
+
+function OverlayBar({ value, onToggle }: { value: Overlay; onToggle: (o: Overlay) => void }) {
+  return (
+    <div role="group" aria-label="Overlays" className="flex rounded-md bg-black/45 p-0.5 backdrop-blur">
+      {OVERLAYS.map((o) => (
+        <button
+          key={o.value}
+          aria-pressed={value === o.value}
+          title={`${o.label} (${o.key})`}
+          onClick={() => onToggle(o.value)}
+          className={`rounded px-1.5 py-0.5 text-[10px] ${value === o.value ? "bg-white/85 text-black" : "text-white/70 hover:text-white"}`}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -243,15 +279,51 @@ function NativeVideo({ url, clip, frameUs, onFallback }: { url: string; clip: nu
   );
 }
 
-/** Frames decoded by the backend, one request in flight; playback drops frames rather than lag. */
+/** Frames decoded by the backend into a WebGL view, one request in flight; playback drops
+ * frames rather than lag. Overlay changes redraw without refetching. */
 function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: number; clip: number; src: MediaSource; width: number; frameUs: number; onError: (e: string | null) => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const view = useRef<GlView | null>(null);
   const playing = useApp((s) => s.playing);
   const playheadUs = useApp((s) => s.playheadUs);
+  const overlay = useApp((s) => s.overlay);
   const loader = useRef({ busy: false, want: -1, shown: -1 });
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  const overlayRef = useRef(overlay);
+  overlayRef.current = overlay;
   // Request width: device pixels, capped at the source, in 64 px steps so the backend's scaler
   // is reused while the window resizes.
   const reqW = Math.min(src.width, Math.max(64, Math.ceil((width * (window.devicePixelRatio || 1)) / 64) * 64));
+
+  const draw = useCallback(() => {
+    view.current?.draw({ overlay: overlayRef.current, zebra: [0.7, 0.95], peaking: 0.35, time: performance.now() / 1000 });
+  }, []);
+
+  useEffect(() => {
+    if (!canvas.current) return;
+    try {
+      view.current = new GlView(canvas.current);
+    } catch (e) {
+      onError(`Viewer unavailable: ${e instanceof Error ? e.message : e}`);
+    }
+    return () => {
+      view.current = null;
+    };
+  }, [onError]);
+
+  // Overlay and size changes redraw the current frame; zebras crawl while shown.
+  useEffect(() => {
+    draw();
+    if (overlay !== "zebras") return;
+    let raf = 0;
+    const tick = () => {
+      draw();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [overlay, draw, width]);
 
   const snap = useCallback((us: number) => Math.max(0, Math.min(src.durationUs - frameUs, Math.round(us / frameUs) * frameUs)), [src.durationUs, frameUs]);
 
@@ -261,24 +333,21 @@ function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: num
       l.want = us;
       if (l.busy) return;
       l.busy = true;
-      const img = new Image();
-      img.crossOrigin = "anonymous"; // overlays read pixels back (ACAO * on clippro://)
-      img.src = api.frameUrl(media, us, reqW);
-      img
-        .decode()
-        .then(() => {
-          const c = canvas.current;
-          if (c) {
-            c.width = img.naturalWidth;
-            c.height = img.naturalHeight;
-            c.getContext("2d")?.drawImage(img, 0, 0);
+      fetchFrame(media, us, reqW)
+        .then((f) => {
+          const v = view.current;
+          if (v) {
+            if (f.kind === "i420") v.setI420(f.buf);
+            else v.setImage(f.img, f.img.naturalWidth, f.img.naturalHeight);
+            draw();
           }
+          f.done();
           l.shown = us;
           onError(null);
           onShown?.(us);
         })
-        .catch(() => {
-          onError("Couldn't decode this frame");
+        .catch((e) => {
+          onError(`Couldn't show this frame: ${e instanceof Error ? e.message : e}`);
           useApp.getState().setPlaying(false);
         })
         .finally(() => {
@@ -286,10 +355,8 @@ function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: num
           if (!playingRef.current && l.want !== us) load(l.want);
         });
     },
-    [media, reqW, onError],
+    [media, reqW, onError, draw],
   );
-  const playingRef = useRef(playing);
-  playingRef.current = playing;
 
   // Paused: show the playhead frame (coalescing rapid scrubs to the latest).
   useEffect(() => {
@@ -297,6 +364,11 @@ function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: num
     const us = snap(playheadUs);
     if (us !== loader.current.shown || loader.current.want !== us) load(us);
   }, [playheadUs, playing, snap, load]);
+
+  // A new request width refetches the shown frame at that size.
+  useEffect(() => {
+    if (!playingRef.current && loader.current.shown >= 0) load(loader.current.shown);
+  }, [reqW, load]);
 
   // Playing: a wall clock drives the target; each shown frame moves the playhead.
   useEffect(() => {
