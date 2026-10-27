@@ -1,8 +1,10 @@
 // Source list + clip table (SPEC §14.1, P5.3).
 
+import * as CM from "@radix-ui/react-context-menu";
 import { AlertCircle, CircleDashed, Film, ListChecks } from "lucide-react";
-import { useMemo } from "react";
-import type { Clip } from "../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, type Clip } from "../api";
+import { pickProxy } from "../lib/dialogs";
 import { cx, scoreColor, Spinner } from "../components/ui";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
@@ -35,6 +37,51 @@ function StateIcon({ c }: { c: Clip }) {
   return null;
 }
 
+const ROW_H = 44;
+const OVERSCAN = 8;
+
+/** Right-click menu for a clip (SPEC P5.3). */
+function ClipMenu({ c, children }: { c: Clip; children: React.ReactNode }) {
+  const { retryClip, bumpClip, linkProxy, toast } = useApp.getState();
+  const item = "flex h-6 cursor-default items-center rounded px-2 text-[13px] outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-accent data-[highlighted]:text-accent-fg";
+  const waiting = c.state === "queued" || c.state === "paused";
+  const busy = c.state === "running" || waiting;
+  return (
+    <CM.Root>
+      <CM.Trigger asChild>{children}</CM.Trigger>
+      <CM.Portal>
+        <CM.Content className="z-50 min-w-48 rounded-lg bg-raised p-1 shadow-(--shadow-float) ring-1 ring-separator-strong" aria-label={`${c.name} actions`}>
+          <CM.Item className={item} disabled={!waiting} onSelect={() => void bumpClip(c.clip)}>
+            Move to next
+          </CM.Item>
+          <CM.Separator className="my-1 h-px bg-separator" />
+          <CM.Item className={item} disabled={busy} onSelect={() => void retryClip(c.clip, false)}>
+            Retry
+          </CM.Item>
+          <CM.Item className={item} disabled={busy} onSelect={() => void retryClip(c.clip, true)}>
+            Retry with CPU decoding
+          </CM.Item>
+          <CM.Separator className="my-1 h-px bg-separator" />
+          <CM.Item className={item} onSelect={() => void api.reveal(c.path).catch((e) => toast(`${e}`, "error"))}>
+            Reveal in Explorer
+          </CM.Item>
+          <CM.Item
+            className={item}
+            disabled={c.state === "running"}
+            onSelect={() =>
+              void pickProxy().then((p) => {
+                if (p) void linkProxy(c.clip, p);
+              })
+            }
+          >
+            Link proxy…
+          </CM.Item>
+        </CM.Content>
+      </CM.Portal>
+    </CM.Root>
+  );
+}
+
 export function ClipList() {
   const { clips, scored, selectedClip, selectClip } = useApp();
   const stats = useMemo(() => {
@@ -45,41 +92,69 @@ export function ClipList() {
     }
     return m;
   }, [scored]);
+  // Virtualised: only the rows in view (plus a margin) are rendered, so 100k clips scroll smoothly.
+  const box = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState({ top: 0, h: 800 });
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const update = () => setView({ top: el.scrollTop, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    el.addEventListener("scroll", update, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", update);
+    };
+  }, [clips.length > 0]);
+  // Keep the selected clip in view when it changes from elsewhere (timeline, keys).
+  useEffect(() => {
+    const el = box.current;
+    const i = clips.findIndex((c) => c.clip === selectedClip);
+    if (!el || i < 0) return;
+    const y = i * ROW_H;
+    if (y < el.scrollTop) el.scrollTop = y;
+    else if (y + ROW_H > el.scrollTop + el.clientHeight) el.scrollTop = y + ROW_H - el.clientHeight;
+  }, [selectedClip, clips]);
   if (!clips.length) return null;
+  const first = Math.max(0, Math.floor(view.top / ROW_H) - OVERSCAN);
+  const last = Math.min(clips.length, Math.ceil((view.top + view.h) / ROW_H) + OVERSCAN);
   return (
-    <div className="h-full overflow-y-auto px-2 py-1" role="listbox" aria-label="Clips">
-      {clips.map((c) => {
-        const st = stats.get(c.clip);
-        const active = c.clip === selectedClip;
-        const hasBest = st && Number.isFinite(st.best);
-        return (
-          <div
-            key={c.clip}
-            role="option"
-            aria-selected={active}
-            onClick={() => selectClip(c.clip)}
-            title={c.error ?? c.path}
-            className={cx("flex cursor-default items-center gap-2 rounded-md px-2 py-1.5", active ? "bg-accent text-accent-fg" : "hover:bg-control-hover")}
-          >
-            <span
-              className="h-7 w-1 shrink-0 rounded-full"
-              style={{ background: hasBest ? scoreColor(st!.best) : "var(--c-separator-strong)" }}
-              aria-hidden
-            />
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-1.5">
-                <span className="truncate text-[12px] font-medium">{c.name}</span>
-                <StateIcon c={c} />
-              </span>
-              <span className={cx("block font-mono text-[10.5px] tabular", active ? "opacity-80" : "text-text-3")}>
-                {st ? formatClock(st.duration) : c.state === "failed" ? "Failed" : "Not analysed yet"}
-                {st ? ` · ${st.selects} select${st.selects === 1 ? "" : "s"}` : ""}
-                {hasBest ? ` · best ${Math.round(st!.best * 100)}` : ""}
-              </span>
-            </span>
-          </div>
-        );
-      })}
+    <div ref={box} className="h-full overflow-y-auto px-2 py-1" role="listbox" aria-label="Clips">
+      <div className="relative" style={{ height: clips.length * ROW_H }}>
+        {clips.slice(first, last).map((c, k) => {
+          const st = stats.get(c.clip);
+          const active = c.clip === selectedClip;
+          const hasBest = st && Number.isFinite(st.best);
+          return (
+            <ClipMenu key={c.clip} c={c}>
+              <div
+                role="option"
+                aria-selected={active}
+                onClick={() => selectClip(c.clip)}
+                onContextMenu={() => selectClip(c.clip)}
+                title={c.error ?? c.path}
+                style={{ top: (first + k) * ROW_H, height: ROW_H - 2 }}
+                className={cx("absolute inset-x-0 flex cursor-default items-center gap-2 rounded-md px-2", active ? "bg-accent text-accent-fg" : "hover:bg-control-hover")}
+              >
+                <span className="h-7 w-1 shrink-0 rounded-full" style={{ background: hasBest ? scoreColor(st!.best) : "var(--c-separator-strong)" }} aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-[12px] font-medium">{c.name}</span>
+                    <StateIcon c={c} />
+                  </span>
+                  <span className={cx("block truncate font-mono text-[10.5px] tabular", active ? "opacity-80" : "text-text-3")}>
+                    {st ? formatClock(st.duration) : c.state === "failed" ? (c.error ?? "Failed") : "Not analysed yet"}
+                    {st ? ` · ${st.selects} select${st.selects === 1 ? "" : "s"}` : ""}
+                    {hasBest ? ` · best ${Math.round(st!.best * 100)}` : ""}
+                  </span>
+                </span>
+              </div>
+            </ClipMenu>
+          );
+        })}
+      </div>
     </div>
   );
 }

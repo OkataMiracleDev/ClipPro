@@ -33,6 +33,13 @@ export async function pickExportPath(defaultName: string, ext: string, label: st
   return r.toLowerCase().endsWith(`.${ext}`) ? r : `${r}.${ext}`;
 }
 
+export async function pickProxy(): Promise<string | null> {
+  if (!isTauri) return "D:/Footage/Proxy/clip_Proxy.mov";
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const r = await open({ title: "Link a proxy", filters: [{ name: "Video", extensions: MEDIA_EXT }] });
+  return typeof r === "string" ? r : null;
+}
+
 export async function pickLut(): Promise<string | null> {
   if (!isTauri) return "D:/LUTs/Demo.cube";
   const { open } = await import("@tauri-apps/plugin-dialog");

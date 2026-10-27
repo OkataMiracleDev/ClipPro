@@ -181,3 +181,35 @@ fn html_report_and_contact_sheet() {
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// P5.3 context menu: Retry (with CPU), Move to next, Link proxy.
+#[test]
+fn retry_bump_and_link_proxy() {
+    let Some(dir) = corpus() else { return };
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-retry-test");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let s = Session::create(&tmp.join("p.clippro"), "Retry", SessionOptions { cache_path: None, ..opts(&tmp) }).unwrap();
+    s.import(&[dir.join("tripod_static.mp4"), dir.join("solid_black.mp4")]).unwrap();
+    s.queue_analysis().unwrap();
+    s.wait(|_| {});
+    let st = s.clip_statuses().unwrap();
+    let tripod = st.iter().find(|c| c.name == "tripod_static").unwrap().clip;
+    let media = st.iter().find(|c| c.name == "tripod_static").unwrap().media;
+
+    assert!(s.retry(tripod, true).unwrap(), "retry queues the clip");
+    s.bump(tripod).unwrap();
+    s.wait(|_| {});
+    assert!(s.clip_statuses().unwrap().iter().all(|c| c.state == RunState::Done));
+
+    // Wrong length is refused; a matching file links and becomes the preview/analysis source.
+    assert!(s.link_proxy(tripod, &dir.join("long_clip.mp4")).is_err());
+    s.link_proxy(tripod, &dir.join("pan_left.mp4")).unwrap();
+    s.wait(|_| {});
+    let (path, _) = s.preview_source(media).unwrap().unwrap();
+    assert!(path.ends_with("pan_left.mp4"), "{}", path.display());
+    assert!(s.clip_statuses().unwrap().iter().all(|c| c.state == RunState::Done));
+    assert_eq!(s.clip_statuses().unwrap().len(), 2, "the proxy isn't a clip");
+    s.close().unwrap();
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

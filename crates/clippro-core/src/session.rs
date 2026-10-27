@@ -289,39 +289,89 @@ impl Session {
 
     pub fn queue_analysis(&self) -> Result<usize> {
         let params = self.run_params();
-        let key = params.key();
         let db = lock(&self.db);
         let mut n = 0;
         for m in db.media_all()? {
-            if m.is_proxy {
+            if m.is_proxy || db.run_for(m.id, &params)?.state == RunState::Done {
                 continue;
             }
-            let run = db.run_for(m.id, &params)?;
-            if run.state == RunState::Done {
-                continue;
+            if self.queue_media(&db, &m, &params, self.opts.analyze.clone())? {
+                n += 1;
             }
-            // Analyse the proxy when one is linked (export still points at the original).
-            let src = match m.proxy_media_id {
-                Some(pid) => db.media(pid)?.unwrap_or_else(|| m.clone()),
-                None => m.clone(),
-            };
-            let Ok(info) = serde_json::from_str::<MediaInfo>(&src.probe_json) else { continue };
-            if info.video.is_none() || info.proxy_required {
-                db.set_run_state(run.id, RunState::Failed, Some(if info.proxy_required { "Proxy required" } else { "No video stream" }))?;
-                continue;
-            }
-            lock(&self.store.keys).insert(run.id.0 as u64, CacheKey { content_fingerprint: m.content_fingerprint.clone(), run_key: key.clone() });
-            db.set_run_state(run.id, RunState::Queued, None)?;
-            self.sched.add(JobSpec {
-                id: run.id.0 as u64,
-                path: PathBuf::from(&src.path),
-                info,
-                seed_base: seed_from_fingerprint(&m.content_fingerprint),
-                opts: self.opts.analyze.clone(),
-            });
-            n += 1;
         }
         Ok(n)
+    }
+
+    /// Queues one media item's analysis run (whatever its state). False when it can't be analysed
+    /// (no video, or a proxy is required); the run is then marked failed with the reason.
+    fn queue_media(&self, db: &Db, m: &MediaRow, params: &RunParams, opts: AnalyzeOptions) -> Result<bool> {
+        let run = db.run_for(m.id, params)?;
+        // Analyse the proxy when one is linked (export still points at the original).
+        let src = match m.proxy_media_id {
+            Some(pid) => db.media(pid)?.unwrap_or_else(|| m.clone()),
+            None => m.clone(),
+        };
+        let Ok(info) = serde_json::from_str::<MediaInfo>(&src.probe_json) else { return Ok(false) };
+        if info.video.is_none() || info.proxy_required {
+            db.set_run_state(run.id, RunState::Failed, Some(if info.proxy_required { "Proxy required" } else { "No video stream" }))?;
+            return Ok(false);
+        }
+        lock(&self.store.keys).insert(run.id.0 as u64, CacheKey { content_fingerprint: m.content_fingerprint.clone(), run_key: params.key() });
+        db.set_run_state(run.id, RunState::Queued, None)?;
+        self.sched.add(JobSpec { id: run.id.0 as u64, path: PathBuf::from(&src.path), info, seed_base: seed_from_fingerprint(&m.content_fingerprint), opts });
+        Ok(true)
+    }
+
+    fn clip_media(&self, db: &Db, clip: ClipId) -> Result<MediaRow> {
+        let c = db.clips()?.into_iter().find(|c| c.id == clip).ok_or_else(|| SessionError::Other("Unknown clip".into()))?;
+        db.media(c.media_id)?.ok_or_else(|| SessionError::Other("The clip's media is missing".into()))
+    }
+
+    /// Analyses a clip again (context menu "Retry"); `force_cpu` decodes without the GPU.
+    pub fn retry(&self, clip: ClipId, force_cpu: bool) -> Result<bool> {
+        let params = self.run_params();
+        let db = lock(&self.db);
+        let m = self.clip_media(&db, clip)?;
+        let mut opts = self.opts.analyze.clone();
+        if force_cpu {
+            opts.decode.hw = clippro_media::video::HwMode::Off;
+        }
+        self.queue_media(&db, &m, &params, opts)
+    }
+
+    /// Moves a queued clip to the front of the analysis queue ("Move to next").
+    pub fn bump(&self, clip: ClipId) -> Result<()> {
+        let params = self.run_params();
+        let db = lock(&self.db);
+        let m = self.clip_media(&db, clip)?;
+        let run = db.run_for(m.id, &params)?;
+        self.sched.bump(run.id.0 as u64);
+        Ok(())
+    }
+
+    /// Links `proxy` to a clip's media by hand ("Link proxy…") and re-analyses from it.
+    pub fn link_proxy(&self, clip: ClipId, proxy: &Path) -> Result<()> {
+        let path = std::path::absolute(proxy).unwrap_or_else(|_| proxy.to_path_buf());
+        let info = probe(&path).map_err(|e| SessionError::Other(e.to_string()))?;
+        if info.video.is_none() {
+            return Err(SessionError::Other("The proxy has no video stream.".into()));
+        }
+        let fp = fingerprint::fingerprint(&path).map_err(|e| SessionError::Other(e.to_string()))?;
+        let cfp = fingerprint::content_fingerprint(&path).map_err(|e| SessionError::Other(e.to_string()))?;
+        let params = self.run_params();
+        let db = lock(&self.db);
+        let m = self.clip_media(&db, clip)?;
+        let tolerance = 1_000_000i64.max(m.duration_us / 100);
+        if (info.duration_us - m.duration_us).abs() > tolerance {
+            return Err(SessionError::Other("The proxy's duration doesn't match the clip.".into()));
+        }
+        let p = Probed { path, info, fp, cfp };
+        let pj = probe_json(&p)?;
+        let pid = db.add_media(&new_media(&p, &pj))?;
+        db.set_proxy(m.id, Some(pid))?; // also marks the new row as a proxy
+        let m = db.media(m.id)?.ok_or_else(|| SessionError::Other("The clip's media is missing".into()))?;
+        self.queue_media(&db, &m, &params, self.opts.analyze.clone())?;
+        Ok(())
     }
 
     /// Drains pending events, mirrors progress into the project, and returns them.

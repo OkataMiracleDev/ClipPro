@@ -261,6 +261,10 @@ export const mockBackend: Backend = {
   },
   // The browser preview shows display-referred images, so the transform is never applied.
   previewColour: async () => ({ lut: Float32Array.from({ length: 1024 }, (_, i) => (i / 1023) ** 2.4), matrix: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]) }),
+  retryClip: async () => true,
+  bumpClip: async () => {},
+  linkProxy: async () => {},
+  reveal: async () => {},
   readLut: async () => "TITLE \"Demo\"\nLUT_1D_SIZE 2\n0 0 0\n1 1 1\n",
   onAnalysis: async (cb) => {
     listeners.add(cb);

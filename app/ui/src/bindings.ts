@@ -39,6 +39,17 @@ export const commands = {
 	audioPlay: (media: number | null, us: number | null) => typedError<boolean, string>(__TAURI_INVOKE("audio_play", { media, us })),
 	/**  Assigns a log/colour profile to `media` (SPEC VIE-6). Rescore afterwards: it changes Luma. */
 	mediaSetProfile: (media: number | null, profile: ColourProfile) => typedError<null, string>(__TAURI_INVOKE("media_set_profile", { media, profile })),
+	/**
+	 *  Analyses a clip again; `cpu` decodes without the GPU (context menu). False if it can't be
+	 *  analysed (no video / proxy required).
+	 */
+	clipRetry: (clip: number | null, cpu: boolean) => typedError<boolean, string>(__TAURI_INVOKE("clip_retry", { clip, cpu })),
+	/**  Moves a queued clip to the front of the analysis queue. */
+	clipBump: (clip: number | null) => typedError<null, string>(__TAURI_INVOKE("clip_bump", { clip })),
+	/**  Links a proxy file to a clip by hand and re-analyses from it. */
+	clipLinkProxy: (clip: number | null, path: string) => typedError<null, string>(__TAURI_INVOKE("clip_link_proxy", { clip, path })),
+	/**  Shows a file in Explorer with it selected. */
+	revealInExplorer: (path: string) => typedError<null, string>(__TAURI_INVOKE("reveal_in_explorer", { path })),
 	previewColour: (profile: ColourProfile) => typedError<PreviewColour, string>(__TAURI_INVOKE("preview_colour", { profile })),
 	/**  Reads a `.cube` LUT the user picked (parsed in the UI). Only `.cube` files up to 32 MB. */
 	lutRead: (path: string) => typedError<string, string>(__TAURI_INVOKE("lut_read", { path })),

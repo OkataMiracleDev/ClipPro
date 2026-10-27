@@ -576,6 +576,49 @@ async fn inspect_sample(state: State<'_, AppState>, settings: Settings, clip: f6
     .await
 }
 
+/// Analyses a clip again; `cpu` decodes without the GPU (context menu). False if it can't be
+/// analysed (no video / proxy required).
+#[tauri::command]
+#[specta::specta]
+async fn clip_retry(state: State<'_, AppState>, clip: f64, cpu: bool) -> Result<bool, String> {
+    let s = state.session()?;
+    blocking(move || s.retry(clippro_types::ClipId(clip as i64), cpu).map_err(|e| e.to_string())).await
+}
+
+/// Moves a queued clip to the front of the analysis queue.
+#[tauri::command]
+#[specta::specta]
+async fn clip_bump(state: State<'_, AppState>, clip: f64) -> Result<(), String> {
+    let s = state.session()?;
+    blocking(move || s.bump(clippro_types::ClipId(clip as i64)).map_err(|e| e.to_string())).await
+}
+
+/// Links a proxy file to a clip by hand and re-analyses from it.
+#[tauri::command]
+#[specta::specta]
+async fn clip_link_proxy(state: State<'_, AppState>, clip: f64, path: String) -> Result<(), String> {
+    let s = state.session()?;
+    state.preview.clear();
+    blocking(move || s.link_proxy(clippro_types::ClipId(clip as i64), std::path::Path::new(&path)).map_err(|e| e.to_string())).await
+}
+
+/// Shows a file in Explorer with it selected.
+#[tauri::command]
+#[specta::specta]
+async fn reveal_in_explorer(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err("The file isn't there any more.".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        // Explorer wants `/select,"path"` as one raw argument.
+        std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{}\"", p.display())).spawn().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Assigns a log/colour profile to `media` (SPEC VIE-6). Rescore afterwards: it changes Luma.
 #[tauri::command]
 #[specta::specta]
@@ -770,6 +813,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             inspect_sample,
             audio_play,
             media_set_profile,
+            clip_retry,
+            clip_bump,
+            clip_link_proxy,
+            reveal_in_explorer,
             preview_colour,
             lut_read,
             audio_stop,

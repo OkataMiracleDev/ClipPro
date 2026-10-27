@@ -53,6 +53,10 @@ interface AppState {
   startAnalysis(): Promise<void>;
   togglePause(): Promise<void>;
   refreshClips(): Promise<void>;
+  /** Context menu actions (P5.3). */
+  retryClip(clip: number, cpu: boolean): Promise<void>;
+  bumpClip(clip: number): Promise<void>;
+  linkProxy(clip: number, path: string): Promise<void>;
   setPreset(name: string): Promise<void>;
   updateSettings(fn: (s: Settings) => Settings): void;
   rescore(immediate?: boolean): void;
@@ -172,6 +176,36 @@ export const useApp = create<AppState>((set, get) => ({
     const n = await api.analysisStart();
     if (n > 0) set({ analysis: { active: true, paused: false, jobs: {} } });
     await get().refreshClips();
+  },
+
+  async retryClip(clip, cpu) {
+    try {
+      const ok = await api.retryClip(clip, cpu);
+      if (!ok) get().toast("This clip can't be analysed (no video, or it needs a proxy).", "error");
+      else set((s) => ({ analysis: { ...s.analysis, active: true } }));
+      await get().refreshClips();
+    } catch (e) {
+      get().toast(`Retry failed: ${e}`, "error");
+    }
+  },
+
+  async bumpClip(clip) {
+    try {
+      await api.bumpClip(clip);
+    } catch (e) {
+      get().toast(`${e}`, "error");
+    }
+  },
+
+  async linkProxy(clip, path) {
+    try {
+      await api.linkProxy(clip, path);
+      set((s) => ({ analysis: { ...s.analysis, active: true } }));
+      get().toast(`Linked proxy ${path.split(/[\\/]/).pop()}; analysing it now`);
+      await get().refreshClips();
+    } catch (e) {
+      get().toast(`Couldn't link the proxy: ${e instanceof Error ? e.message : e}`, "error");
+    }
   },
 
   async togglePause() {
