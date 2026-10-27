@@ -25,6 +25,10 @@ interface AppState {
   selectedSelect: number | null;
   playheadUs: number;
   playing: boolean;
+  /** Shuttle rate: ±1, ±2, ±4, ±8 (JKL). */
+  rate: number;
+  /** Loop the select under the playhead (or the clip) during playback. */
+  loop: boolean;
   analysis: { active: boolean; paused: boolean; jobs: Record<number, number> };
   inspectorOpen: boolean;
   overlay: Overlay;
@@ -49,6 +53,8 @@ interface AppState {
   selectSelect(i: number | null): void;
   setPlayhead(clip: number, us: number): void;
   setPlaying(p: boolean): void;
+  setRate(r: number): void;
+  toggleLoop(): void;
   toggleInspector(): void;
   /** Turns an overlay on, or off when it is already showing. */
   toggleOverlay(o: Overlay): void;
@@ -78,6 +84,8 @@ export const useApp = create<AppState>((set, get) => ({
   selectedSelect: null,
   playheadUs: 0,
   playing: false,
+  rate: 1,
+  loop: false,
   analysis: { active: false, paused: false, jobs: {} },
   inspectorOpen: true,
   overlay: "none",
@@ -210,6 +218,8 @@ export const useApp = create<AppState>((set, get) => ({
   },
   setPlayhead: (clip, us) => set((s) => ({ selectedClip: clip, playheadUs: us, playing: s.playing && s.selectedClip === clip })),
   setPlaying: (playing) => set({ playing }),
+  setRate: (rate) => set({ rate }),
+  toggleLoop: () => set((s) => ({ loop: !s.loop })),
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
   toggleOverlay: (o) => set((s) => ({ overlay: s.overlay === o ? "none" : o })),
   toggleMeasureOverlay: (o) => set((s) => ({ measureOverlay: s.measureOverlay === o ? "none" : o })),

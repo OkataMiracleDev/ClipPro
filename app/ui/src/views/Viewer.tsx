@@ -2,7 +2,7 @@
 // WebGL view (with shader overlays) for everything else. The store playhead is the single source of truth: playback
 // writes it, scrubbing anywhere else seeks to it.
 
-import { ChevronLeft, ChevronRight, Film, Pause, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Film, Pause, Play, Repeat } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type MediaSource } from "../api";
 import { scoreColor } from "../components/ui";
@@ -10,6 +10,7 @@ import { FLAGS } from "../lib/domain";
 import { fetchFrame } from "../lib/frames";
 import { GlView, type Overlay } from "../lib/glview";
 import { useInspection } from "../lib/inspect";
+import { shuttle, type ShuttleKey } from "../lib/shuttle";
 import { MeasureOverlay, type MeasureOverlayKind } from "./MeasureOverlay";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
@@ -57,18 +58,28 @@ function useFitBox(aspect: number) {
   return { ref, box };
 }
 
+/** Playback bounds: the select under `at` when looping (else the whole clip), and whether to wrap. */
+function playRange(clip: number, at: number, durationUs: number, frameUs: number): { start: number; end: number; loop: boolean } {
+  const { scored, loop } = useApp.getState();
+  const whole = { start: 0, end: Math.max(0, durationUs - frameUs), loop };
+  if (!loop) return whole;
+  const seg = scored?.clips.find((c) => c.clip === clip)?.segments.find((s) => at >= s.startUs - frameUs / 2 && at < s.endUs);
+  return seg ? { start: seg.startUs, end: Math.min(seg.endUs, whole.end), loop } : whole;
+}
+
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
 
 export function Viewer() {
-  const { clips, scored, selectedClip, playheadUs, playing, setPlaying, setPlayhead, overlay, toggleOverlay, measureOverlay, toggleMeasureOverlay, setRightTab } = useApp();
+  const { clips, scored, selectedClip, playheadUs, playing, setPlaying, setPlayhead, overlay, toggleOverlay, measureOverlay, toggleMeasureOverlay, setRightTab, rate, setRate, loop, toggleLoop } = useApp();
   const inspection = useInspection(measureOverlay !== "none");
   const clip = clips.find((c) => c.clip === selectedClip);
   const sc = scored?.clips.find((c) => c.clip === selectedClip);
   const media = useMediaSource(clip?.media ?? null);
   const src = media?.src ?? null;
   const [fallback, setFallback] = useState<Record<number, boolean>>({});
-  // Overlays read pixels, which the cross-origin <video> doesn't allow: they use frames.
-  const native = src?.nativeUrl && clip && !fallback[clip.media] && overlay === "none" ? src.nativeUrl : null;
+  // Overlays read pixels, which the cross-origin <video> doesn't allow, and <video> can't play
+  // backwards: both use frames.
+  const native = src?.nativeUrl && clip && !fallback[clip.media] && overlay === "none" && !(playing && rate < 0) ? src.nativeUrl : null;
   const durationUs = src?.durationUs ?? sc?.durationUs ?? 0;
   const frameUs = 1e6 / (src?.fps || 25);
   const { ref, box } = useFitBox(src ? src.width / Math.max(1, src.height) : 16 / 9);
@@ -95,12 +106,26 @@ export function Viewer() {
   useEffect(() => {
     if (!clip) return;
     const onKey = (e: KeyboardEvent) => {
-      if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
-      const { playheadUs: at, playing: p } = useApp.getState();
-      if (e.key === " " || e.key === "k" || e.key === "K") {
+      if (isTyping(e.target)) return;
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        toggleLoop();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const { playheadUs: at, playing: p, rate: r } = useApp.getState();
+      if (e.key === " ") {
         e.preventDefault();
         if (!p && at >= durationUs - frameUs) seek(0);
+        setRate(1);
         setPlaying(!p);
+      } else if (["j", "k", "l"].includes(e.key.toLowerCase())) {
+        const key = e.key.toLowerCase() as ShuttleKey;
+        if (key === "l" && !p && at >= durationUs - frameUs) seek(0);
+        if (key === "j" && !p && at <= 0) return;
+        const next = shuttle(key, p, r);
+        setRate(next.rate);
+        setPlaying(next.playing);
       } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         setPlaying(false);
@@ -127,10 +152,11 @@ export function Viewer() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [clip, durationUs, frameUs, seek, setPlaying, toggleOverlay, toggleMeasureOverlay, setRightTab]);
+  }, [clip, durationUs, frameUs, seek, setPlaying, setRate, toggleLoop, toggleOverlay, toggleMeasureOverlay, setRightTab]);
 
   const togglePlay = () => {
     if (!playing && playheadUs >= durationUs - frameUs) seek(0);
+    setRate(1);
     setPlaying(!playing);
   };
 
@@ -153,6 +179,7 @@ export function Viewer() {
                 url={native}
                 clip={clip.clip}
                 frameUs={frameUs}
+                durationUs={durationUs}
                 onFallback={() => setFallback((f) => ({ ...f, [clip.media]: true }))}
               />
             ) : (
@@ -189,7 +216,11 @@ export function Viewer() {
             <TransportButton label="Next frame (→)" onClick={() => (setPlaying(false), seek(playheadUs + frameUs))}>
               <ChevronRight size={15} />
             </TransportButton>
+            <TransportButton label={loop ? "Loop on (Ctrl+L)" : "Loop the select (Ctrl+L)"} onClick={toggleLoop} pressed={loop}>
+              <Repeat size={13} />
+            </TransportButton>
           </div>
+          {playing && rate !== 1 && <span className="rounded bg-white/15 px-1.5 font-mono text-[11px] tabular">{rate < 0 ? `◀ ${-rate}×` : `${rate}×`}</span>}
           <span className="font-mono text-[11px] text-white/55 tabular">
             {formatClock(playheadUs)} / {formatClock(durationUs)}
           </span>
@@ -246,14 +277,15 @@ function OverlayBar({ value, onToggle, measure, onMeasure }: { value: Overlay; o
   );
 }
 
-function TransportButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
+function TransportButton({ label, onClick, disabled, pressed, children }: { label: string; onClick: () => void; disabled?: boolean; pressed?: boolean; children: React.ReactNode }) {
   return (
     <button
       aria-label={label}
       title={label}
       disabled={disabled}
+      aria-pressed={pressed}
       onClick={onClick}
-      className="grid h-7 w-7 place-items-center rounded-md text-white/80 hover:bg-white/10 hover:text-white disabled:opacity-35"
+      className={`grid h-7 w-7 place-items-center rounded-md hover:bg-white/10 hover:text-white disabled:opacity-35 ${pressed ? "text-[#0a84ff]" : "text-white/80"}`}
     >
       {children}
     </button>
@@ -261,19 +293,24 @@ function TransportButton({ label, onClick, disabled, children }: { label: string
 }
 
 /** `<video>` through the asset protocol. Errors (unsupported codec) switch to frames. */
-function NativeVideo({ url, clip, frameUs, onFallback }: { url: string; clip: number; frameUs: number; onFallback: () => void }) {
+function NativeVideo({ url, clip, frameUs, durationUs, onFallback }: { url: string; clip: number; frameUs: number; durationUs: number; onFallback: () => void }) {
   const ref = useRef<HTMLVideoElement>(null);
   const playing = useApp((s) => s.playing);
   const playheadUs = useApp((s) => s.playheadUs);
+  const rate = useApp((s) => s.rate);
 
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
-    if (playing) {
+    if (playing && rate > 0) {
+      v.playbackRate = rate;
+      const range = playRange(clip, useApp.getState().playheadUs, durationUs, frameUs);
       v.play().catch(() => useApp.getState().setPlaying(false));
       let handle = 0;
       const tick = (_now: number, meta: VideoFrameCallbackMetadata) => {
-        useApp.getState().setPlayhead(clip, meta.mediaTime * 1e6);
+        const us = meta.mediaTime * 1e6;
+        if (useApp.getState().loop && range.loop && us >= range.end) v.currentTime = range.start / 1e6;
+        useApp.getState().setPlayhead(clip, us);
         handle = v.requestVideoFrameCallback(tick);
       };
       handle = v.requestVideoFrameCallback(tick);
@@ -283,7 +320,7 @@ function NativeVideo({ url, clip, frameUs, onFallback }: { url: string; clip: nu
       };
     }
     v.pause();
-  }, [playing, clip]);
+  }, [playing, rate, clip, durationUs, frameUs]);
 
   useEffect(() => {
     const v = ref.current;
@@ -298,7 +335,13 @@ function NativeVideo({ url, clip, frameUs, onFallback }: { url: string; clip: nu
       preload="auto"
       className="absolute inset-0 h-full w-full"
       onError={onFallback}
-      onEnded={() => useApp.getState().setPlaying(false)}
+      onEnded={(e) => {
+        if (useApp.getState().loop) {
+          const r = playRange(clip, 0, durationUs, frameUs);
+          e.currentTarget.currentTime = r.start / 1e6;
+          void e.currentTarget.play();
+        } else useApp.getState().setPlaying(false);
+      }}
       onLoadedMetadata={(e) => {
         e.currentTarget.currentTime = useApp.getState().playheadUs / 1e6;
       }}
@@ -314,6 +357,7 @@ function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: num
   const playing = useApp((s) => s.playing);
   const playheadUs = useApp((s) => s.playheadUs);
   const overlay = useApp((s) => s.overlay);
+  const rate = useApp((s) => s.rate);
   const loader = useRef({ busy: false, want: -1, shown: -1 });
   const playingRef = useRef(playing);
   playingRef.current = playing;
@@ -360,7 +404,7 @@ function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: num
       l.want = us;
       if (l.busy) return;
       l.busy = true;
-      fetchFrame(media, us, reqW)
+      fetchFrame(media, us, reqW, playingRef.current ? useApp.getState().rate : null)
         .then((f) => {
           const v = view.current;
           if (v) {
@@ -400,21 +444,30 @@ function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: num
   // Playing: a wall clock drives the target; each shown frame moves the playhead.
   useEffect(() => {
     if (!playing) return;
-    const t0 = performance.now();
-    const us0 = useApp.getState().playheadUs;
+    let t0 = performance.now();
+    let us0 = useApp.getState().playheadUs;
+    const range = playRange(clip, us0, src.durationUs, frameUs);
     let raf = 0;
     const tick = () => {
-      const target = us0 + (performance.now() - t0) * 1000;
-      if (target >= src.durationUs - frameUs) {
-        useApp.getState().setPlaying(false);
-        return;
+      const now = performance.now();
+      let target = us0 + (now - t0) * 1000 * rate;
+      const past = rate > 0 ? target >= range.end : target <= range.start;
+      if (past) {
+        if (!useApp.getState().loop) {
+          useApp.getState().setPlaying(false);
+          useApp.getState().setPlayhead(clip, rate > 0 ? range.end : range.start);
+          return;
+        }
+        us0 = rate > 0 ? range.start : range.end;
+        t0 = now;
+        target = us0;
       }
       if (!loader.current.busy) load(snap(target), (us) => playingRef.current && useApp.getState().setPlayhead(clip, us));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing, clip, src.durationUs, frameUs, snap, load]);
+  }, [playing, rate, clip, src.durationUs, frameUs, snap, load]);
 
   return <canvas ref={canvas} className="absolute inset-0 h-full w-full bg-black" />;
 }
