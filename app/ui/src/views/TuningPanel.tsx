@@ -5,6 +5,7 @@ import { linearScale, RangeSlider, SingleSlider, stopScale } from "../components
 import { cx, Popover, PopoverClose, Segmented, Switch } from "../components/ui";
 import { ACTIVE_FLAGS, FLAGS, TIERS } from "../lib/domain";
 import { formatDuration, parseCount, parseDuration, parseScore } from "../lib/typed";
+import { nextRun } from "../lib/flagRuns";
 import { useApp } from "../store";
 import { CameraFilterPanel } from "./CameraWheel";
 import { Weighting } from "./Weighting";
@@ -78,6 +79,12 @@ export function TuningPanel() {
   const { settings, updateSettings, scored, presetName, modified, setPreset } = useApp();
   if (!settings) return null;
   const runs = new Map(scored?.summary.flagRuns ?? []);
+  const jumpToRun = (i: number) => {
+    const st = useApp.getState();
+    if (!st.scored) return;
+    const at = nextRun(st.scored.clips, st.clips.map((c) => c.clip), i, st.selectedClip, st.playheadUs);
+    if (at) st.setPlayhead(at.clip, at.us);
+  };
   const setTier = (i: number, t: Tier) => updateSettings((s) => ({ ...s, tiers: s.tiers.map((x, j) => (j === i ? t : x)) }));
   return (
     <div className="flex h-full flex-col overflow-y-auto" aria-label="Tuning">
@@ -151,9 +158,18 @@ export function TuningPanel() {
           {FLAGS.map((f, i) =>
             ACTIVE_FLAGS.has(f.key) ? (
               <div key={f.key} className="flex items-center justify-between gap-2" title={f.hint}>
-                <span className="min-w-0 truncate text-[12px] text-text-2">
+                <span className="flex min-w-0 items-center gap-1 truncate text-[12px] text-text-2">
                   {f.label}
-                  {runs.get(f.key) ? <span className="ml-1.5 font-mono text-[10px] text-text-3 tabular">{runs.get(f.key)}</span> : null}
+                  {runs.get(f.key) ? (
+                    <button
+                      className="rounded px-1 font-mono text-[10px] text-text-3 tabular hover:bg-control-hover hover:text-text"
+                      title={`Jump to the next ${f.label.toLowerCase()} run`}
+                      aria-label={`Jump to the next ${f.label} run`}
+                      onClick={() => jumpToRun(i)}
+                    >
+                      {runs.get(f.key)} ›
+                    </button>
+                  ) : null}
                 </span>
                 <Segmented size="sm" label={`${f.label} tier`} options={TIERS} value={settings.tiers[i] ?? "neutral"} onChange={(t) => setTier(i, t)} />
               </div>
