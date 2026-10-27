@@ -592,6 +592,26 @@ async fn inspect_sample(state: State<'_, AppState>, settings: Settings, clip: f6
     .await
 }
 
+/// One sub-metric, in `Settings::subs` order (SPEC TUN-5).
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct SubMetricInfo {
+    pub key: String,
+    pub label: String,
+    /// focus | exposure | motion | audio | content (`Settings::weights` order)
+    pub group: String,
+    /// Target-type (Luma, Contrast, Loudness): a target value and tolerance, not a direction.
+    pub target: bool,
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn submetrics_list() -> Result<Vec<SubMetricInfo>, String> {
+    Ok(clippro_score::SubMetric::ALL
+        .iter()
+        .map(|m| SubMetricInfo { key: m.key().into(), label: m.label().into(), group: format!("{:?}", m.group()).to_lowercase(), target: m.is_target() })
+        .collect())
+}
+
 #[tauri::command]
 #[specta::specta]
 async fn settings_get(state: State<'_, AppState>) -> Result<settings::AppSettings, String> {
@@ -890,6 +910,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             clip_retry,
             system_info,
             settings_get,
+            submetrics_list,
             settings_set,
             open_settings,
             clip_bump,

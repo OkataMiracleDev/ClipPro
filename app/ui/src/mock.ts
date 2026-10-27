@@ -89,7 +89,16 @@ function defaultSettings(name: string): Settings {
     len_max_s: name === "Social Media" ? 15 : null,
     max_per_clip: name === "Social Media" ? 3 : null,
     weights: [35, 30, 25, 10, 0],
-    subs: Array.from({ length: 23 }, () => ({ enabled: true, pref: 0.5, target: 0.5, tol: 0.2, strength: 1 })),
+    // Mirrors SubMetric::default (clippro-score/src/submetric.rs).
+    subs: [0.7, 0.3, 0.5, 0.5, -0.5, "luma", "contrast", -0.2, null, 0, 0, 0.6, "loudness", 0.6, -0.3, 0, -0.5, -0.3, null, null, null, null, null].map((d) =>
+      d === "luma"
+        ? { enabled: false, pref: 0, target: 0.45, tol: 0.15, strength: 1 }
+        : d === "contrast"
+          ? { enabled: false, pref: 0, target: 0.55, tol: 0.2, strength: 1 }
+          : d === "loudness"
+            ? { enabled: true, pref: 0, target: -23, tol: 8, strength: 1 }
+            : { enabled: d !== null, pref: (d as number | null) ?? 0, target: 0.5, tol: 0.2, strength: 1 },
+    ),
     tiers: Array.from({ length: 18 }, (_, i) => (i === 1 || i === 2 ? "force_exclude" : i === 0 || (i >= 4 && i <= 6) ? "disfavour" : "neutral")),
     camera: { enabled: false, radius: 0, direction: 0, zoom: 0, rotate: 0, static_only: false, mirror: false },
     gap_s: 0.75,
@@ -269,6 +278,17 @@ export const mockBackend: Backend = {
   reveal: async () => {},
   systemInfo: async () => ({ hwDecode: true, version: "0.1.0" }),
   getSettings: async () => mockSettings,
+  submetrics: async () =>
+    ([
+      ["sharpness", "Sharpness", "focus"], ["detail", "Detail", "focus"], ["focus_stability", "Focus stability", "focus"],
+      ["grading_flexibility", "Grading flexibility", "exposure"], ["flicker", "Flicker", "exposure"], ["luma", "Luma", "exposure", true],
+      ["contrast", "Contrast", "exposure", true], ["noise", "Noise", "exposure"], ["wb_cast", "White-balance cast", "exposure"],
+      ["camera_motion", "Camera motion", "motion"], ["subject_motion", "Subject motion", "motion"], ["motion_stability", "Motion stability", "motion"],
+      ["loudness", "Loudness", "audio", true], ["clean", "Clean (no clipping)", "audio"], ["noise_floor", "Noise floor", "audio"],
+      ["speech_presence", "Speech presence", "audio"], ["wind", "Wind", "audio"], ["hum", "Hum", "audio"],
+      ["face_focus", "Face in focus", "content"], ["eyes_open", "Eyes open", "content"], ["face_size", "Face size", "content"],
+      ["aesthetic", "Aesthetic", "content"], ["shot_type_match", "Shot-type match", "content"],
+    ] as [string, string, string, boolean?][]).map(([key, label, group, target]) => ({ key, label, group, target: !!target })),
   setSettings: async (s) => {
     mockSettings = s;
     settingsListeners.forEach((l) => l(s));

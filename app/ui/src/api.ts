@@ -145,6 +145,8 @@ export interface Backend {
   linkProxy(clip: number, path: string): Promise<void>;
   reveal(path: string): Promise<void>;
   systemInfo(): Promise<{ hwDecode: boolean; version: string }>;
+  /** Sub-metrics in `Settings.subs` order. */
+  submetrics(): Promise<import("./lib/submetrics").SubMetricInfo[]>;
   getSettings(): Promise<AppSettings>;
   setSettings(s: AppSettings): Promise<AppSettings>;
   openSettings(): Promise<void>;
@@ -295,6 +297,7 @@ const tauriBackend: Backend = {
   linkProxy: async (clip, path) => void unwrap(await commands.clipLinkProxy(clip, path)),
   reveal: async (path) => void unwrap(await commands.revealInExplorer(path)),
   getSettings: async () => unwrap(await commands.settingsGet()),
+  submetrics: async () => unwrap(await commands.submetricsList()),
   setSettings: async (s) => unwrap(await commands.settingsSet(s)),
   openSettings: async () => void unwrap(await commands.openSettings()),
   onSettings: async (cb) => events.appSettings.listen((e) => cb(e.payload)),

@@ -47,6 +47,7 @@ export const commands = {
 	/**  Machine capabilities for the status bar. */
 	systemInfo: () => typedError<SystemInfo, string>(__TAURI_INVOKE("system_info")),
 	settingsGet: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_get")),
+	submetricsList: () => typedError<SubMetricInfo[], string>(__TAURI_INVOKE("submetrics_list")),
 	/**  Saves the app settings and tells every window (`AppSettings` event). */
 	settingsSet: (settings: AppSettings_Deserialize) => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_set", { settings })),
 	/**  Opens (or focuses) the Settings window. */
@@ -497,6 +498,16 @@ export type Settings_Serialize = {
 };
 
 export type SortOrder = "timeline" | "score_desc" | "score_asc" | "duration_desc" | "duration_asc";
+
+/**  One sub-metric, in `Settings::subs` order (SPEC TUN-5). */
+export type SubMetricInfo = {
+	key: string,
+	label: string,
+	/**  focus | exposure | motion | audio | content (`Settings::weights` order) */
+	group: string,
+	/**  Target-type (Luma, Contrast, Loudness): a target value and tolerance, not a direction. */
+	target: boolean,
+};
 
 /**  One sub-metric's state. Bipolar sub-metrics use `pref`; target-type ones use `target`/`tol`. */
 export type SubSetting = {

@@ -6,6 +6,7 @@ import { cx, Popover, PopoverClose, Segmented, Switch } from "../components/ui";
 import { ACTIVE_FLAGS, FLAGS, TIERS } from "../lib/domain";
 import { formatDuration, parseCount, parseDuration, parseScore } from "../lib/typed";
 import { useApp } from "../store";
+import { Weighting } from "./Weighting";
 import type { Tier } from "../bindings";
 
 const scoreScale = linearScale(0, 1, 100, (v) => `${Math.round(v * 100)}`, parseScore);
@@ -115,6 +116,10 @@ export function TuningPanel() {
           value={settings.max_per_clip ?? null}
           onChange={(v) => updateSettings((s) => ({ ...s, max_per_clip: v }))}
         />
+      </Section>
+
+      <Section title="Weighting">
+        <Weighting />
       </Section>
 
       <Section title="Filters">
