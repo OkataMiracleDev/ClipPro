@@ -37,6 +37,8 @@ interface AppState {
   userLut: { name: string; lut: CubeLut } | null;
   /** Before/after split position (fraction of width), null = off. */
   split: number | null;
+  /** Luma waveform monitor (W). */
+  scope: boolean;
   /** A/B compare (P6.6): a second select shown beside the current one, synced from `anchorUs`. */
   compare: { clip: number; startUs: number; endUs: number; anchorUs: number } | null;
   measureOverlay: MeasureOverlayKind;
@@ -67,6 +69,7 @@ interface AppState {
   toggleOverlay(o: Overlay): void;
   setUserLut(l: { name: string; lut: CubeLut } | null): void;
   setSplit(x: number | null): void;
+  toggleScope(): void;
   setCompare(c: AppState["compare"]): void;
   setClipProfile(media: number, profile: import("./api").ColourProfile): Promise<void>;
   toggleMeasureOverlay(o: MeasureOverlayKind): void;
@@ -102,6 +105,7 @@ export const useApp = create<AppState>((set, get) => ({
   overlay: "none",
   userLut: null,
   split: null,
+  scope: false,
   compare: null,
   measureOverlay: "none",
   rightTab: "tuning",
@@ -238,6 +242,7 @@ export const useApp = create<AppState>((set, get) => ({
   toggleOverlay: (o) => set((s) => ({ overlay: s.overlay === o ? "none" : o })),
   setUserLut: (userLut) => set({ userLut }),
   setSplit: (split) => set({ split }),
+  toggleScope: () => set((s) => ({ scope: !s.scope })),
   setCompare: (compare) => set({ compare }),
   setClipProfile: async (media, profile) => {
     try {

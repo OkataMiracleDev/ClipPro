@@ -15,6 +15,7 @@ if (overlay === "zebras" || overlay === "false_colour" || overlay === "peaking")
 const measure = q.get("measure");
 if (measure === "tiles" || measure === "motion") useApp.setState({ measureOverlay: measure });
 if (q.get("panel") === "frame") useApp.setState({ rightTab: "frame" });
+if (q.get("scope") === "1") useApp.setState({ scope: true });
 
 function mount() {
   const root = document.getElementById("root");

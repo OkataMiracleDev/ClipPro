@@ -12,7 +12,10 @@ import { FLAGS, PROFILES } from "../lib/domain";
 import { fetchFrame } from "../lib/frames";
 import { GlView, type Overlay, type ProfileColour } from "../lib/glview";
 import { useInspection } from "../lib/inspect";
+import { parseHeader, HEADER_BYTES } from "../lib/glview";
+import { rgbaToLuma, scopeBus, waveform } from "../lib/scope";
 import { shuttle, type ShuttleKey } from "../lib/shuttle";
+import { WaveformScope } from "./WaveformScope";
 import { MeasureOverlay, type MeasureOverlayKind } from "./MeasureOverlay";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
@@ -84,9 +87,10 @@ export function Viewer() {
   const userLut = useApp((s) => s.userLut);
   const split = useApp((s) => s.split);
   const compare = useApp((s) => s.compare);
+  const scope = useApp((s) => s.scope);
   // Log footage and user LUTs need the shader's colour stage, so they use frames too.
   const graded = (clip?.profile ?? "rec709") !== "rec709" || userLut !== null;
-  const native = src?.nativeUrl && clip && !fallback[clip.media] && overlay === "none" && !graded && !(playing && rate < 0) ? src.nativeUrl : null;
+  const native = src?.nativeUrl && clip && !fallback[clip.media] && overlay === "none" && !scope && !graded && !(playing && rate < 0) ? src.nativeUrl : null;
   const durationUs = src?.durationUs ?? sc?.durationUs ?? 0;
   const frameUs = 1e6 / (src?.fps || 25);
   const { ref, box } = useFitBox(src ? src.width / Math.max(1, src.height) : 16 / 9);
@@ -150,6 +154,8 @@ export function Viewer() {
         toggleMeasureOverlay("motion");
       } else if (e.key === "Escape" && useApp.getState().compare) {
         useApp.getState().setCompare(null);
+      } else if (e.key === "w" || e.key === "W") {
+        useApp.getState().toggleScope();
       } else if (e.key === "b" || e.key === "B") {
         const st = useApp.getState();
         st.setSplit(st.split === null ? 0.5 : null);
@@ -202,19 +208,20 @@ export function Viewer() {
             <MeasureOverlay kind={measureOverlay} data={inspection.data} />
           </div>
         ) : null}
+        {clip && src && scope && !native && <WaveformScope key={clip.media} />}
         {clip && (
-          <div className="absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/45 px-2 py-1 font-mono text-[11px] text-white/85 backdrop-blur tabular">
+          <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-md bg-black/45 px-2 py-1 font-mono text-[11px] text-white/85 backdrop-blur tabular">
             {formatClock(playheadUs)}
             {inSelect && <span className="rounded bg-[#0a84ff] px-1 text-[10px] text-white">SELECT</span>}
           </div>
         )}
         {clip && src && (
-          <div className="absolute top-3 right-3 flex items-center gap-2">
+          <div className="absolute top-3 right-3 left-3 flex flex-wrap items-center justify-end gap-2">
             <ColourMenu media={clip.media} profile={clip.profile} />
             {/* Half-width compare panes keep only the colour menu; overlays stay on their keys. */}
             {!compare && (
               <>
-                <OverlayBar value={overlay} onToggle={toggleOverlay} measure={measureOverlay} onMeasure={toggleMeasureOverlay} />
+                <OverlayBar value={overlay} onToggle={toggleOverlay} measure={measureOverlay} onMeasure={toggleMeasureOverlay} scope={scope} />
                 <div className="rounded-md bg-black/45 px-2 py-1 font-mono text-[10px] text-white/60 backdrop-blur" title={native ? "Native playback" : "Decoded frames"}>
                   {src.codec.toUpperCase()} · {src.width}×{src.height} · {native ? "native" : "frames"}
                 </div>
@@ -345,9 +352,18 @@ const MEASURE_OVERLAYS: { value: MeasureOverlayKind; label: string; key: string 
   { value: "motion", label: "Motion", key: "M" },
 ];
 
-function OverlayBar({ value, onToggle, measure, onMeasure }: { value: Overlay; onToggle: (o: Overlay) => void; measure: MeasureOverlayKind; onMeasure: (o: MeasureOverlayKind) => void }) {
+function OverlayBar({ value, onToggle, measure, onMeasure, scope }: { value: Overlay; onToggle: (o: Overlay) => void; measure: MeasureOverlayKind; onMeasure: (o: MeasureOverlayKind) => void; scope: boolean }) {
   return (
     <div role="group" aria-label="Overlays" className="flex items-center rounded-md bg-black/45 p-0.5 backdrop-blur">
+      <button
+        aria-pressed={scope}
+        title="Luma waveform (W)"
+        onClick={() => useApp.getState().toggleScope()}
+        className={`rounded px-1.5 py-0.5 text-[10px] ${scope ? "bg-white/85 text-black" : "text-white/70 hover:text-white"}`}
+      >
+        Waveform
+      </button>
+      <span className="mx-0.5 h-3 w-px bg-white/20" />
       {MEASURE_OVERLAYS.map((o) => (
         <button
           key={o.value}
@@ -480,6 +496,26 @@ function ComparePane({ compare }: { compare: { clip: number; startUs: number; en
   );
 }
 
+let scopeCanvas: HTMLCanvasElement | null = null;
+
+function publishScope(f: Awaited<ReturnType<typeof fetchFrame>>) {
+  if (f.kind === "i420") {
+    const hd = parseHeader(f.buf);
+    if (!hd) return;
+    scopeBus.emit(waveform(new Uint8Array(f.buf, HEADER_BYTES, hd.width * hd.height), hd.width, hd.height, { limited: hd.range === 0 }));
+  } else {
+    const w = 320;
+    const h = Math.max(1, Math.round((w * f.img.naturalHeight) / Math.max(1, f.img.naturalWidth)));
+    scopeCanvas ??= document.createElement("canvas");
+    scopeCanvas.width = w;
+    scopeCanvas.height = h;
+    const g = scopeCanvas.getContext("2d", { willReadFrequently: true });
+    if (!g) return;
+    g.drawImage(f.img, 0, 0, w, h);
+    scopeBus.emit(waveform(rgbaToLuma(g.getImageData(0, 0, w, h).data), w, h, { step: 1 }));
+  }
+}
+
 const profileColours = new Map<ColourProfile, Promise<ProfileColour>>();
 
 function FrameCanvas({
@@ -591,6 +627,8 @@ function FrameCanvas({
       l.busy = true;
       fetchFrame(media, us, reqW, playingRef.current ? useApp.getState().rate : null)
         .then((f) => {
+          // The waveform reads the luma before the shared buffer is released (`done`).
+          if (!follow && scopeBus.active) publishScope(f);
           const v = view.current;
           if (v) {
             if (f.kind === "i420") v.setI420(f.buf);
@@ -611,7 +649,7 @@ function FrameCanvas({
           if (!playingRef.current && l.want !== us) load(l.want);
         });
     },
-    [media, reqW, onError, draw],
+    [media, reqW, onError, draw, follow],
   );
 
   // Paused: show the playhead frame (coalescing rapid scrubs to the latest).
@@ -620,6 +658,12 @@ function FrameCanvas({
     const us = snap(playheadUs);
     if (us !== loader.current.shown || loader.current.want !== us) load(us);
   }, [playheadUs, playing, snap, load]);
+
+  // Opening the waveform refetches the shown frame so the scope has data while paused.
+  const scopeOn = useApp((s) => s.scope);
+  useEffect(() => {
+    if (scopeOn && !follow && !playingRef.current && loader.current.shown >= 0) load(loader.current.shown);
+  }, [scopeOn, follow, load]);
 
   // A new request width refetches the shown frame at that size.
   useEffect(() => {
