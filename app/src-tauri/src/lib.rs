@@ -11,10 +11,33 @@ use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
+pub mod preview;
+#[cfg(windows)]
+mod shared;
+
 #[derive(Default)]
 pub struct AppState {
     session: Mutex<Option<Arc<Session>>>,
     path: Mutex<Option<PathBuf>>,
+    preview: preview::PreviewCache,
+    /// `--bench-preview` report file (ADR-002); `None` in normal runs.
+    bench_out: Mutex<Option<PathBuf>>,
+}
+
+/// Preview transport benchmark run: `ClipPro --bench-preview <out.json> <clip>...`.
+pub struct Bench {
+    pub out: PathBuf,
+    pub clips: Vec<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct BenchClip {
+    pub media: f64,
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    pub duration_us: f64,
+    pub fps: f64,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -130,6 +153,7 @@ async fn project_open(state: State<'_, AppState>, path: String) -> Result<Projec
 }
 
 fn replace_session(state: &AppState, s: Arc<Session>, path: PathBuf) {
+    state.preview.clear();
     let old = lock(&state.session).replace(s);
     *lock(&state.path) = Some(path);
     if let Some(old) = old {
@@ -159,6 +183,7 @@ fn close_session(s: Arc<Session>) {
 async fn project_close(state: State<'_, AppState>) -> Result<(), String> {
     let s = lock(&state.session).take();
     *lock(&state.path) = None;
+    state.preview.clear();
     if let Some(s) = s {
         blocking(move || {
             close_session(s);
@@ -331,6 +356,102 @@ async fn export_selects(state: State<'_, AppState>, settings: Settings, sort: So
 
 // ---------- Wiring ----------
 
+/// How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
+/// when it can play natively.
+#[tauri::command]
+#[specta::specta]
+async fn media_source(app: tauri::AppHandle, state: State<'_, AppState>, media: f64) -> Result<preview::MediaSource, String> {
+    let s = state.session()?;
+    let (path, info) = blocking(move || s.preview_source(clippro_types::MediaId(media as i64)).map_err(|e| e.to_string())).await?.ok_or("Unknown media")?;
+    let src = preview::media_source(&path, &info).ok_or("This media has no video stream.")?;
+    if src.native_path.is_some() {
+        use tauri::Manager as _;
+        app.asset_protocol_scope().allow_file(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(src)
+}
+
+/// Decodes the frame shown at `us` as raw I420 and posts it to the page through a WebView2
+/// SharedBuffer (`sharedbufferreceived`; `additionalData` is `{"media","us","tag"}`).
+#[tauri::command]
+#[specta::specta]
+async fn preview_shared(window: tauri::WebviewWindow, state: State<'_, AppState>, media: f64, us: f64, width: u32, tag: u32) -> Result<(), String> {
+    let s = state.session()?;
+    let app = window.app_handle().clone();
+    let (m, t) = (media as i64, us as i64);
+    let data = blocking(move || app.state::<AppState>().preview.frame(&s, preview::FrameKind::Raw, m, t, width)).await?;
+    let meta = format!(r#"{{"media":{m},"us":{t},"tag":{tag}}}"#);
+    #[cfg(windows)]
+    {
+        shared::post(&window, data, meta)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (data, meta);
+        Err("SharedBuffer needs WebView2".into())
+    }
+}
+
+fn frame_response(app: &tauri::AppHandle, req: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{header, Response, StatusCode};
+    let fail = |code: StatusCode, msg: String| Response::builder().status(code).header(header::CONTENT_TYPE, "text/plain").header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*").body(msg.into_bytes()).unwrap_or_default();
+    let Some(r) = preview::parse_frame_uri(req.uri().path(), req.uri().query()) else {
+        return fail(StatusCode::NOT_FOUND, "Unknown preview request".into());
+    };
+    let state = app.state::<AppState>();
+    let Ok(session) = state.session() else {
+        return fail(StatusCode::SERVICE_UNAVAILABLE, "No project is open.".into());
+    };
+    let mime = match r.kind {
+        preview::FrameKind::Jpeg => "image/jpeg",
+        preview::FrameKind::Raw => "application/octet-stream",
+    };
+    match state.preview.frame(&session, r.kind, r.media, r.us, r.width) {
+        Ok(jpeg) => Response::builder()
+            .header(header::CONTENT_TYPE, mime)
+            .header(header::CACHE_CONTROL, "no-store")
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .body(jpeg)
+            .unwrap_or_default(),
+        Err(e) => fail(StatusCode::UNPROCESSABLE_ENTITY, e),
+    }
+}
+
+/// Clips to benchmark when started with `--bench-preview`, else `None`.
+#[tauri::command]
+#[specta::specta]
+async fn bench_config(state: State<'_, AppState>) -> Result<Option<Vec<BenchClip>>, String> {
+    if lock(&state.bench_out).is_none() {
+        return Ok(None);
+    }
+    let s = state.session()?;
+    let mut out = Vec::new();
+    for c in s.clip_statuses().map_err(|e| e.to_string())? {
+        let Some((_, info)) = s.preview_source(c.media).map_err(|e| e.to_string())? else { continue };
+        let Some(v) = &info.video else { continue };
+        out.push(BenchClip { media: c.media.0 as f64, name: c.name, width: v.width, height: v.height, duration_us: info.duration_us as f64, fps: v.fps.0.to_f64() });
+    }
+    Ok(Some(out))
+}
+
+/// Writes the benchmark report and exits.
+#[tauri::command]
+#[specta::specta]
+async fn bench_report(app: tauri::AppHandle, state: State<'_, AppState>, report: String) -> Result<(), String> {
+    let Some(out) = lock(&state.bench_out).clone() else { return Err("Not a benchmark run".into()) };
+    std::fs::write(&out, report).map_err(|e| e.to_string())?;
+    state.preview.clear();
+    if let Some(s) = lock(&state.session).take() {
+        close_session(s);
+    }
+    let _ = std::fs::remove_file(out.with_extension("clippro"));
+    for ext in ["clippro-wal", "clippro-shm"] {
+        let _ = std::fs::remove_file(out.with_extension(ext));
+    }
+    app.exit(0);
+    Ok(())
+}
+
 pub fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
         .commands(collect_commands![
@@ -347,6 +468,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             preset_settings,
             score,
             export_selects,
+            media_source,
+            preview_shared,
+            bench_config,
+            bench_report,
         ])
         .events(collect_events![AnalysisEvent])
 }
@@ -393,7 +518,7 @@ fn pump_events(app: tauri::AppHandle) {
     });
 }
 
-pub fn run() {
+pub fn run(bench: Option<Bench>) {
     let builder = specta_builder();
     #[cfg(debug_assertions)]
     if let Err(e) = export_bindings(BINDINGS_PATH) {
@@ -404,8 +529,23 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
         .invoke_handler(invoke)
+        .register_asynchronous_uri_scheme_protocol("clippro", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || responder.respond(frame_response(&app, &request)));
+        })
         .setup(move |app| {
             builder.mount_events(app);
+            if let Some(b) = bench {
+                let proj = b.out.with_extension("clippro");
+                let _ = std::fs::remove_file(&proj);
+                let s = Session::create(&proj, "bench", SessionOptions { cache_path: None, ..options() })?;
+                s.import(&b.clips)?;
+                let state = app.state::<AppState>();
+                replace_session(&state, Arc::new(s), proj);
+                *lock(&state.bench_out) = Some(b.out);
+                pump_events(app.handle().clone());
+                return Ok(()); // the window stays hidden
+            }
             if let Some(w) = app.get_webview_window("main") {
                 let material = apply_material(&w);
                 let script = format!("document.body.classList.toggle('has-material', {material});");

@@ -20,6 +20,20 @@ export const commands = {
 	presetSettings: (name: string) => typedError<Settings_Serialize, string>(__TAURI_INVOKE("preset_settings", { name })),
 	score: (settings: Settings_Deserialize, sort: SortOrder) => typedError<ScoreResult, string>(__TAURI_INVOKE("score", { settings, sort })),
 	exportSelects: (settings: Settings_Deserialize, sort: SortOrder, request: ExportRequest) => typedError<ExportResult, string>(__TAURI_INVOKE("export_selects", { settings, sort, request })),
+	/**
+	 *  How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
+	 *  when it can play natively.
+	 */
+	mediaSource: (media: number | null) => typedError<MediaSource_Serialize, string>(__TAURI_INVOKE("media_source", { media })),
+	/**
+	 *  Decodes the frame shown at `us` as raw I420 and posts it to the page through a WebView2
+	 *  SharedBuffer (`sharedbufferreceived`; `additionalData` is `{"media","us","tag"}`).
+	 */
+	previewShared: (media: number | null, us: number | null, width: number, tag: number) => typedError<null, string>(__TAURI_INVOKE("preview_shared", { media, us, width, tag })),
+	/**  Clips to benchmark when started with `--bench-preview`, else `None`. */
+	benchConfig: () => typedError<BenchClip[] | null, string>(__TAURI_INVOKE("bench_config")),
+	/**  Writes the benchmark report and exits. */
+	benchReport: (report: string) => typedError<null, string>(__TAURI_INVOKE("bench_report", { report })),
 };
 
 /** Events */
@@ -46,6 +60,15 @@ export type AnalysisEvent_Serialize = {
 	done: number | null,
 	total: number | null,
 	error: string | null,
+};
+
+export type BenchClip = {
+	media: number | null,
+	name: string,
+	width: number,
+	height: number,
+	duration_us: number | null,
+	fps: number | null,
 };
 
 export type CameraFilter = {
@@ -137,6 +160,41 @@ export type MasterSwitches = {
 	metrics: boolean,
 	flags: boolean,
 	camera_filter: boolean,
+};
+
+/**  How the viewer should show a clip. */
+export type MediaSource = MediaSource_Serialize | MediaSource_Deserialize;
+
+/**  How the viewer should show a clip. */
+export type MediaSource_Deserialize = {
+	/**
+	 *  File for `<video>` (asset protocol), when the codec is one WebView2 may play natively.
+	 *  The viewer falls back to frames if the element reports an error.
+	 */
+	native_path?: string | null,
+	duration_us: number | null,
+	fps: number | null,
+	width: number,
+	height: number,
+	/**  First video pts (µs). Native playback time minus this is the measurement time. */
+	start_us: number | null,
+	codec: string,
+};
+
+/**  How the viewer should show a clip. */
+export type MediaSource_Serialize = {
+	/**
+	 *  File for `<video>` (asset protocol), when the codec is one WebView2 may play natively.
+	 *  The viewer falls back to frames if the element reports an error.
+	 */
+	native_path: string | null,
+	duration_us: number | null,
+	fps: number | null,
+	width: number,
+	height: number,
+	/**  First video pts (µs). Native playback time minus this is the measurement time. */
+	start_us: number | null,
+	codec: string,
 };
 
 export type PresetInfo = {

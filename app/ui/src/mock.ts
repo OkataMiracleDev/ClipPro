@@ -1,7 +1,7 @@
 // Mock backend for the browser preview and component tests. Deterministic demo data with a
 // simplified selects rule (threshold + length + cap); the real engine lives in Rust.
 
-import type { AnalysisEvent, Backend, Clip, Scored, Segment, Settings } from "./api";
+import type { AnalysisEvent, Backend, Clip, MediaSource, Scored, Segment, Settings } from "./api";
 import type { PresetInfo } from "./bindings";
 
 const PRESETS: PresetInfo[] = [
@@ -141,6 +141,23 @@ function score(s: Settings): Scored {
   };
 }
 
+/** Synthetic picture for the browser preview: a soft gradient that drifts with time. */
+function mockFrame(media: number, us: number, width: number): string {
+  const h = (media * 47) % 360;
+  const t = us / 1e6;
+  const x = 50 + 30 * Math.sin(t * 0.7 + media);
+  const y = 45 + 20 * Math.cos(t * 0.5);
+  const w = Math.round(width);
+  const ht = Math.round((w * 9) / 16);
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${ht}" viewBox="0 0 160 90">` +
+    `<defs><radialGradient id="g" cx="${x}%" cy="${y}%" r="75%"><stop offset="0" stop-color="hsl(${h} 45% 62%)"/>` +
+    `<stop offset="0.55" stop-color="hsl(${(h + 30) % 360} 35% 32%)"/><stop offset="1" stop-color="hsl(${(h + 60) % 360} 30% 12%)"/></radialGradient></defs>` +
+    `<rect width="160" height="90" fill="url(#g)"/>` +
+    `<rect x="${(t * 9) % 180 - 20}" y="58" width="22" height="14" rx="2" fill="hsl(${h} 20% 85% / 0.55)"/></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 export const mockBackend: Backend = {
   projectNew: async (path, name) => ({ path, name, recovered: false }),
   projectOpen: async (path) => ({ path, name: "Demo Project", recovered: false }),
@@ -154,6 +171,12 @@ export const mockBackend: Backend = {
   presetSettings: async (name) => defaultSettings(name),
   score: async (settings) => score(settings),
   exportSelects: async (settings, _sort, request) => ({ path: request.path, selects: score(settings).selects.length }),
+  mediaSource: async (media): Promise<MediaSource> => {
+    const d = demo.find((x) => x.clip.media === media);
+    if (!d) throw new Error("Unknown media");
+    return { nativeUrl: null, durationUs: d.durationUs, fps: 25, width: 1920, height: 1080, codec: "prores" };
+  },
+  frameUrl: mockFrame,
   onAnalysis: async (cb) => {
     listeners.add(cb);
     return () => listeners.delete(cb);

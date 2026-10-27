@@ -41,6 +41,13 @@ pub enum HwMode {
     Off,
 }
 
+/// Pixel layout for preview frames (`VideoDecoder::to_preview`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreviewFormat {
+    Rgb24 = 0,
+    I420 = 1,
+}
+
 #[derive(Clone, Debug)]
 pub struct DecodeOptions {
     pub threads: i32,
@@ -133,6 +140,14 @@ pub struct VideoDecoder {
     pub stats: DecodeStats,
     hw_device: *mut ff::AVBufferRef,
     errors_in_row: u32,
+    /// Preview state: pts (µs) of the last frame returned by `frame_near`.
+    last_preview_us: Option<i64>,
+    /// Decoded frame just past the last preview target (not yet shown).
+    pending: Option<Frame>,
+    /// Frame returned by the last `frame_near` (re-shown while the target hasn't advanced).
+    preview_last: Option<Frame>,
+    rgb_sws: Option<Sws>,
+    rgb_key: (i32, i32, i32, u32),
 }
 
 unsafe impl Send for VideoDecoder {}
@@ -198,6 +213,11 @@ impl VideoDecoder {
             stats: DecodeStats::default(),
             hw_device,
             errors_in_row: 0,
+            last_preview_us: None,
+            pending: None,
+            preview_last: None,
+            rgb_sws: None,
+            rgb_key: (0, 0, -1, 0),
         })
     }
 
@@ -227,6 +247,9 @@ impl VideoDecoder {
         self.dec.flush();
         self.eof_sent = false;
         self.stats.seeks += 1;
+        self.last_preview_us = None;
+        self.pending = None;
+        self.preview_last = None;
         Ok(())
     }
 
@@ -511,6 +534,105 @@ impl VideoDecoder {
                 return Ok(Some(owned));
             }
         }
+    }
+
+    /// Preview decode: returns the frame shown at `us` (the last frame with pts ≤ us + ½ frame).
+    /// Decodes forward from the previous request when `us` is a little ahead (playback), and
+    /// seeks otherwise (scrubbing).
+    pub fn frame_near(&mut self, us: i64) -> Result<Option<Frame>> {
+        let half = (self.fps.frame_duration_us() / 2.0) as i64;
+        let forward = matches!(self.last_preview_us, Some(last) if us >= last && us - last <= 2_000_000);
+        let mut best: Option<Frame> = None;
+        if forward {
+            // A frame decoded past the previous target is still the next one in the stream.
+            if let Some(p) = self.pending.take() {
+                if self.rel_us(p.pts()) > us + half {
+                    self.pending = Some(p);
+                    let last = self.preview_last.take();
+                    return self.preview_owned(last);
+                }
+                best = Some(p);
+            } else if let Some(l) = self.preview_last.take() {
+                if self.rel_us(l.pts()) + half >= us {
+                    return self.preview_owned(Some(l));
+                }
+            }
+        } else {
+            self.seek_to(us)?;
+        }
+        let mut cur = Frame::new();
+        while best.as_ref().is_none_or(|b| self.rel_us(b.pts()) + half < us) {
+            cur.unref();
+            if !self.next_frame(&mut cur)? {
+                break;
+            }
+            if self.rel_us(cur.pts()) > us + half && best.is_some() {
+                self.pending = Some(cur.clone_ref()?);
+                break;
+            }
+            best = Some(cur.clone_ref()?);
+        }
+        if best.is_none() {
+            best = self.preview_last.take();
+        }
+        self.preview_owned(best)
+    }
+
+    fn preview_owned(&mut self, f: Option<Frame>) -> Result<Option<Frame>> {
+        let Some(f) = f else { return Ok(None) };
+        self.last_preview_us = Some(self.rel_us(f.pts()));
+        let out = self.owned_viewable(&f)?;
+        self.preview_last = Some(f);
+        Ok(Some(out))
+    }
+
+    /// Converts a viewable frame to packed RGB24, scaled to at most `max_w` wide.
+    pub fn to_rgb(&mut self, f: &Frame, max_w: u32) -> Result<(u32, u32, Vec<u8>)> {
+        self.to_preview(f, max_w, PreviewFormat::Rgb24)
+    }
+
+    /// Converts a viewable frame for preview, scaled to at most `max_w` wide (even sizes).
+    /// `Rgb24` is packed; `I420` is the Y plane then U then V, each tightly packed.
+    pub fn to_preview(&mut self, f: &Frame, max_w: u32, fmt: PreviewFormat) -> Result<(u32, u32, Vec<u8>)> {
+        let r = f.raw();
+        let (w, h) = (r.width, r.height);
+        let scale = (max_w as f64 / w.max(1) as f64).min(1.0);
+        let ow = ((w as f64 * scale).round() as i32).max(2) & !1;
+        let oh = ((h as f64 * scale).round() as i32).max(2) & !1;
+        let key = (w, h, r.format, ow as u32 | (fmt as u32) << 31);
+        if self.rgb_sws.is_none() || self.rgb_key != key {
+            let src: ff::AVPixelFormat = unsafe { std::mem::transmute(r.format) };
+            let dst = match fmt {
+                PreviewFormat::Rgb24 => ff::AVPixelFormat::AV_PIX_FMT_RGB24,
+                PreviewFormat::I420 => ff::AVPixelFormat::AV_PIX_FMT_YUV420P,
+            };
+            let ctx = unsafe { ff::sws_getContext(w, h, src, ow, oh, dst, ff::SwsFlags::SWS_BILINEAR as i32, ptr::null_mut(), ptr::null_mut(), ptr::null()) };
+            if ctx.is_null() {
+                return Err(MediaError::Unsupported("preview conversion".into()));
+            }
+            self.rgb_sws = Some(Sws { ctx });
+            self.rgb_key = key;
+        }
+        let (ow_u, oh_u) = (ow as usize, oh as usize);
+        let (len, strides, offsets) = match fmt {
+            PreviewFormat::Rgb24 => (ow_u * 3 * oh_u, [ow * 3, 0, 0, 0], [0, 0, 0]),
+            PreviewFormat::I420 => {
+                let y = ow_u * oh_u;
+                let c = (ow_u / 2) * (oh_u / 2);
+                (y + 2 * c, [ow, ow / 2, ow / 2, 0], [0, y, y + c])
+            }
+        };
+        let mut out = vec![0u8; len];
+        unsafe {
+            let base = out.as_mut_ptr();
+            let dst = match fmt {
+                PreviewFormat::Rgb24 => [base, ptr::null_mut(), ptr::null_mut(), ptr::null_mut()],
+                PreviewFormat::I420 => [base, base.add(offsets[1]), base.add(offsets[2]), ptr::null_mut()],
+            };
+            #[allow(clippy::unwrap_used)]
+            ff::sws_scale(self.rgb_sws.as_ref().unwrap().ctx, r.data.as_ptr() as *const *const u8, r.linesize.as_ptr(), 0, h, dst.as_ptr(), strides.as_ptr());
+        }
+        Ok((ow as u32, oh as u32, out))
     }
 
     pub fn rel_pts_us(&self, f: &Frame) -> i64 {

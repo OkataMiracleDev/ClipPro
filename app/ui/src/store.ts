@@ -22,6 +22,7 @@ interface AppState {
   selectedClip: number | null;
   selectedSelect: number | null;
   playheadUs: number;
+  playing: boolean;
   analysis: { active: boolean; paused: boolean; jobs: Record<number, number> };
   inspectorOpen: boolean;
   toasts: Toast[];
@@ -42,6 +43,7 @@ interface AppState {
   selectClip(clip: number | null): void;
   selectSelect(i: number | null): void;
   setPlayhead(clip: number, us: number): void;
+  setPlaying(p: boolean): void;
   toggleInspector(): void;
   toast(text: string, tone?: Toast["tone"]): void;
   dismissToast(id: number): void;
@@ -66,6 +68,7 @@ export const useApp = create<AppState>((set, get) => ({
   selectedClip: null,
   selectedSelect: null,
   playheadUs: 0,
+  playing: false,
   analysis: { active: false, paused: false, jobs: {} },
   inspectorOpen: true,
   toasts: [],
@@ -86,7 +89,7 @@ export const useApp = create<AppState>((set, get) => ({
   async newProject(path, name) {
     try {
       const project = await api.projectNew(path, name);
-      set({ project, clips: [], scored: null, selectedClip: null });
+      set({ project, clips: [], scored: null, selectedClip: null, playing: false });
     } catch (e) {
       get().toast(`Couldn't create the project: ${e}`, "error");
     }
@@ -95,7 +98,7 @@ export const useApp = create<AppState>((set, get) => ({
   async openProject(path) {
     try {
       const project = await api.projectOpen(path);
-      set({ project, selectedClip: null, selectedSelect: null });
+      set({ project, selectedClip: null, selectedSelect: null, playing: false });
       if (project.recovered) get().toast("ClipPro didn't close cleanly last time. The project was restored to its last saved state.");
       await get().refreshClips();
       get().rescore(true);
@@ -107,7 +110,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   async closeProject() {
     await api.projectClose();
-    set({ project: null, clips: [], scored: null, selectedClip: null, selectedSelect: null });
+    set({ project: null, clips: [], scored: null, selectedClip: null, selectedSelect: null, playing: false });
   },
 
   async importPaths(paths) {
@@ -188,12 +191,13 @@ export const useApp = create<AppState>((set, get) => ({
     get().rescore(true);
   },
   toggleSelectsOnly: () => set((s) => ({ selectsOnly: !s.selectsOnly })),
-  selectClip: (clip) => set({ selectedClip: clip, selectedSelect: null }),
+  selectClip: (clip) => set((s) => ({ selectedClip: clip, selectedSelect: null, playing: s.playing && s.selectedClip === clip })),
   selectSelect: (i) => {
     const sel = i === null ? null : get().scored?.selects[i];
     set({ selectedSelect: i, ...(sel ? { selectedClip: sel.clip, playheadUs: sel.segment.startUs } : {}) });
   },
-  setPlayhead: (clip, us) => set({ selectedClip: clip, playheadUs: us }),
+  setPlayhead: (clip, us) => set((s) => ({ selectedClip: clip, playheadUs: us, playing: s.playing && s.selectedClip === clip })),
+  setPlaying: (playing) => set({ playing }),
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
   toast(text, tone = "info") {
     const id = ++toastId;

@@ -267,6 +267,19 @@ impl Session {
 
     /// Queues every media item without a finished run for the current analysis settings.
     /// Returns how many jobs were queued.
+    /// File and probe used for preview playback of `media`: the linked proxy when there is one
+    /// (it is lighter to decode), otherwise the original. `None` when the media is unknown.
+    pub fn preview_source(&self, media: MediaId) -> Result<Option<(PathBuf, MediaInfo)>> {
+        let db = lock(&self.db);
+        let Some(m) = db.media(media)? else { return Ok(None) };
+        let src = match m.proxy_media_id {
+            Some(pid) => db.media(pid)?.filter(|p| Path::new(&p.path).exists()).unwrap_or_else(|| m.clone()),
+            None => m,
+        };
+        let info = serde_json::from_str::<MediaInfo>(&src.probe_json).map_err(|e| SessionError::Other(e.to_string()))?;
+        Ok(Some((PathBuf::from(src.path), info)))
+    }
+
     pub fn queue_analysis(&self) -> Result<usize> {
         let params = self.run_params();
         let key = params.key();

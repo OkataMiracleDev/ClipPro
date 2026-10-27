@@ -240,3 +240,36 @@ fn corrupt_and_truncated_files_error_cleanly() {
     }
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+#[test]
+fn preview_frames_play_forward_without_seeking() {
+    let Some(dir) = corpus() else { return };
+    let p = dir.join("pan_right.mp4");
+    let info = probe(&p).unwrap();
+    let step = info.fps().frame_duration_us();
+    for hw in [HwMode::Off, HwMode::Auto] {
+        let mut dec = VideoDecoder::open(&p, &info, &DecodeOptions { threads: 2, hw }).unwrap();
+        let start = 1_000_000i64;
+        let mut last = -1;
+        for k in 0..48 {
+            let t = start + (k as f64 * step) as i64;
+            let f = dec.frame_near(t).unwrap().expect("frame");
+            let pts = dec.rel_pts_us(&f);
+            assert!((pts - t).abs() <= (step / 2.0) as i64 + 1, "target {t}, got {pts}");
+            assert!(pts > last, "frames advance");
+            last = pts;
+        }
+        assert_eq!(dec.stats.seeks, 1, "playback decodes forward");
+        // Re-requesting the same time shows the same frame without decoding.
+        let again = dec.frame_near(last).unwrap().unwrap();
+        assert_eq!(dec.rel_pts_us(&again), last);
+        // Scrubbing back seeks.
+        let f = dec.frame_near(200_000).unwrap().unwrap();
+        assert!((dec.rel_pts_us(&f) - 200_000).abs() <= (step / 2.0) as i64 + 1);
+        assert_eq!(dec.stats.seeks, 2);
+        let (w, h, rgb) = dec.to_rgb(&f, 320).unwrap();
+        assert_eq!(w, 320);
+        assert_eq!(rgb.len(), (w * h * 3) as usize);
+        assert!(rgb.iter().any(|&v| v > 16), "non-black picture");
+    }
+}

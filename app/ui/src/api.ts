@@ -8,6 +8,7 @@ import type {
   ExportRequest,
   ExportResult,
   ImportResult,
+  MediaSource_Serialize as RawMediaSource,
   PresetInfo,
   ProjectInfo,
   ScoreResult,
@@ -18,6 +19,17 @@ import { mockBackend } from "./mock";
 
 export type { ExportRequest, ExportResult, ImportResult, PresetInfo, ProjectInfo, SortOrder };
 export type Settings = RawSettings;
+
+/** How the viewer shows a clip (ADR-002). */
+export interface MediaSource {
+  /** URL for `<video>` when the codec may play natively; frames are the fallback. */
+  nativeUrl: string | null;
+  durationUs: number;
+  fps: number;
+  width: number;
+  height: number;
+  codec: string;
+}
 
 export type ClipState = "queued" | "running" | "paused" | "done" | "failed";
 
@@ -86,6 +98,9 @@ export interface Backend {
   score(settings: Settings, sort: SortOrder): Promise<Scored>;
   exportSelects(settings: Settings, sort: SortOrder, request: ExportRequest): Promise<ExportResult>;
   onAnalysis(cb: (e: AnalysisEvent) => void): Promise<() => void>;
+  mediaSource(media: number): Promise<MediaSource>;
+  /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
+  frameUrl(media: number, us: number, width: number): string;
 }
 
 export const n = (v: number | null | undefined, fallback = 0): number => (v === null || v === undefined || Number.isNaN(v) ? fallback : v);
@@ -158,6 +173,17 @@ const adaptClip = (c: RawClip): Clip => ({
   error: c.error ?? null,
 });
 
+function adaptSource(r: RawMediaSource, toUrl: (path: string) => string): MediaSource {
+  return {
+    nativeUrl: r.native_path ? toUrl(r.native_path) : null,
+    durationUs: n(r.duration_us),
+    fps: n(r.fps, 25),
+    width: r.width,
+    height: r.height,
+    codec: r.codec,
+  };
+}
+
 const tauriBackend: Backend = {
   projectNew: async (path, name) => unwrap(await commands.projectNew(path, name)),
   projectOpen: async (path) => unwrap(await commands.projectOpen(path)),
@@ -171,6 +197,11 @@ const tauriBackend: Backend = {
   presetSettings: async (name) => unwrap(await commands.presetSettings(name)),
   score: async (settings, sort) => adaptScore(unwrap(await commands.score(settings, sort))),
   exportSelects: async (settings, sort, request) => unwrap(await commands.exportSelects(settings, sort, request)),
+  mediaSource: async (media) => {
+    const { convertFileSrc } = await import("@tauri-apps/api/core");
+    return adaptSource(unwrap(await commands.mediaSource(media)), (p) => convertFileSrc(p));
+  },
+  frameUrl: (media, us, width) => `http://clippro.localhost/frame/${media}/${Math.max(0, Math.round(us))}?w=${Math.round(width)}`,
   onAnalysis: async (cb) =>
     events.analysisEvent.listen((e) =>
       cb({

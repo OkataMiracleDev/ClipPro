@@ -16,5 +16,11 @@ fn main() {
             }
         }
     }
-    clippro_app::run();
+    // `ClipPro --bench-preview <out.json> <clip>...` measures the preview transports inside
+    // WebView2 with the window hidden, writes the report and exits (ADR-002).
+    let bench = args.iter().position(|a| a == "--bench-preview").map(|i| clippro_app::Bench {
+        out: args.get(i + 1).map(Into::into).unwrap_or_else(|| "bench-preview.json".into()),
+        clips: args[(i + 2).min(args.len())..].iter().map(Into::into).collect(),
+    });
+    clippro_app::run(bench);
 }
