@@ -303,7 +303,9 @@ mod tests {
         let el = t.elapsed();
         assert_eq!(back.len(), n);
         eprintln!("decode 1.44 M samples: {el:?}");
-        if !cfg!(debug_assertions) {
+        // Wall-clock budgets are asserted in performance runs (CLIPPRO_PERF=1, PLAN P8.3/P14.6),
+        // on an idle machine at full clock; ordinary test runs only report the time.
+        if std::env::var("CLIPPRO_PERF").is_ok() && !cfg!(debug_assertions) {
             assert!(el.as_millis() <= 300, "{el:?}");
         }
     }

@@ -10,3 +10,12 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+clippro-analysis = { version = "0.1.0", path = "../clippro-analysis" }
+clippro-core = { version = "0.1.0", path = "../clippro-core" }
+clippro-media = { version = "0.1.0", path = "../clippro-media" }
+clippro-project = { version = "0.1.0", path = "../clippro-project" }
+clippro-score = { version = "0.1.0", path = "../clippro-score" }
+clippro-types = { version = "0.1.0", path = "../clippro-types" }
+serde_json = "1.0.154"
