@@ -6,6 +6,7 @@ use crate::preset::LongSegmentMode;
 use crate::settings::Settings;
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentKind {
@@ -17,16 +18,23 @@ pub enum SegmentKind {
 }
 
 /// One select.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Segment {
     /// Core span (µs from clip start), used for length rules and totals.
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub start_us: i64,
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub end_us: i64,
     /// Span including handles, used for exports.
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub in_us: i64,
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub out_us: i64,
     pub mean: f32,
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub first_sample: usize,
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub last_sample: usize,
     pub kind: SegmentKind,
 }
@@ -37,6 +45,7 @@ impl Segment {
     }
 }
 
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OverrideKind {
@@ -47,10 +56,13 @@ pub enum OverrideKind {
 }
 
 /// A manual override anchored to a time range so it survives re-scoring.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Override {
     pub kind: OverrideKind,
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub start_us: i64,
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub end_us: i64,
 }
 

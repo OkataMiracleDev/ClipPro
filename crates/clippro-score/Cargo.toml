@@ -10,6 +10,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+specta = { version = "=2.0.0-rc.26", features = ["derive"], optional = true }
 clippro-types = { path = "../clippro-types" }
 clippro-measure = { path = "../clippro-measure" }
 serde = { version = "1", features = ["derive"] }
@@ -26,3 +27,6 @@ criterion = "0.7"
 [[bench]]
 name = "rescore"
 harness = false
+
+[features]
+specta = ["dep:specta", "clippro-types/specta"]

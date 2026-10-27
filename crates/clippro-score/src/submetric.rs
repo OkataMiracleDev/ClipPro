@@ -3,6 +3,7 @@
 use clippro_types::MetricGroup;
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum SubMetric {

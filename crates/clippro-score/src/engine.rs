@@ -59,13 +59,18 @@ pub struct ClipSelects {
     pub scores: Arc<FrameScores>,
 }
 
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Summary {
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub segment_count: usize,
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub selects_us: i64,
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub footage_us: i64,
     pub percent: f32,
     /// Runs of consecutive flagged samples across the project, per flag.
+    #[cfg_attr(feature = "specta", specta(type = Vec<(FlagKind, f64)>))]
     pub flag_runs: Vec<(FlagKind, usize)>,
 }
 
@@ -75,6 +80,7 @@ pub struct Selects {
     pub summary: Summary,
 }
 
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SortOrder {
@@ -87,8 +93,10 @@ pub enum SortOrder {
 }
 
 /// A flattened select reference for selects-only view and exports.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SelectRef {
+    #[cfg_attr(feature = "specta", specta(type = f64))]
     pub clip_index: usize,
     pub clip: ClipId,
     pub segment: Segment,

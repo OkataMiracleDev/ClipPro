@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
 /// One sub-metric's state. Bipolar sub-metrics use `pref`; target-type ones use `target`/`tol`.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SubSetting {
     pub enabled: bool,
@@ -30,6 +31,7 @@ impl SubSetting {
     }
 }
 
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct CameraFilter {
     pub enabled: bool,
@@ -41,6 +43,7 @@ pub struct CameraFilter {
     pub mirror: bool,
 }
 
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MasterSwitches {
     pub metrics: bool,
@@ -48,6 +51,7 @@ pub struct MasterSwitches {
     pub camera_filter: bool,
 }
 
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     pub preset_name: String,

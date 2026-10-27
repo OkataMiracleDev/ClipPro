@@ -1,0 +1,40 @@
+[package]
+name = "clippro-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "ClipPro desktop app"
+
+[lints]
+workspace = true
+
+[lib]
+name = "clippro_app"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "ClipPro"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+base64 = "0.23.1"
+clippro-analysis = { version = "0.1.0", path = "../../crates/clippro-analysis" }
+clippro-core = { version = "0.1.0", path = "../../crates/clippro-core" }
+clippro-measure = { version = "0.1.0", path = "../../crates/clippro-measure" }
+clippro-project = { version = "0.1.0", path = "../../crates/clippro-project" }
+clippro-score = { version = "0.1.0", path = "../../crates/clippro-score", features = ["specta"] }
+clippro-types = { version = "0.1.0", path = "../../crates/clippro-types", features = ["specta"] }
+serde = { version = "1.0.229", features = ["derive"] }
+specta = { version = "=2.0.0-rc.26", features = ["derive"] }
+clippro-media = { path = "../../crates/clippro-media" }
+serde_json = "1.0.154"
+specta-typescript = "=0.0.13"
+tauri = "2"
+tauri-plugin-dialog = "2"
+tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
+window-vibrancy = "0.8"

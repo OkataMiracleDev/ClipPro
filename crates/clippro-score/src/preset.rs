@@ -169,6 +169,7 @@ impl Default for CameraFilterToml {
     }
 }
 
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LongSegmentMode {

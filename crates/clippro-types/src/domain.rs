@@ -5,9 +5,10 @@ use std::fmt;
 
 macro_rules! id_type {
     ($($name:ident),*) => {$(
+        #[cfg_attr(feature = "specta", derive(specta::Type))]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default)]
         #[serde(transparent)]
-        pub struct $name(pub i64);
+        pub struct $name(#[cfg_attr(feature = "specta", specta(type = f64))] pub i64);
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
         }
@@ -16,6 +17,7 @@ macro_rules! id_type {
 id_type!(MediaId, ClipId, BinId, RunId, PresetId, PersonId, OverrideId, SyncGroupId);
 
 /// Metric groups (SPEC §29).
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricGroup {
@@ -54,6 +56,7 @@ impl MetricGroup {
 }
 
 /// Bitmask of enabled compute groups.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GroupMask(pub u8);
 
@@ -81,6 +84,7 @@ impl Default for GroupMask {
 }
 
 /// Every flag ClipPro can raise (SPEC §5.3, ALGORITHMS §2).
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum FlagKind {
@@ -194,6 +198,7 @@ impl FlagKind {
 }
 
 /// What a flag does to scoring (ALGORITHMS §6.4).
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Tier {
@@ -216,6 +221,7 @@ impl Tier {
 }
 
 /// Sample-rate presets (ALGORITHMS §0.1).
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SampleRate {
@@ -266,6 +272,7 @@ impl SampleRate {
 }
 
 /// Log/colour profiles for preview and log-aware exposure (SPEC VIE-6).
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ColourProfile {
