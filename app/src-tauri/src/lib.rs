@@ -576,6 +576,21 @@ async fn inspect_sample(state: State<'_, AppState>, settings: Settings, clip: f6
     .await
 }
 
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct SystemInfo {
+    /// D3D11VA hardware decoding works on this machine.
+    pub hw_decode: bool,
+    pub version: String,
+}
+
+/// Machine capabilities for the status bar.
+#[tauri::command]
+#[specta::specta]
+async fn system_info() -> Result<SystemInfo, String> {
+    let hw = blocking(|| Ok(clippro_media::video::hw_decode_available())).await?;
+    Ok(SystemInfo { hw_decode: hw, version: env!("CARGO_PKG_VERSION").to_string() })
+}
+
 /// Analyses a clip again; `cpu` decodes without the GPU (context menu). False if it can't be
 /// analysed (no video / proxy required).
 #[tauri::command]
@@ -814,6 +829,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             audio_play,
             media_set_profile,
             clip_retry,
+            system_info,
             clip_bump,
             clip_link_proxy,
             reveal_in_explorer,

@@ -265,6 +265,7 @@ export const mockBackend: Backend = {
   bumpClip: async () => {},
   linkProxy: async () => {},
   reveal: async () => {},
+  systemInfo: async () => ({ hwDecode: true, version: "0.1.0" }),
   readLut: async () => "TITLE \"Demo\"\nLUT_1D_SIZE 2\n0 0 0\n1 1 1\n",
   onAnalysis: async (cb) => {
     listeners.add(cb);

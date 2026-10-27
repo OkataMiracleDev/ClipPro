@@ -44,6 +44,8 @@ export const commands = {
 	 *  analysed (no video / proxy required).
 	 */
 	clipRetry: (clip: number | null, cpu: boolean) => typedError<boolean, string>(__TAURI_INVOKE("clip_retry", { clip, cpu })),
+	/**  Machine capabilities for the status bar. */
+	systemInfo: () => typedError<SystemInfo, string>(__TAURI_INVOKE("system_info")),
 	/**  Moves a queued clip to the front of the analysis queue. */
 	clipBump: (clip: number | null) => typedError<null, string>(__TAURI_INVOKE("clip_bump", { clip })),
 	/**  Links a proxy file to a clip by hand and re-analyses from it. */
@@ -464,6 +466,12 @@ export type Summary = {
 	percent: number | null,
 	/**  Runs of consecutive flagged samples across the project, per flag. */
 	flag_runs: ([FlagKind, number | null])[],
+};
+
+export type SystemInfo = {
+	/**  D3D11VA hardware decoding works on this machine. */
+	hw_decode: boolean,
+	version: string,
 };
 
 /**  What a flag does to scoring (ALGORITHMS §6.4). */

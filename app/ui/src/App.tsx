@@ -8,6 +8,7 @@ import { useApp } from "./store";
 import { ClipList, Sidebar } from "./views/ClipList";
 import { ScoreChart } from "./views/ScoreChart";
 import { Timeline } from "./views/Timeline";
+import { StatusBar } from "./views/StatusBar";
 import { TitleBar } from "./views/TitleBar";
 import { FramePanel } from "./views/FramePanel";
 import { TuningPanel } from "./views/TuningPanel";
@@ -171,6 +172,7 @@ export function App() {
             </section>
           </div>
         )}
+        {project && <StatusBar />}
         {dropping && (
           <div className="pointer-events-none fixed inset-2 z-40 grid place-items-center rounded-(--radius-sheet) border-2 border-dashed border-accent bg-accent-soft text-[14px] font-medium">
             Drop to add footage

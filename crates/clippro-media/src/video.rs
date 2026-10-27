@@ -41,6 +41,18 @@ pub enum HwMode {
     Off,
 }
 
+/// Whether a D3D11VA decode device can be created on this machine (status bar, SPEC P5.3).
+pub fn hw_decode_available() -> bool {
+    let mut dev: *mut ff::AVBufferRef = ptr::null_mut();
+    let r = unsafe { ff::av_hwdevice_ctx_create(&mut dev, ff::AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA, ptr::null(), ptr::null_mut(), 0) };
+    if r >= 0 && !dev.is_null() {
+        unsafe { ff::av_buffer_unref(&mut dev) };
+        true
+    } else {
+        false
+    }
+}
+
 /// Pixel layout for preview frames (`VideoDecoder::to_preview`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreviewFormat {

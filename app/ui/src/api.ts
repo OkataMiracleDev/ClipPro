@@ -143,6 +143,7 @@ export interface Backend {
   bumpClip(clip: number): Promise<void>;
   linkProxy(clip: number, path: string): Promise<void>;
   reveal(path: string): Promise<void>;
+  systemInfo(): Promise<{ hwDecode: boolean; version: string }>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
   frameUrl(media: number, us: number, width: number): string;
 }
@@ -288,6 +289,10 @@ const tauriBackend: Backend = {
   bumpClip: async (clip) => void unwrap(await commands.clipBump(clip)),
   linkProxy: async (clip, path) => void unwrap(await commands.clipLinkProxy(clip, path)),
   reveal: async (path) => void unwrap(await commands.revealInExplorer(path)),
+  systemInfo: async () => {
+    const r = unwrap(await commands.systemInfo());
+    return { hwDecode: r.hw_decode, version: r.version };
+  },
   frameUrl: (media, us, width) => `http://clippro.localhost/frame/${media}/${Math.max(0, Math.round(us))}?w=${Math.round(width)}`,
   onAnalysis: async (cb) =>
     events.analysisEvent.listen((e) =>
