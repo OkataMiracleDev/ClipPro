@@ -19,7 +19,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
       <button
         ref={ref}
         className={cx(
-          "inline-flex h-7 items-center justify-center gap-1.5 rounded-[var(--radius-control)] px-3 text-[13px] font-medium",
+          "inline-flex h-7 items-center justify-center gap-1.5 rounded-(--radius-control) px-3 text-[13px] font-medium",
           "transition-colors duration-75 disabled:cursor-default disabled:opacity-40",
           variant === "primary" && "bg-accent text-accent-fg hover:brightness-110 active:brightness-95",
           variant === "secondary" && "border border-separator-strong bg-control text-text hover:bg-control-hover",
@@ -43,7 +43,7 @@ export const IconButton = forwardRef<
         aria-label={label}
         aria-pressed={active}
         className={cx(
-          "no-drag inline-flex h-7 min-w-7 items-center justify-center rounded-[var(--radius-control)] px-1.5 text-text-2",
+          "no-drag inline-flex h-7 min-w-7 items-center justify-center rounded-(--radius-control) px-1.5 text-text-2",
           "transition-colors duration-75 hover:bg-control-hover hover:text-text disabled:opacity-40",
           active && "bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent",
           className,
@@ -64,7 +64,7 @@ export function Tip({ label, children, side = "bottom" }: { label: string; child
         <RTooltip.Content
           side={side}
           sideOffset={6}
-          className="z-50 rounded-md bg-raised px-2 py-1 text-[12px] text-text shadow-[var(--shadow-float)] ring-1 ring-separator-strong"
+          className="z-50 rounded-md bg-raised px-2 py-1 text-[12px] text-text shadow-(--shadow-float) ring-1 ring-separator-strong"
         >
           {label}
         </RTooltip.Content>
@@ -110,7 +110,7 @@ export function Segmented<T extends string>({
   size?: "sm" | "md";
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-[var(--radius-control)] bg-control-hover/60 p-0.5 ring-1 ring-separator ring-inset">
+    <div role="radiogroup" aria-label={label} className="inline-flex rounded-(--radius-control) bg-control-hover/60 p-0.5 ring-1 ring-separator ring-inset">
       {options.map((o) => (
         <button
           key={o.value}
@@ -139,7 +139,7 @@ export function Popover({ trigger, children, align = "start" }: { trigger: React
         <RPopover.Content
           align={align}
           sideOffset={6}
-          className="z-50 max-h-[70vh] overflow-auto rounded-[var(--radius-panel)] bg-raised p-1 shadow-[var(--shadow-float)] ring-1 ring-separator-strong data-[state=open]:animate-[pop_180ms_var(--ease-spring)]"
+          className="z-50 max-h-[70vh] overflow-auto rounded-(--radius-panel) bg-raised p-1 shadow-(--shadow-float) ring-1 ring-separator-strong data-[state=open]:animate-[pop_180ms_var(--ease-spring)]"
         >
           {children}
         </RPopover.Content>
@@ -156,7 +156,7 @@ export function Sheet({ open, onOpenChange, title, children }: { open: boolean; 
     <RDialog.Root open={open} onOpenChange={onOpenChange}>
       <RDialog.Portal>
         <RDialog.Overlay className="fixed inset-0 z-40 bg-black/25" />
-        <RDialog.Content className="fixed top-[var(--h-titlebar)] left-1/2 z-50 w-[520px] max-w-[92vw] -translate-x-1/2 rounded-b-[var(--radius-sheet)] bg-raised p-5 shadow-[var(--shadow-float)] ring-1 ring-separator-strong data-[state=open]:animate-[sheet_220ms_var(--ease-spring)]">
+        <RDialog.Content className="fixed top-(--h-titlebar) left-1/2 z-50 w-[520px] max-w-[92vw] -translate-x-1/2 rounded-b-(--radius-sheet) bg-raised p-5 shadow-(--shadow-float) ring-1 ring-separator-strong data-[state=open]:animate-[sheet_220ms_var(--ease-spring)]">
           <RDialog.Title className="mb-3 text-[15px] font-semibold">{title}</RDialog.Title>
           {children}
         </RDialog.Content>
