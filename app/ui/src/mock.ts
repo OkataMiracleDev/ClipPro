@@ -248,10 +248,13 @@ export const mockBackend: Backend = {
   mediaSource: async (media): Promise<MediaSource> => {
     const d = demo.find((x) => x.clip.media === media);
     if (!d) throw new Error("Unknown media");
-    return { nativeUrl: null, durationUs: d.durationUs, fps: 25, width: 1920, height: 1080, codec: "prores" };
+    return { nativeUrl: null, durationUs: d.durationUs, fps: 25, width: 1920, height: 1080, codec: "prores", hasAudio: false };
   },
   frameUrl: mockFrame,
   inspect: async (settings, clip, sample) => mockInspect(settings, clip, sample),
+  audioPlay: async () => false,
+  audioStop: async () => {},
+  audioClock: async () => null,
   onAnalysis: async (cb) => {
     listeners.add(cb);
     return () => listeners.delete(cb);

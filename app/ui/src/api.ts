@@ -30,6 +30,7 @@ export interface MediaSource {
   width: number;
   height: number;
   codec: string;
+  hasAudio: boolean;
 }
 
 export type ClipState = "queued" | "running" | "paused" | "done" | "failed";
@@ -125,6 +126,11 @@ export interface Backend {
   onAnalysis(cb: (e: AnalysisEvent) => void): Promise<() => void>;
   mediaSource(media: number): Promise<MediaSource>;
   inspect(settings: Settings, clip: number, sample: number): Promise<Inspection>;
+  /** Audio for frame playback (the viewer follows its clock). False when there's no audio. */
+  audioPlay(media: number, us: number): Promise<boolean>;
+  audioStop(): Promise<void>;
+  /** Media time being heard (µs), null when no audio is playing. */
+  audioClock(): Promise<number | null>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
   frameUrl(media: number, us: number, width: number): string;
 }
@@ -207,6 +213,7 @@ function adaptSource(r: RawMediaSource, toUrl: (path: string) => string): MediaS
     width: r.width,
     height: r.height,
     codec: r.codec,
+    hasAudio: r.has_audio,
   };
 }
 
@@ -255,6 +262,9 @@ const tauriBackend: Backend = {
     return adaptSource(unwrap(await commands.mediaSource(media)), (p) => convertFileSrc(p));
   },
   inspect: async (settings, clip, sample) => adaptInspect(clip, unwrap(await commands.inspectSample(settings, clip, sample))),
+  audioPlay: async (media, us) => unwrap(await commands.audioPlay(media, us)),
+  audioStop: async () => void unwrap(await commands.audioStop()),
+  audioClock: async () => unwrap(await commands.audioClock()) ?? null,
   frameUrl: (media, us, width) => `http://clippro.localhost/frame/${media}/${Math.max(0, Math.round(us))}?w=${Math.round(width)}`,
   onAnalysis: async (cb) =>
     events.analysisEvent.listen((e) =>

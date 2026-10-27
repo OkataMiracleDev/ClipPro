@@ -248,6 +248,7 @@ pub struct MediaSource {
     /// First video pts (µs). Native playback time minus this is the measurement time.
     pub start_us: f64,
     pub codec: String,
+    pub has_audio: bool,
 }
 
 /// WebView2 (Chromium) decodes these without extensions; HEVC depends on the machine, so it is
@@ -277,6 +278,7 @@ pub fn media_source(path: &std::path::Path, info: &MediaInfo) -> Option<MediaSou
         height: v.height,
         start_us: info.start_us as f64,
         codec: v.codec.clone(),
+        has_audio: !info.audio.is_empty(),
     })
 }
 

@@ -39,6 +39,7 @@ tauri-plugin-dialog = "2"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 window-vibrancy = "0.8"
 jpeg-encoder = { version = "0.6", features = ["simd"] }
+cpal = "0.18.2"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39.1"

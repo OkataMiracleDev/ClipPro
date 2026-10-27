@@ -273,3 +273,26 @@ fn preview_frames_play_forward_without_seeking() {
         assert!(rgb.iter().any(|&v| v > 16), "non-black picture");
     }
 }
+
+#[test]
+fn audio_seek_and_rate() {
+    let Some(dir) = corpus() else { return };
+    let p = dir.join("audio_mix.mp4");
+    let sr = 44_100.0;
+    let mut ch0: Vec<f32> = Vec::new();
+    let opts = audio::AudioOptions { index: None, video_start_us: 0, from_us: Some(2_500_000), out_rate: sr as i32 };
+    let st = audio::decode_audio_with(&p, &opts, |block| {
+        ch0.extend_from_slice(&block[0]);
+        true
+    })
+    .unwrap();
+    assert_eq!(st.start_us, 2_500_000);
+    assert!((ch0.len() as f64 / sr - 7.5).abs() < 0.1, "{} samples", ch0.len());
+    // The silence that starts at 3.0 s in the clip starts 0.5 s into this output.
+    let win = 441;
+    let first_quiet = (0..ch0.len() - win)
+        .step_by(44)
+        .find(|&i| (ch0[i..i + win].iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / win as f64).sqrt() < 1e-3)
+        .unwrap();
+    assert!((first_quiet as f64 / sr - 0.5).abs() < 0.03, "silence starts at {}", first_quiet as f64 / sr);
+}

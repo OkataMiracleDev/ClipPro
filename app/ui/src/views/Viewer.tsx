@@ -448,8 +448,34 @@ function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: num
     let us0 = useApp.getState().playheadUs;
     const range = playRange(clip, us0, src.durationUs, frameUs);
     let raf = 0;
+    // At 1× the audio clock is the master: start audio here and re-anchor the wall clock to it
+    // every few frames. Other rates (and clips without audio) run on the wall clock, silent.
+    let audio = false;
+    let live = true;
+    let lastSync = 0;
+    const startAudio = (at: number) => {
+      if (rate !== 1 || !src.hasAudio) return;
+      api.audioPlay(media, at).then(
+        (ok) => {
+          audio = ok && live;
+          if (!live) void api.audioStop();
+        },
+        () => (audio = false),
+      );
+    };
+    startAudio(us0);
     const tick = () => {
       const now = performance.now();
+      if (audio && now - lastSync > 200) {
+        lastSync = now;
+        const asked = now;
+        void api.audioClock().then((pos) => {
+          if (pos === null || !live) return;
+          // The reply describes the moment of the request plus about half the round trip.
+          us0 = pos;
+          t0 = asked + (performance.now() - asked) / 2;
+        });
+      }
       let target = us0 + (now - t0) * 1000 * rate;
       const past = rate > 0 ? target >= range.end : target <= range.start;
       if (past) {
@@ -461,13 +487,18 @@ function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: num
         us0 = rate > 0 ? range.start : range.end;
         t0 = now;
         target = us0;
+        if (audio) startAudio(us0);
       }
       if (!loader.current.busy) load(snap(target), (us) => playingRef.current && useApp.getState().setPlayhead(clip, us));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, rate, clip, src.durationUs, frameUs, snap, load]);
+    return () => {
+      live = false;
+      cancelAnimationFrame(raf);
+      if (rate === 1 && src.hasAudio) void api.audioStop();
+    };
+  }, [playing, rate, clip, media, src.durationUs, src.hasAudio, frameUs, snap, load]);
 
   return <canvas ref={canvas} className="absolute inset-0 h-full w-full bg-black" />;
 }

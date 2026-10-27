@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
+pub mod audio_out;
 pub mod preview;
 #[cfg(windows)]
 mod shared;
@@ -20,6 +21,7 @@ pub struct AppState {
     session: Mutex<Option<Arc<Session>>>,
     path: Mutex<Option<PathBuf>>,
     preview: preview::PreviewCache,
+    audio: audio_out::AudioOut,
     /// `--bench-preview` report file (ADR-002); `None` in normal runs.
     bench_out: Mutex<Option<PathBuf>>,
 }
@@ -154,6 +156,7 @@ async fn project_open(state: State<'_, AppState>, path: String) -> Result<Projec
 
 fn replace_session(state: &AppState, s: Arc<Session>, path: PathBuf) {
     state.preview.clear();
+    state.audio.stop();
     let old = lock(&state.session).replace(s);
     *lock(&state.path) = Some(path);
     if let Some(old) = old {
@@ -184,6 +187,7 @@ async fn project_close(state: State<'_, AppState>) -> Result<(), String> {
     let s = lock(&state.session).take();
     *lock(&state.path) = None;
     state.preview.clear();
+    state.audio.stop();
     if let Some(s) = s {
         blocking(move || {
             close_session(s);
@@ -499,6 +503,35 @@ async fn preview_shared(window: tauri::WebviewWindow, state: State<'_, AppState>
     }
 }
 
+/// Starts audio for frame playback of `media` at `us`; the viewer follows `audio_clock`.
+/// Returns false when the media has no audio.
+#[tauri::command]
+#[specta::specta]
+async fn audio_play(state: State<'_, AppState>, media: f64, us: f64) -> Result<bool, String> {
+    let s = state.session()?;
+    let (path, info) = s.preview_source(clippro_types::MediaId(media as i64)).map_err(|e| e.to_string())?.ok_or("Unknown media")?;
+    if info.audio.is_empty() {
+        state.audio.stop();
+        return Ok(false);
+    }
+    state.audio.play(path, info.start_us, us.max(0.0) as i64, 1.0)?;
+    Ok(true)
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn audio_stop(state: State<'_, AppState>) -> Result<(), String> {
+    state.audio.stop();
+    Ok(())
+}
+
+/// Media time being heard (µs), `null` when no audio is playing.
+#[tauri::command]
+#[specta::specta]
+async fn audio_clock(state: State<'_, AppState>) -> Result<Option<f64>, String> {
+    Ok(state.audio.position_us().map(|v| v as f64))
+}
+
 fn frame_response(app: &tauri::AppHandle, req: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
     use tauri::http::{header, Response, StatusCode};
     let fail = |code: StatusCode, msg: String| Response::builder().status(code).header(header::CONTENT_TYPE, "text/plain").header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*").body(msg.into_bytes()).unwrap_or_default();
@@ -578,6 +611,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             media_source,
             preview_shared,
             inspect_sample,
+            audio_play,
+            audio_stop,
+            audio_clock,
             bench_config,
             bench_report,
         ])

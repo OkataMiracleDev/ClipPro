@@ -32,6 +32,14 @@ export const commands = {
 	previewShared: (media: number | null, us: number | null, width: number, tag: number, rate: number | null) => typedError<null, string>(__TAURI_INVOKE("preview_shared", { media, us, width, tag, rate })),
 	/**  Inspector data for `sample` of `clip` with the current settings. */
 	inspectSample: (settings: Settings_Deserialize, clip: number | null, sample: number) => typedError<InspectResult_Serialize, string>(__TAURI_INVOKE("inspect_sample", { settings, clip, sample })),
+	/**
+	 *  Starts audio for frame playback of `media` at `us`; the viewer follows `audio_clock`.
+	 *  Returns false when the media has no audio.
+	 */
+	audioPlay: (media: number | null, us: number | null) => typedError<boolean, string>(__TAURI_INVOKE("audio_play", { media, us })),
+	audioStop: () => typedError<null, string>(__TAURI_INVOKE("audio_stop")),
+	/**  Media time being heard (µs), `null` when no audio is playing. */
+	audioClock: () => typedError<number | null, string>(__TAURI_INVOKE("audio_clock")),
 	/**  Clips to benchmark when started with `--bench-preview`, else `None`. */
 	benchConfig: () => typedError<BenchClip[] | null, string>(__TAURI_INVOKE("bench_config")),
 	/**  Writes the benchmark report and exits. */
@@ -267,6 +275,7 @@ export type MediaSource_Deserialize = {
 	/**  First video pts (µs). Native playback time minus this is the measurement time. */
 	start_us: number | null,
 	codec: string,
+	has_audio: boolean,
 };
 
 /**  How the viewer should show a clip. */
@@ -283,6 +292,7 @@ export type MediaSource_Serialize = {
 	/**  First video pts (µs). Native playback time minus this is the measurement time. */
 	start_us: number | null,
 	codec: string,
+	has_audio: boolean,
 };
 
 export type PresetInfo = {
