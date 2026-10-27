@@ -67,6 +67,37 @@ enum Cmd {
         #[arg(long, default_value = "timeline")]
         sort: String,
     },
+    /// Export the selects for an NLE or as a report.
+    Export {
+        project: PathBuf,
+        /// xmeml (Premiere/Resolve) | fcpxml (FCP/Resolve) | otio | edl | ale | avid-markers | csv | json
+        #[arg(long)]
+        format: String,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long, default_value = "All-Rounder")]
+        preset: String,
+        #[arg(long = "set")]
+        sets: Vec<String>,
+        #[arg(long, default_value = "timeline")]
+        sort: String,
+        /// selects | with-rejects (whole clips, rejects on V2)
+        #[arg(long, default_value = "selects")]
+        layout: String,
+        /// Export only the core of each select, without handles.
+        #[arg(long)]
+        no_handles: bool,
+        /// Gap between selects, e.g. 1s.
+        #[arg(long, default_value = "0")]
+        gap: String,
+        #[arg(long)]
+        no_markers: bool,
+        #[arg(long)]
+        no_audio: bool,
+        /// Sequence name.
+        #[arg(long, default_value = "ClipPro Selects")]
+        name: String,
+    },
     /// List built-in presets.
     Presets,
 }
@@ -109,6 +140,9 @@ fn run(cli: &Cli) -> Result<u8, Failure> {
             analyze(paths, project, rate, groups, *workers, *cpu_only, *no_pair, *no_cache, cli.json)
         }
         Cmd::Score { project, preset, sets, sort } => score(project, preset, sets, sort, cli.json),
+        Cmd::Export { project, format, out, preset, sets, sort, layout, no_handles, gap, no_markers, no_audio, name } => {
+            export(project, format, out, preset, sets, sort, layout, *no_handles, gap, *no_markers, *no_audio, name, cli.json)
+        }
         Cmd::Presets => {
             let names: Vec<String> = clippro_score::builtins().into_iter().map(|p| p.preset.name).collect();
             if cli.json {
@@ -348,6 +382,69 @@ fn tc(us: i64) -> String {
     let t = us.max(0) as f64 / 1e6;
     let (h, m, s) = ((t / 3600.0) as i64, ((t / 60.0) as i64) % 60, t % 60.0);
     format!("{h:02}:{m:02}:{s:06.3}")
+}
+
+fn sort_order(sort: &str) -> Result<SortOrder, Failure> {
+    Ok(match sort {
+        "timeline" => SortOrder::Timeline,
+        "score" => SortOrder::ScoreDesc,
+        "score-asc" => SortOrder::ScoreAsc,
+        "duration" => SortOrder::DurationDesc,
+        "duration-asc" => SortOrder::DurationAsc,
+        other => return Err(fail(1, format!("unknown sort '{other}'"))),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn export(
+    project: &Path,
+    format: &str,
+    out: &Path,
+    preset: &str,
+    sets: &[String],
+    sort: &str,
+    layout: &str,
+    no_handles: bool,
+    gap: &str,
+    no_markers: bool,
+    no_audio: bool,
+    name: &str,
+    json_out: bool,
+) -> Result<u8, Failure> {
+    if !project.exists() {
+        return Err(fail(1, format!("{} doesn't exist", project.display())));
+    }
+    let fmt = clippro_interchange::Format::parse(format).ok_or_else(|| fail(1, format!("unknown format '{format}'")))?;
+    let mut settings = Settings::from_preset(&load_preset(preset)?).map_err(|e| fail(1, e.to_string()))?;
+    for kv in sets {
+        apply_set(&mut settings, kv)?;
+    }
+    let layout = match layout {
+        "selects" => clippro_interchange::Layout::SelectsOnly,
+        "with-rejects" => clippro_interchange::Layout::SelectsOverRejects,
+        other => return Err(fail(1, format!("unknown layout '{other}'"))),
+    };
+    let gap_s = parse_duration(gap).map_err(|e| fail(1, format!("--gap: {e}")))?.unwrap_or(0.0);
+    let opts = clippro_interchange::ExportOptions {
+        name: name.to_string(),
+        layout,
+        handles: !no_handles,
+        gap_s,
+        with_audio: !no_audio,
+        markers: !no_markers,
+        ..clippro_interchange::ExportOptions::default()
+    };
+    let mut so = SessionOptions::default();
+    so.cache_path = None;
+    let (s, _) = Session::open(project, so).map_err(|e| fail(4, e.to_string()))?;
+    let n = s.export_to(&settings, sort_order(sort)?, &opts, fmt, out).map_err(|e| fail(4, e.to_string()))?;
+    s.close().map_err(|e| fail(4, e.to_string()))?;
+    if json_out {
+        println!("{}", json!({ "path": out, "format": format!("{fmt:?}").to_lowercase(), "selects": n }));
+    } else {
+        println!("wrote {n} select(s) to {}", out.display());
+    }
+    Ok(0)
 }
 
 fn score(project: &Path, preset: &str, sets: &[String], sort: &str, json_out: bool) -> Result<u8, Failure> {

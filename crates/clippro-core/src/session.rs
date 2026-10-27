@@ -10,8 +10,9 @@ use clippro_measure::codec;
 use clippro_measure::columns::MeasurementSet;
 use clippro_media::{fingerprint, probe, MediaInfo};
 use clippro_project::{Db, MeasureCache, MediaRow, NewMedia, OpenReport, RunParams, RunState};
-use clippro_score::{ClipInput, Engine, Override, OverrideKind, Selects, Settings};
-use clippro_types::{ClipId, ColourProfile, MediaId};
+use clippro_interchange::{ExportOptions, Format, MediaRef, SelectInput, Timeline};
+use clippro_score::{ClipInput, Engine, Override, OverrideKind, Selects, Settings, SortOrder};
+use clippro_types::{ClipId, ColourProfile, FlagKind, MediaId, Timecode};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -431,6 +432,69 @@ impl Session {
             .ok_or_else(|| SessionError::Other("scoring was cancelled".into()))
     }
 
+    /// Builds an export timeline from the current selects (SPEC §16). Exports always point at
+    /// the original media, even when a proxy was analysed.
+    pub fn export_timeline(&self, settings: &Settings, sort: SortOrder, opts: &ExportOptions) -> Result<Timeline> {
+        let sel = self.score(settings)?;
+        let refs = sel.sorted(sort);
+        let db = lock(&self.db);
+        let mut media: Vec<MediaRef> = Vec::new();
+        let mut index: HashMap<ClipId, usize> = HashMap::new();
+        let clips = db.clips()?;
+        for r in &refs {
+            if index.contains_key(&r.clip) {
+                continue;
+            }
+            let Some(c) = clips.iter().find(|c| c.id == r.clip) else { continue };
+            let Some(m) = db.media(c.media_id)? else { continue };
+            let info: MediaInfo = serde_json::from_str(&m.probe_json).map_err(|e| SessionError::Other(e.to_string()))?;
+            index.insert(r.clip, media.len());
+            media.push(media_ref(&info, m.id.0, &c.name, PathBuf::from(&m.path)));
+        }
+        drop(db);
+        let mut selects = Vec::new();
+        for r in &refs {
+            let Some(&mi) = index.get(&r.clip) else { continue };
+            let flags = sel
+                .clips
+                .iter()
+                .find(|c| c.clip == r.clip)
+                .map(|c| {
+                    let fl = &c.scores.flags;
+                    let (a, b) = (r.segment.first_sample.min(fl.len()), (r.segment.last_sample + 1).min(fl.len()));
+                    let bits = fl[a..b].iter().fold(0u32, |acc, f| acc | f);
+                    // Only flags that affect scoring with these settings (neutral ones are noise here).
+                    FlagKind::ALL
+                        .iter()
+                        .filter(|f| bits & f.bit() != 0 && settings.tier(**f) != clippro_types::Tier::Neutral)
+                        .map(|f| f.label().to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            selects.push(SelectInput {
+                media: mi,
+                start_us: r.segment.start_us,
+                end_us: r.segment.end_us,
+                in_us: r.segment.in_us,
+                out_us: r.segment.out_us,
+                score: r.segment.mean,
+                flags,
+            });
+        }
+        Ok(clippro_interchange::build(media, &selects, opts))
+    }
+
+    /// Renders and writes an export file; records it in the project's export history.
+    pub fn export_to(&self, settings: &Settings, sort: SortOrder, opts: &ExportOptions, format: Format, path: &Path) -> Result<usize> {
+        let tl = self.export_timeline(settings, sort, opts)?;
+        let text = format.render(&tl);
+        std::fs::write(path, &text).map_err(|e| SessionError::Other(format!("{}: {e}", path.display())))?;
+        let n = tl.video.first().map(|t| t.items.iter().filter(|i| matches!(i, clippro_interchange::model::Item::Clip(_))).count()).unwrap_or(0);
+        let settings_json = serde_json::to_string(opts).unwrap_or_default();
+        lock(&self.db).record_export(&format!("{format:?}").to_lowercase(), &path.to_string_lossy(), &settings_json)?;
+        Ok(n)
+    }
+
     pub fn clip_names(&self) -> Result<HashMap<ClipId, (String, String)>> {
         let db = lock(&self.db);
         let mut out = HashMap::new();
@@ -463,5 +527,31 @@ fn new_media<'a>(p: &'a Probed, probe_json: &'a str) -> NewMedia<'a> {
         reel: p.info.reel.as_deref(),
         camera: p.info.camera_model.as_deref(),
         start_tc: p.info.start_timecode.as_deref(),
+    }
+}
+
+/// Interchange media reference from probed info.
+pub fn media_ref(info: &MediaInfo, id: i64, name: &str, path: PathBuf) -> MediaRef {
+    let rate = info.fps();
+    let v = info.video.as_ref();
+    let (start_tc_frames, drop_frame) = match &info.start_timecode {
+        Some(tc) => match Timecode::parse(tc, rate.timecode_base()) {
+            Ok(t) => (t.frames, t.drop),
+            Err(_) => (0, false),
+        },
+        None => (0, false),
+    };
+    MediaRef {
+        id,
+        name: name.to_string(),
+        path,
+        rate,
+        duration_frames: ((info.duration_us as f64 / 1e6) * rate.fps()).round() as i64,
+        start_tc_frames,
+        drop_frame,
+        width: v.map(|v| v.width).unwrap_or(1920),
+        height: v.map(|v| v.height).unwrap_or(1080),
+        audio_channels: info.audio.first().map(|a| a.channels).unwrap_or(0),
+        reel: info.reel.clone(),
     }
 }

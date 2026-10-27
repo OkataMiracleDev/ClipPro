@@ -45,6 +45,32 @@ fn analyze_score_info_and_exit_codes() {
     assert!(sel.iter().any(|s| s["name"] == "tripod_static"));
     assert!(!sel.iter().any(|s| s["name"] == "solid_black"));
 
+    // Every export format writes a file; XML formats are well formed.
+    for fmt in ["xmeml", "fcpxml", "otio", "edl", "ale", "avid-markers", "csv", "json"] {
+        let out_path = tmp.join(format!("selects.{fmt}"));
+        let out = Command::new(exe())
+            .arg("export")
+            .arg(&proj)
+            .args(["--format", fmt, "--preset", "Cleanup", "--layout", "with-rejects"])
+            .arg("--out")
+            .arg(&out_path)
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{fmt}: {}", String::from_utf8_lossy(&out.stderr));
+        let text = std::fs::read_to_string(&out_path).unwrap();
+        if fmt == "avid-markers" {
+            assert!(text.lines().any(|l| l.starts_with("ClipPro\t")), "no markers");
+        } else {
+            assert!(text.contains("tripod_static"), "{fmt} lacks the select");
+        }
+        if fmt == "xmeml" || fmt == "fcpxml" {
+            clippro_interchange::validate::well_formed(&text).unwrap_or_else(|e| panic!("{fmt}: {e}"));
+        }
+        if fmt == "otio" || fmt == "json" {
+            serde_json::from_str::<serde_json::Value>(&text).unwrap();
+        }
+    }
+
     // Usage errors exit 1; media errors exit 2.
     let bad = Command::new(exe()).arg("score").arg(&proj).args(["--preset", "nope"]).output().unwrap();
     assert_eq!(bad.status.code(), Some(1));

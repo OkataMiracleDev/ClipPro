@@ -33,6 +33,8 @@ pub fn discover(inputs: &[PathBuf]) -> Vec<PathBuf> {
         }
     }
     for i in inputs {
+        // NLE exports need absolute paths.
+        let i = &std::path::absolute(i).unwrap_or_else(|_| i.clone());
         if i.is_dir() {
             walk(i, &mut out);
         } else if i.is_file() {

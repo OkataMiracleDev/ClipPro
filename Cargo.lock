@@ -609,6 +609,7 @@ dependencies = [
  "clap",
  "clippro-analysis",
  "clippro-core",
+ "clippro-interchange",
  "clippro-media",
  "clippro-project",
  "clippro-score",
@@ -621,6 +622,7 @@ name = "clippro-core"
 version = "0.1.0"
 dependencies = [
  "clippro-analysis",
+ "clippro-interchange",
  "clippro-measure",
  "clippro-media",
  "clippro-project",
@@ -642,6 +644,12 @@ version = "0.1.0"
 [[package]]
 name = "clippro-interchange"
 version = "0.1.0"
+dependencies = [
+ "clippro-types",
+ "quick-xml",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "clippro-measure"

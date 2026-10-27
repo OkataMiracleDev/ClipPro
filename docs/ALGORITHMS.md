@@ -168,7 +168,7 @@ The values are stored as `cam_u_x, cam_u_y, cam_zr, cam_wr, cam_mag, cam_conf`.
 ### 1.6 Pattern detectors (per sample)
 - **Solid colour**: `std(L) < 0.010` and `max(std(Cb_thumb), std(Cr_thumb)) < 0.010`. Sub-type: black if `mean < 0.05`, white if `mean > 0.95`, otherwise "colour".
 - **Colour bars**: divide the chroma and luma thumbs into 7 equal vertical bands over the top 2/3. Each band's internal std must be < 0.03 and the inter-band luma ordering must match the SMPTE/EBU descending pattern with Pearson r ≥ 0.9 against the template. Templates are stored for SMPTE RP 219 and EBU 100/75.
-- **Horizon tilt**: Hough transform on Canny edges of the level-0 image, restricted to lines within ±15° of horizontal. `tilt_deg` = the angle of the strongest accumulator peak if its votes ≥ 0.15·W_m, otherwise NaN.
+- **Horizon tilt**: Hough transform on Canny edges of the level-0 image, restricted to lines within ±15° of horizontal. `tilt_deg` = the angle of the strongest accumulator peak if its votes ≥ 0.45·W_m (long, frame-spanning lines only), otherwise NaN.
 
 ## 2. Temporal pass (per clip, after all samples are measured)
 

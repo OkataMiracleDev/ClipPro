@@ -367,7 +367,8 @@ pub fn horizon_tilt(img: &Image) -> f32 {
             bi = k / nrho;
         }
     }
-    if (best as f32) < 0.15 * w as f32 {
+    // Only long, frame-spanning lines count as a horizon.
+    if (best as f32) < 0.45 * w as f32 {
         return f32::NAN;
     }
     // Line direction (cos θ, sin θ) in y-down coordinates: positive θ descends to the right,
