@@ -41,6 +41,37 @@ pub enum HwMode {
     Off,
 }
 
+/// D3D11VA decodes this stream: the decoder offers a D3D11VA device config, and the format is one
+/// DXVA profiles cover (4:2:0; 8-bit for H.264, up to 10-bit for HEVC/VP9/AV1).
+pub fn hw_decodable(codec: ff::AVCodecID, info: &MediaInfo) -> bool {
+    let Some(v) = &info.video else { return false };
+    let max_bits = match codec {
+        ff::AVCodecID::AV_CODEC_ID_H264 | ff::AVCodecID::AV_CODEC_ID_MPEG2VIDEO | ff::AVCodecID::AV_CODEC_ID_VC1 => 8,
+        ff::AVCodecID::AV_CODEC_ID_HEVC | ff::AVCodecID::AV_CODEC_ID_VP9 | ff::AVCodecID::AV_CODEC_ID_AV1 => 10,
+        _ => return false,
+    };
+    if v.chroma != "4:2:0" || v.bit_depth > max_bits {
+        return false;
+    }
+    unsafe {
+        let dec = ff::avcodec_find_decoder(codec);
+        if dec.is_null() {
+            return false;
+        }
+        let mut i = 0;
+        loop {
+            let cfg = ff::avcodec_get_hw_config(dec, i);
+            if cfg.is_null() {
+                return false;
+            }
+            if (*cfg).device_type == ff::AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA && ((*cfg).methods & ff::AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX as i32) != 0 {
+                return true;
+            }
+            i += 1;
+        }
+    }
+}
+
 /// Whether a D3D11VA decode device can be created on this machine (status bar, SPEC P5.3).
 pub fn hw_decode_available() -> bool {
     let mut dev: *mut ff::AVBufferRef = ptr::null_mut();
@@ -140,6 +171,9 @@ pub struct VideoDecoder {
     start_ts: i64,
     fps: FrameRate,
     intra_only: bool,
+    /// Intra-only streams: packets presented before this (µs, relative) are dropped unread by
+    /// the decoder. Sampling uses it to decode only the frames it needs.
+    drop_before_us: i64,
     pkt: Packet,
     eof_sent: bool,
     gop_us: i64,
@@ -181,7 +215,9 @@ impl VideoDecoder {
         let start_ts = if st.start_time != ff::AV_NOPTS_VALUE { st.start_time } else { 0 };
         let par = st.codecpar;
         let mut hw_device: *mut ff::AVBufferRef = ptr::null_mut();
-        if opts.hw == HwMode::Auto {
+        // Only open a GPU device when D3D11VA can actually decode this stream: having one forces
+        // single-threaded decoding, which made 4K ProRes ~6× slower than it needed to be.
+        if opts.hw == HwMode::Auto && hw_decodable(unsafe { (*par).codec_id }, info) {
             let r = unsafe {
                 ff::av_hwdevice_ctx_create(
                     &mut hw_device,
@@ -196,14 +232,21 @@ impl VideoDecoder {
             }
         }
         let hwdev = hw_device;
-        let threads = if hw_device.is_null() { opts.threads } else { 1 };
+        let intra_only = info.video.as_ref().map(|v| v.intra_only).unwrap_or(false);
+        // Intra decoders slice-thread one frame at a time, so they can use every core without
+        // piling up frames; others keep the per-worker share.
+        let threads = if !hw_device.is_null() { 1 } else if intra_only { 0 } else { opts.threads };
         let dec = Decoder::open(par, threads, |ctx| unsafe {
             if !hwdev.is_null() {
                 (*ctx).hw_device_ctx = ff::av_buffer_ref(hwdev);
                 (*ctx).get_format = Some(pick_d3d11);
             }
+            // Sampled decoding seeks between frames, which drains a frame-threading pipeline
+            // every time. Intra codecs (ProRes, DNx) parallelise within a frame instead.
+            if intra_only {
+                (*ctx).thread_type = ff::FF_THREAD_SLICE as i32;
+            }
         })?;
-        let intra_only = info.video.as_ref().map(|v| v.intra_only).unwrap_or(false);
         let fps = info.fps();
         Ok(VideoDecoder {
             input,
@@ -213,6 +256,7 @@ impl VideoDecoder {
             start_ts,
             fps,
             intra_only,
+            drop_before_us: i64::MIN,
             pkt: Packet::new(),
             eof_sent: false,
             gop_us: if intra_only { fps.frame_duration_us() as i64 } else { 2_000_000 },
@@ -298,6 +342,10 @@ impl VideoDecoder {
                     break;
                 }
                 if self.pkt.stream() == self.stream {
+                    if self.intra_only && self.drop_before_us != i64::MIN && self.pkt.pts() != ff::AV_NOPTS_VALUE && self.rel_us(self.pkt.pts()) < self.drop_before_us {
+                        self.pkt.unref();
+                        continue;
+                    }
                     if self.pkt.is_key() && !self.intra_only {
                         let t = self.rel_us(self.pkt.pts());
                         if let Some(prev) = self.last_key_us {
@@ -436,8 +484,12 @@ impl VideoDecoder {
                     seeked_for = Some(ti);
                 }
                 self.dec.set_skip_nonref(!self.intra_only && gap > 300_000 + 8 * frame_us);
+                if self.intra_only {
+                    self.drop_before_us = targets[ti] - frame_us / 2;
+                }
             } else {
                 self.dec.set_skip_nonref(false);
+                self.drop_before_us = i64::MIN;
             }
             cur.unref();
             if !self.next_frame(&mut cur)? {
@@ -500,6 +552,7 @@ impl VideoDecoder {
                 self.stats.missing += (targets.len() - ti) as u64;
             }
         }
+        self.drop_before_us = i64::MIN;
         Ok(self.stats.clone())
     }
 
@@ -552,6 +605,7 @@ impl VideoDecoder {
     /// Decodes forward from the previous request when `us` is a little ahead (playback), and
     /// seeks otherwise (scrubbing).
     pub fn frame_near(&mut self, us: i64) -> Result<Option<Frame>> {
+        self.drop_before_us = i64::MIN;
         let half = (self.fps.frame_duration_us() / 2.0) as i64;
         let forward = matches!(self.last_preview_us, Some(last) if us >= last && us - last <= 2_000_000);
         let mut best: Option<Frame> = None;
