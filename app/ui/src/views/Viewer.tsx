@@ -83,6 +83,7 @@ export function Viewer() {
   // backwards: both use frames.
   const userLut = useApp((s) => s.userLut);
   const split = useApp((s) => s.split);
+  const compare = useApp((s) => s.compare);
   // Log footage and user LUTs need the shader's colour stage, so they use frames too.
   const graded = (clip?.profile ?? "rec709") !== "rec709" || userLut !== null;
   const native = src?.nativeUrl && clip && !fallback[clip.media] && overlay === "none" && !graded && !(playing && rate < 0) ? src.nativeUrl : null;
@@ -147,6 +148,8 @@ export function Viewer() {
         toggleMeasureOverlay("tiles");
       } else if (e.key === "m" || e.key === "M") {
         toggleMeasureOverlay("motion");
+      } else if (e.key === "Escape" && useApp.getState().compare) {
+        useApp.getState().setCompare(null);
       } else if (e.key === "b" || e.key === "B") {
         const st = useApp.getState();
         st.setSplit(st.split === null ? 0.5 : null);
@@ -171,6 +174,7 @@ export function Viewer() {
 
   return (
     <div className="flex h-full flex-col bg-viewer">
+      <div className="flex min-h-0 flex-1">
       <div ref={ref} className="relative grid min-h-0 flex-1 place-items-center overflow-hidden">
         {!clip ? (
           <div className="text-[12px] text-white/40">Select a clip</div>
@@ -207,13 +211,20 @@ export function Viewer() {
         {clip && src && (
           <div className="absolute top-3 right-3 flex items-center gap-2">
             <ColourMenu media={clip.media} profile={clip.profile} />
-            <OverlayBar value={overlay} onToggle={toggleOverlay} measure={measureOverlay} onMeasure={toggleMeasureOverlay} />
-            <div className="rounded-md bg-black/45 px-2 py-1 font-mono text-[10px] text-white/60 backdrop-blur" title={native ? "Native playback" : "Decoded frames"}>
-              {src.codec.toUpperCase()} · {src.width}×{src.height} · {native ? "native" : "frames"}
-            </div>
+            {/* Half-width compare panes keep only the colour menu; overlays stay on their keys. */}
+            {!compare && (
+              <>
+                <OverlayBar value={overlay} onToggle={toggleOverlay} measure={measureOverlay} onMeasure={toggleMeasureOverlay} />
+                <div className="rounded-md bg-black/45 px-2 py-1 font-mono text-[10px] text-white/60 backdrop-blur" title={native ? "Native playback" : "Decoded frames"}>
+                  {src.codec.toUpperCase()} · {src.width}×{src.height} · {native ? "native" : "frames"}
+                </div>
+              </>
+            )}
           </div>
         )}
         {error && <div className="absolute bottom-3 rounded-md bg-black/60 px-2.5 py-1 text-[11px] text-white/80">{error}</div>}
+      </div>
+      {compare && clip && <ComparePane compare={compare} />}
       </div>
       {clip && (
         <div className="flex h-9 shrink-0 items-center gap-3 border-t border-white/10 px-2 text-[12px] text-white/80">
@@ -438,13 +449,65 @@ function NativeVideo({ url, clip, frameUs, durationUs, onFallback }: { url: stri
 
 /** Frames decoded by the backend into a WebGL view, one request in flight; playback drops
  * frames rather than lag. Overlay changes redraw without refetching. */
+/** A/B compare (P6.6): the second select, following the primary playhead's offset into its
+ * own select. Always decoded frames; silent. */
+function ComparePane({ compare }: { compare: { clip: number; startUs: number; endUs: number; anchorUs: number } }) {
+  const clips = useApp((s) => s.clips);
+  const c = clips.find((x) => x.clip === compare.clip);
+  const media = useMediaSource(c?.media ?? null);
+  const src = media?.src ?? null;
+  const { ref, box } = useFitBox(src ? src.width / Math.max(1, src.height) : 16 / 9);
+  const [error, setError] = useState<string | null>(null);
+  const frameUs = 1e6 / (src?.fps || 25);
+  const follow = useCallback((us: number) => Math.min(compare.endUs - frameUs, Math.max(compare.startUs, compare.startUs + (us - compare.anchorUs))), [compare, frameUs]);
+  const head = useApp((s) => s.playheadUs);
+  return (
+    <div ref={ref} className="relative grid min-h-0 flex-1 place-items-center overflow-hidden border-l border-white/10">
+      {c && src && (
+        <div className="relative" style={{ width: box.w, height: box.h }}>
+          <FrameCanvas key={c.media} media={c.media} clip={c.clip} profile={c.profile} src={src} width={box.w} frameUs={frameUs} onError={setError} follow={follow} />
+        </div>
+      )}
+      <div className="absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/45 px-2 py-1 font-mono text-[11px] text-white/85 backdrop-blur tabular">
+        <span className="max-w-48 truncate font-sans">{c?.name ?? "—"}</span>
+        {formatClock(follow(head))}
+      </div>
+      <button className="absolute top-3 right-3 rounded-md bg-black/45 px-2 py-1 text-[11px] text-white/80 backdrop-blur hover:text-white" title="Close compare (Esc)" onClick={() => useApp.getState().setCompare(null)}>
+        Close
+      </button>
+      {error && <div className="absolute bottom-3 rounded-md bg-black/60 px-2.5 py-1 text-[11px] text-white/80">{error}</div>}
+    </div>
+  );
+}
+
 const profileColours = new Map<ColourProfile, Promise<ProfileColour>>();
 
-function FrameCanvas({ media, clip, profile, src, width, frameUs, onError }: { media: number; clip: number; profile: ColourProfile; src: MediaSource; width: number; frameUs: number; onError: (e: string | null) => void }) {
+function FrameCanvas({
+  media,
+  clip,
+  profile,
+  src,
+  width,
+  frameUs,
+  onError,
+  follow,
+}: {
+  media: number;
+  clip: number;
+  profile: ColourProfile;
+  src: MediaSource;
+  width: number;
+  frameUs: number;
+  onError: (e: string | null) => void;
+  /** Secondary view: shows `follow(playhead)` and never drives playback or audio. */
+  follow?: (us: number) => number;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const view = useRef<GlView | null>(null);
-  const playing = useApp((s) => s.playing);
-  const playheadUs = useApp((s) => s.playheadUs);
+  const ownPlaying = useApp((s) => s.playing);
+  const playing = follow ? false : ownPlaying;
+  const head = useApp((s) => s.playheadUs);
+  const playheadUs = follow ? follow(head) : head;
   const overlay = useApp((s) => s.overlay);
   const rate = useApp((s) => s.rate);
   const loader = useRef({ busy: false, want: -1, shown: -1 });

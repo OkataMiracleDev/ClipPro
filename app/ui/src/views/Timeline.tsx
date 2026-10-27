@@ -236,6 +236,14 @@ export function Timeline() {
             const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
             const h = hit(e.clientX - r.left);
             if (!h) return;
+            // Alt-click a select: compare it with the one under the playhead (P6.6).
+            if (e.altKey && h.b.selectIndex !== null) {
+              const sel = scored?.selects[h.b.selectIndex];
+              const st = useApp.getState();
+              const own = scored?.clips.find((c) => c.clip === st.selectedClip)?.segments.find((s) => st.playheadUs >= s.startUs && st.playheadUs < s.endUs);
+              if (sel && st.selectedClip !== null) st.setCompare({ clip: sel.clip, startUs: sel.segment.startUs, endUs: sel.segment.endUs, anchorUs: own?.startUs ?? st.playheadUs });
+              return;
+            }
             if (h.b.selectIndex !== null) selectSelect(h.b.selectIndex);
             setPlayhead(h.b.clip, h.us);
           }}

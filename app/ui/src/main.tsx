@@ -33,3 +33,15 @@ if (isTauri) {
 } else {
   mount();
 }
+
+// `?compare=1` opens the A/B compare with the second select once scores arrive (screenshots).
+if (q.get("compare") === "1") {
+  const stop = useApp.subscribe((s) => {
+    const sel = s.scored?.selects;
+    if (!sel || sel.length < 2 || s.selectedClip === null) return;
+    stop();
+    const first = sel.find((x) => x.clip === s.selectedClip) ?? sel[0]!;
+    const other = sel.find((x) => x.clip !== first.clip) ?? sel[1]!;
+    useApp.setState({ playheadUs: first.segment.startUs, compare: { clip: other.clip, startUs: other.segment.startUs, endUs: other.segment.endUs, anchorUs: first.segment.startUs } });
+  });
+}
