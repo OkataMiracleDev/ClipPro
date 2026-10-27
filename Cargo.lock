@@ -581,6 +581,7 @@ dependencies = [
  "base64 0.23.1",
  "clippro-analysis",
  "clippro-core",
+ "clippro-interchange",
  "clippro-measure",
  "clippro-media",
  "clippro-project",

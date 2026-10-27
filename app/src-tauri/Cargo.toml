@@ -38,3 +38,4 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 window-vibrancy = "0.8"
+clippro-interchange = { version = "0.1.0", path = "../../crates/clippro-interchange" }

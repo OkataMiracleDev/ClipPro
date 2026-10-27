@@ -5,6 +5,8 @@
 import { commands, events } from "./bindings";
 import type {
   ClipRow_Serialize as RawClip,
+  ExportRequest,
+  ExportResult,
   ImportResult,
   PresetInfo,
   ProjectInfo,
@@ -14,7 +16,7 @@ import type {
 } from "./bindings";
 import { mockBackend } from "./mock";
 
-export type { ImportResult, PresetInfo, ProjectInfo, SortOrder };
+export type { ExportRequest, ExportResult, ImportResult, PresetInfo, ProjectInfo, SortOrder };
 export type Settings = RawSettings;
 
 export type ClipState = "queued" | "running" | "paused" | "done" | "failed";
@@ -82,6 +84,7 @@ export interface Backend {
   presetsList(): Promise<PresetInfo[]>;
   presetSettings(name: string): Promise<Settings>;
   score(settings: Settings, sort: SortOrder): Promise<Scored>;
+  exportSelects(settings: Settings, sort: SortOrder, request: ExportRequest): Promise<ExportResult>;
   onAnalysis(cb: (e: AnalysisEvent) => void): Promise<() => void>;
 }
 
@@ -167,6 +170,7 @@ const tauriBackend: Backend = {
   presetsList: async () => unwrap(await commands.presetsList()),
   presetSettings: async (name) => unwrap(await commands.presetSettings(name)),
   score: async (settings, sort) => adaptScore(unwrap(await commands.score(settings, sort))),
+  exportSelects: async (settings, sort, request) => unwrap(await commands.exportSelects(settings, sort, request)),
   onAnalysis: async (cb) =>
     events.analysisEvent.listen((e) =>
       cb({

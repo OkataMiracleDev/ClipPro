@@ -25,6 +25,14 @@ export async function pickProjectToOpen(): Promise<string | null> {
   return typeof r === "string" ? r : null;
 }
 
+export async function pickExportPath(defaultName: string, ext: string, label: string): Promise<string | null> {
+  if (!isTauri) return `D:/Exports/${defaultName}.${ext}`;
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const r = await save({ title: "Export selects", defaultPath: `${defaultName}.${ext}`, filters: [{ name: label, extensions: [ext] }] });
+  if (!r) return null;
+  return r.toLowerCase().endsWith(`.${ext}`) ? r : `${r}.${ext}`;
+}
+
 export async function pickNewProject(): Promise<string | null> {
   if (!isTauri) return "Untitled.clippro";
   const { save } = await import("@tauri-apps/plugin-dialog");

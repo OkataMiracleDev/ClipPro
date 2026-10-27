@@ -1,4 +1,6 @@
-import { ArrowDownUp, Check, FolderOpen, ListFilter, PanelRight, Pause, Play, Plus } from "lucide-react";
+import { ArrowDownUp, Check, FolderOpen, ListFilter, PanelRight, Pause, Play, Plus, Share } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ExportSheet } from "./ExportSheet";
 import { isTauri, type SortOrder } from "../api";
 import { cx, IconButton, Popover, PopoverClose, Spinner } from "../components/ui";
 import { useApp } from "../store";
@@ -66,6 +68,17 @@ function AnalysisStatus() {
 
 export function TitleBar() {
   const { project, importPaths, openProject, selectsOnly, toggleSelectsOnly, sort, setSort, inspectorOpen, toggleInspector } = useApp();
+  const [exportOpen, setExportOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key.toLowerCase() === "e" && project) {
+        e.preventDefault();
+        setExportOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [project]);
   return (
     <header
       data-tauri-drag-region
@@ -118,10 +131,14 @@ export function TitleBar() {
             ))}
           </div>
         </Popover>
+        <IconButton label="Export selects… (Ctrl+E)" disabled={!project} onClick={() => setExportOpen(true)}>
+          <Share size={16} />
+        </IconButton>
         <IconButton label={inspectorOpen ? "Hide inspector" : "Show inspector"} active={inspectorOpen} onClick={toggleInspector}>
           <PanelRight size={16} />
         </IconButton>
       </div>
+      <ExportSheet open={exportOpen} onOpenChange={setExportOpen} />
     </header>
   );
 }

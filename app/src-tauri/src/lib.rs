@@ -283,6 +283,52 @@ async fn score(state: State<'_, AppState>, settings: Settings, sort: SortOrder) 
     .await
 }
 
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct ExportRequest {
+    /// xmeml | fcpxml | otio | edl | ale | avid-markers | csv | json
+    pub format: String,
+    pub path: String,
+    pub name: String,
+    /// selects | with_rejects
+    pub layout: String,
+    pub handles: bool,
+    pub gap_s: f64,
+    pub with_audio: bool,
+    pub markers: bool,
+    pub marker_name: String,
+    pub marker_comment: String,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct ExportResult {
+    pub path: String,
+    pub selects: u32,
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn export_selects(state: State<'_, AppState>, settings: Settings, sort: SortOrder, request: ExportRequest) -> Result<ExportResult, String> {
+    let s = state.session()?;
+    blocking(move || {
+        let format = clippro_interchange::Format::parse(&request.format).ok_or_else(|| format!("Unknown export format “{}”.", request.format))?;
+        let opts = clippro_interchange::ExportOptions {
+            name: request.name.clone(),
+            layout: if request.layout == "with_rejects" { clippro_interchange::Layout::SelectsOverRejects } else { clippro_interchange::Layout::SelectsOnly },
+            handles: request.handles,
+            gap_s: request.gap_s.max(0.0),
+            with_audio: request.with_audio,
+            markers: request.markers,
+            marker_name: request.marker_name.clone(),
+            marker_comment: request.marker_comment.clone(),
+            rate: None,
+        };
+        let path = PathBuf::from(&request.path);
+        let n = s.export_to(&settings, sort, &opts, format, &path).map_err(|e| e.to_string())?;
+        Ok(ExportResult { path: request.path, selects: n as u32 })
+    })
+    .await
+}
+
 // ---------- Wiring ----------
 
 pub fn specta_builder() -> Builder<tauri::Wry> {
@@ -300,6 +346,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             presets_list,
             preset_settings,
             score,
+            export_selects,
         ])
         .events(collect_events![AnalysisEvent])
 }

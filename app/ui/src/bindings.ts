@@ -19,6 +19,7 @@ export const commands = {
 	presetsList: () => typedError<PresetInfo[], string>(__TAURI_INVOKE("presets_list")),
 	presetSettings: (name: string) => typedError<Settings_Serialize, string>(__TAURI_INVOKE("preset_settings", { name })),
 	score: (settings: Settings_Deserialize, sort: SortOrder) => typedError<ScoreResult, string>(__TAURI_INVOKE("score", { settings, sort })),
+	exportSelects: (settings: Settings_Deserialize, sort: SortOrder, request: ExportRequest) => typedError<ExportResult, string>(__TAURI_INVOKE("export_selects", { settings, sort, request })),
 };
 
 /** Events */
@@ -92,6 +93,26 @@ export type ClipScore = {
 	/**  Flag bitset per sample, base64 little-endian u32. */
 	flags: string,
 	segments: Segment[],
+};
+
+export type ExportRequest = {
+	/**  xmeml | fcpxml | otio | edl | ale | avid-markers | csv | json */
+	format: string,
+	path: string,
+	name: string,
+	/**  selects | with_rejects */
+	layout: string,
+	handles: boolean,
+	gap_s: number | null,
+	with_audio: boolean,
+	markers: boolean,
+	marker_name: string,
+	marker_comment: string,
+};
+
+export type ExportResult = {
+	path: string,
+	selects: number,
 };
 
 /**  Every flag ClipPro can raise (SPEC §5.3, ALGORITHMS §2). */

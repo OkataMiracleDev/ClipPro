@@ -153,6 +153,7 @@ export const mockBackend: Backend = {
   presetsList: async () => PRESETS,
   presetSettings: async (name) => defaultSettings(name),
   score: async (settings) => score(settings),
+  exportSelects: async (settings, _sort, request) => ({ path: request.path, selects: score(settings).selects.length }),
   onAnalysis: async (cb) => {
     listeners.add(cb);
     return () => listeners.delete(cb);
