@@ -78,6 +78,7 @@ function makeDemo(): DemoClip[] {
 const demo = makeDemo();
 let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true };
 const settingsListeners = new Set<(s: AppSettings) => void>();
+let mockWatch: { path: string; subfolders: boolean; extensions: string[] }[] = [{ path: "D:/Footage/Incoming", subfolders: true, extensions: ["mov", "mxf"] }];
 const listeners = new Set<(e: AnalysisEvent) => void>();
 
 function defaultSettings(name: string): Settings {
@@ -296,6 +297,11 @@ export const mockBackend: Backend = {
   reveal: async () => {},
   systemInfo: async () => ({ hwDecode: true, version: "0.1.0" }),
   getSettings: async () => mockSettings,
+  watchFoldersGet: async () => mockWatch,
+  watchFoldersSet: async (f) => {
+    mockWatch = f;
+  },
+  onMediaAdded: async () => () => {},
   cameraMatches: async (s, count) => {
     const want = s.camera.static_only ? ["SLATE_TEST", "INTERVIEW_SARAH_WIDE", "INTERVIEW_SARAH_CU"] : ["DRONE_COAST_01", "DRONE_COAST_02", "GIMBAL_MARKET_03"];
     return demo

@@ -26,6 +26,8 @@ pub struct AppState {
     settings: Mutex<settings::AppSettings>,
     settings_path: Mutex<Option<PathBuf>>,
     presets_dir: Mutex<Option<PathBuf>>,
+    watch: Mutex<Option<clippro_core::watch::WatchRunner>>,
+    app: Mutex<Option<tauri::AppHandle>>,
     audio: audio_out::AudioOut,
     /// `--bench-preview` report file (ADR-002); `None` in normal runs.
     bench_out: Mutex<Option<PathBuf>>,
@@ -129,6 +131,13 @@ pub struct ScoreResult {
     pub summary: Summary,
 }
 
+/// Media a watch folder added (P9.5); the UI refreshes its clip list.
+#[derive(Serialize, Deserialize, Type, Clone, Debug, Event)]
+pub struct MediaAdded {
+    pub added: u32,
+    pub names: Vec<String>,
+}
+
 #[derive(Serialize, Deserialize, Type, Clone, Debug, Event)]
 pub struct AnalysisEvent {
     /// progress | finished | failed | paused | resumed
@@ -177,15 +186,40 @@ async fn project_open(state: State<'_, AppState>, path: String) -> Result<Projec
     Ok(ProjectInfo { path, name, recovered: rep.recovered })
 }
 
+/// (Re)starts the watch-folder runner for the open project.
+fn restart_watch(state: &AppState) {
+    lock(&state.watch).take();
+    let (Ok(s), Some(app)) = (state.session(), lock(&state.app).clone()) else { return };
+    let folders = s.watch_folders().unwrap_or_default();
+    if folders.is_empty() {
+        return;
+    }
+    let skip = s.media_paths().unwrap_or_default();
+    let runner = clippro_core::watch::WatchRunner::start(folders, std::time::Duration::from_secs(5), skip, move |paths| {
+        let Ok(s) = app.state::<AppState>().session() else { return };
+        match s.import(&paths) {
+            Ok(rep) if !rep.added.is_empty() => {
+                let _ = s.queue_analysis();
+                let names = rep.added.iter().filter_map(|(p, _)| p.file_stem().map(|n| n.to_string_lossy().into_owned())).collect();
+                let _ = MediaAdded { added: rep.added.len() as u32, names }.emit(&app);
+            }
+            _ => {}
+        }
+    });
+    *lock(&state.watch) = Some(runner);
+}
+
 fn replace_session(state: &AppState, s: Arc<Session>, path: PathBuf) {
     remember_project(state, &path);
     state.preview.clear();
     state.audio.stop();
+    lock(&state.watch).take();
     let old = lock(&state.session).replace(s);
     *lock(&state.path) = Some(path);
     if let Some(old) = old {
         close_session(old);
     }
+    restart_watch(state);
 }
 
 fn close_session(s: Arc<Session>) {
@@ -208,6 +242,7 @@ fn close_session(s: Arc<Session>) {
 #[tauri::command]
 #[specta::specta]
 async fn project_close(state: State<'_, AppState>) -> Result<(), String> {
+    lock(&state.watch).take();
     let s = lock(&state.session).take();
     *lock(&state.path) = None;
     state.preview.clear();
@@ -686,6 +721,44 @@ async fn submetrics_list() -> Result<Vec<SubMetricInfo>, String> {
         .collect())
 }
 
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct WatchFolderDto {
+    pub path: String,
+    pub subfolders: bool,
+    /// Lower-case extensions without the dot; empty = all media.
+    pub extensions: Vec<String>,
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn watch_folders_get(state: State<'_, AppState>) -> Result<Vec<WatchFolderDto>, String> {
+    let s = state.session()?;
+    Ok(s.watch_folders().map_err(|e| e.to_string())?.into_iter().map(|f| WatchFolderDto { path: f.path, subfolders: f.subfolders, extensions: f.extensions }).collect())
+}
+
+/// Replaces the project's watch folders and restarts watching.
+#[tauri::command]
+#[specta::specta]
+async fn watch_folders_set(state: State<'_, AppState>, folders: Vec<WatchFolderDto>) -> Result<(), String> {
+    let s = state.session()?;
+    let folders: Vec<clippro_core::watch::WatchFolder> = folders
+        .into_iter()
+        .map(|f| clippro_core::watch::WatchFolder {
+            path: f.path,
+            subfolders: f.subfolders,
+            extensions: f.extensions.iter().map(|e| e.trim().trim_start_matches('.').to_lowercase()).filter(|e| !e.is_empty()).collect(),
+        })
+        .collect();
+    for f in &folders {
+        if !std::path::Path::new(&f.path).is_dir() {
+            return Err(format!("{} isn't a folder.", f.path));
+        }
+    }
+    s.set_watch_folders(&folders).map_err(|e| e.to_string())?;
+    restart_watch(&state);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 async fn settings_get(state: State<'_, AppState>) -> Result<settings::AppSettings, String> {
@@ -984,6 +1057,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             clip_retry,
             system_info,
             settings_get,
+            watch_folders_get,
+            watch_folders_set,
             submetrics_list,
             preset_save,
             preset_delete,
@@ -1003,7 +1078,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             bench_config,
             bench_report,
         ])
-        .events(collect_events![AnalysisEvent, settings::AppSettings])
+        .events(collect_events![AnalysisEvent, settings::AppSettings, MediaAdded])
 }
 
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../ui/src/bindings.ts");
@@ -1074,6 +1149,7 @@ pub fn run(bench: Option<Bench>) {
         })
         .setup(move |app| {
             builder.mount_events(app);
+            *lock(&app.state::<AppState>().app) = Some(app.handle().clone());
             // Self-test runs (bench, pdf-check) leave the user's settings alone.
             if let Ok(dir) = app.path().app_config_dir() {
                 *lock(&app.state::<AppState>().presets_dir) = Some(dir.join("presets"));

@@ -5,6 +5,7 @@ import { AlertCircle, CircleDashed, Film, ListChecks } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Clip } from "../api";
 import { pickProxy } from "../lib/dialogs";
+import { WatchFolders } from "./WatchFolders";
 import { cx, scoreColor, Spinner } from "../components/ui";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
@@ -26,6 +27,7 @@ export function Sidebar() {
           <span className="font-mono text-[11px] text-text-3 tabular">{scored?.summary.count ?? 0}</span>
         </button>
       </div>
+      <WatchFolders />
     </nav>
   );
 }

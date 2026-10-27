@@ -4,6 +4,7 @@
 pub mod import;
 pub mod inspect;
 pub mod report;
+pub mod watch;
 pub mod session;
 pub mod store;
 

@@ -22,3 +22,4 @@ thiserror = "2"
 clippro-interchange = { version = "0.1.0", path = "../clippro-interchange" }
 image-webp = "0.2.4"
 base64 = "0.23.1"
+notify = "8.2.1"

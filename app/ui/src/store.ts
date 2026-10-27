@@ -143,6 +143,11 @@ export const useApp = create<AppState>((set, get) => ({
       const st = await api.getSettings();
       get().applySettings(st);
       void api.onSettings((s) => get().applySettings(s));
+      void api.onMediaAdded((e) => {
+        set((s) => ({ analysis: { ...s.analysis, active: true } }));
+        void get().refreshClips();
+        get().toast(`Watch folder: added ${e.added === 1 ? (e.names[0] ?? "1 clip") : `${e.added} clips`}`);
+      });
       // Browser preview: open the mock demo project straight away. The app reopens the last one.
       if (!isTauri) await get().openProject("Demo.clippro");
       else if (st.reopen_last && st.last_project) await get().openProject(st.last_project);

@@ -113,6 +113,12 @@ export interface Inspection {
   working: { w: number; h: number };
 }
 
+export interface WatchFolder {
+  path: string;
+  subfolders: boolean;
+  extensions: string[];
+}
+
 export interface Backend {
   projectNew(path: string, name: string): Promise<ProjectInfo>;
   projectOpen(path: string): Promise<ProjectInfo>;
@@ -159,6 +165,10 @@ export interface Backend {
   setSettings(s: AppSettings): Promise<AppSettings>;
   openSettings(): Promise<void>;
   onSettings(cb: (s: AppSettings) => void): Promise<() => void>;
+  /** Watch folders of the open project (P9.5). */
+  watchFoldersGet(): Promise<WatchFolder[]>;
+  watchFoldersSet(folders: WatchFolder[]): Promise<void>;
+  onMediaAdded(cb: (e: { added: number; names: string[] }) => void): Promise<() => void>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
   frameUrl(media: number, us: number, width: number): string;
 }
@@ -315,6 +325,9 @@ const tauriBackend: Backend = {
   setSettings: async (s) => unwrap(await commands.settingsSet(s)),
   openSettings: async () => void unwrap(await commands.openSettings()),
   onSettings: async (cb) => events.appSettings.listen((e) => cb(e.payload)),
+  watchFoldersGet: async () => unwrap(await commands.watchFoldersGet()),
+  watchFoldersSet: async (folders) => void unwrap(await commands.watchFoldersSet(folders)),
+  onMediaAdded: async (cb) => events.mediaAdded.listen((e) => cb(e.payload)),
   systemInfo: async () => {
     const r = unwrap(await commands.systemInfo());
     return { hwDecode: r.hw_decode, version: r.version };

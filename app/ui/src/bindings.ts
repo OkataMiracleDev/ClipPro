@@ -47,6 +47,9 @@ export const commands = {
 	/**  Machine capabilities for the status bar. */
 	systemInfo: () => typedError<SystemInfo, string>(__TAURI_INVOKE("system_info")),
 	settingsGet: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_get")),
+	watchFoldersGet: () => typedError<WatchFolderDto[], string>(__TAURI_INVOKE("watch_folders_get")),
+	/**  Replaces the project's watch folders and restarts watching. */
+	watchFoldersSet: (folders: WatchFolderDto[]) => typedError<null, string>(__TAURI_INVOKE("watch_folders_set", { folders })),
 	submetricsList: () => typedError<SubMetricInfo[], string>(__TAURI_INVOKE("submetrics_list")),
 	/**  Saves the current settings as a custom preset (`overwrite` replaces one with that name). */
 	presetSave: (name: string, description: string, settings: Settings_Deserialize, overwrite: boolean) => typedError<null, string>(__TAURI_INVOKE("preset_save", { name, description, settings, overwrite })),
@@ -84,6 +87,7 @@ export const commands = {
 export const events = {
 	analysisEvent: makeEvent<AnalysisEvent_Serialize, AnalysisEvent_Deserialize>("analysis-event"),
 	appSettings: makeEvent<AppSettings_Serialize, AppSettings_Deserialize>("app-settings"),
+	mediaAdded: makeEvent<MediaAdded, MediaAdded>("media-added"),
 };
 
 /* Types */
@@ -370,6 +374,12 @@ export type MasterSwitches = {
 	camera_filter: boolean,
 };
 
+/**  Media a watch folder added (P9.5); the UI refreshes its clip list. */
+export type MediaAdded = {
+	added: number,
+	names: string[],
+};
+
 /**  How the viewer should show a clip. */
 export type MediaSource = MediaSource_Serialize | MediaSource_Deserialize;
 
@@ -554,6 +564,13 @@ export type SystemInfo = {
 
 /**  What a flag does to scoring (ALGORITHMS §6.4). */
 export type Tier = "force_exclude" | "disfavour" | "neutral" | "favour" | "force_include";
+
+export type WatchFolderDto = {
+	path: string,
+	subfolders: boolean,
+	/**  Lower-case extensions without the dot; empty = all media. */
+	extensions: string[],
+};
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
