@@ -1,7 +1,7 @@
 // Mock backend for the browser preview and component tests. Deterministic demo data with a
 // simplified selects rule (threshold + length + cap); the real engine lives in Rust.
 
-import type { AnalysisEvent, Backend, Clip, MediaSource, Scored, Segment, Settings } from "./api";
+import type { AnalysisEvent, Backend, Clip, Inspection, MediaSource, Scored, Segment, Settings } from "./api";
 import type { PresetInfo } from "./bindings";
 
 const PRESETS: PresetInfo[] = [
@@ -101,7 +101,7 @@ function defaultSettings(name: string): Settings {
   };
 }
 
-function score(s: Settings): Scored {
+function scoreAll(s: Settings): Scored {
   const lo = s.score_lo ?? 0.55;
   const minUs = (s.len_min_s ?? 0) * 1e6;
   const maxUs = s.len_max_s === null || s.len_max_s === undefined ? Infinity : s.len_max_s * 1e6;
@@ -158,6 +158,80 @@ function mockFrame(media: number, us: number, width: number): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+const MOCK_GROUPS = [
+  ["focus", "Focus", ["sharpness", "detail", "focus_stability"]],
+  ["exposure", "Exposure", ["brightness", "contrast", "clipping"]],
+  ["motion", "Motion", ["stability", "motion_blur", "subject_motion"]],
+  ["composition", "Composition", ["horizon", "framing"]],
+] as const;
+
+function mockInspect(settings: Settings, clip: number, sample: number): Inspection {
+  const d = demo.find((x) => x.clip.clip === clip);
+  if (!d) throw new Error("Unknown clip");
+  const k = Math.max(0, Math.min(d.bar.length - 1, sample));
+  const r = rng(clip * 131 + k);
+  const score = d.bar[k]!;
+  const flags = (d.flags[k] ?? 0) & (1 << 5) ? ["shaky"] : (d.flags[k] ?? 0) & (1 << 2) ? ["solid_colour"] : [];
+  const sc = scoreAll(settings).clips.find((c) => c.clip === clip);
+  const si = sc ? sc.segments.findIndex((s) => k >= s.firstSample && k <= s.lastSample) : -1;
+  const lo = settings.score_lo ?? 0.55;
+  const forceOut = flags.includes("solid_colour");
+  const reasons =
+    si >= 0
+      ? [`In select ${si + 1}`]
+      : forceOut
+        ? ["Force-excluded by Solid colour"]
+        : score < lo
+          ? [`Score ${Math.round(score * 100)} is below the threshold (${Math.round(lo * 100)})`]
+          : ["Passes the score, but its run was dropped by the length, score-range or per-clip rules"];
+  const groups = MOCK_GROUPS.map(([key, label], gi) => ({ key, label, score: Math.min(1, Math.max(0, score + (r() - 0.5) * 0.3)), weight: [35, 30, 25, 10][gi]! / 100 }));
+  const subs = MOCK_GROUPS.flatMap(([g, , keys]) =>
+    keys.map((key) => {
+      const value = r();
+      return { key, label: key.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()), group: g, value, score: Math.min(1, Math.max(0, score + (value - 0.5) * 0.4)), weight: 1 / keys.length };
+    }),
+  );
+  const tiles = Float32Array.from({ length: 8 * 5 }, (_, i) => {
+    const x = (i % 8) - 3.5;
+    const y = Math.floor(i / 8) - 2;
+    return 1.2 + score * 1.4 - 0.12 * (x * x + y * y) + (r() - 0.5) * 0.3;
+  });
+  const pan = Math.sin(k / 9 + clip) * 6;
+  const mvs = Int16Array.from({ length: 16 * 9 * 2 }, (_, i) => Math.round(i % 2 === 0 ? pan + (r() - 0.5) * 2 : (r() - 0.5) * 2));
+  const hist = Array.from({ length: 64 }, (_, i) => Math.round(8 * Math.exp(-(((i - 20 - score * 20) / 9) ** 2))));
+  return {
+    clip,
+    sample: k,
+    timeUs: k * 250_000,
+    pass: si >= 0,
+    select: si >= 0 ? si + 1 : null,
+    reasons,
+    score,
+    overall: Math.min(1, score + 0.03),
+    tierMultiplier: flags.includes("shaky") ? 0.8 : 1,
+    cameraFactor: 1,
+    forceIn: false,
+    forceOut,
+    flags,
+    groups,
+    subs,
+    raw: [
+      ["sharp_full", 1.4 + score],
+      ["mean", 0.42],
+      ["noise_sigma", 0.012],
+      ["cam_u_x", pan],
+      ["cam_u_y", 0.4],
+      ["cam_zr", 0.004],
+      ["cam_wr", 0],
+      ["cam_conf", 0.9],
+    ].map(([key, value]) => ({ key: key as string, value: value as number })),
+    tiles: { cols: 8, rows: 5, values: tiles },
+    mvs: { cols: 16, rows: 9, values: mvs },
+    hist,
+    working: { w: 960, h: 540 },
+  };
+}
+
 export const mockBackend: Backend = {
   projectNew: async (path, name) => ({ path, name, recovered: false }),
   projectOpen: async (path) => ({ path, name: "Demo Project", recovered: false }),
@@ -169,14 +243,15 @@ export const mockBackend: Backend = {
   clipsList: async () => demo.map((d) => d.clip),
   presetsList: async () => PRESETS,
   presetSettings: async (name) => defaultSettings(name),
-  score: async (settings) => score(settings),
-  exportSelects: async (settings, _sort, request) => ({ path: request.path, selects: score(settings).selects.length }),
+  score: async (settings) => scoreAll(settings),
+  exportSelects: async (settings, _sort, request) => ({ path: request.path, selects: scoreAll(settings).selects.length }),
   mediaSource: async (media): Promise<MediaSource> => {
     const d = demo.find((x) => x.clip.media === media);
     if (!d) throw new Error("Unknown media");
     return { nativeUrl: null, durationUs: d.durationUs, fps: 25, width: 1920, height: 1080, codec: "prores" };
   },
   frameUrl: mockFrame,
+  inspect: async (settings, clip, sample) => mockInspect(settings, clip, sample),
   onAnalysis: async (cb) => {
     listeners.add(cb);
     return () => listeners.delete(cb);

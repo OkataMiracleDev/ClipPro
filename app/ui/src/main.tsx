@@ -8,9 +8,13 @@ import { useApp } from "./store";
 // `?theme=dark|light` forces a theme (screenshots, settings later); default follows the OS.
 const theme = new URLSearchParams(location.search).get("theme");
 if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
-// `?overlay=zebras|false_colour|peaking` starts with a viewer overlay on (screenshots).
-const overlay = new URLSearchParams(location.search).get("overlay");
+// Screenshot state: `?overlay=zebras|false_colour|peaking`, `?measure=tiles|motion`, `?panel=frame`.
+const q = new URLSearchParams(location.search);
+const overlay = q.get("overlay");
 if (overlay === "zebras" || overlay === "false_colour" || overlay === "peaking") useApp.setState({ overlay });
+const measure = q.get("measure");
+if (measure === "tiles" || measure === "motion") useApp.setState({ measureOverlay: measure });
+if (q.get("panel") === "frame") useApp.setState({ rightTab: "frame" });
 
 function mount() {
   const root = document.getElementById("root");

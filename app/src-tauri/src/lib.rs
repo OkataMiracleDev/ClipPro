@@ -356,6 +356,106 @@ async fn export_selects(state: State<'_, AppState>, settings: Settings, sort: So
 
 // ---------- Wiring ----------
 
+/// Frame inspector payload (SPEC VIE-2/4/5). Unavailable values are `null` (NaN in Rust).
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct InspectResult {
+    pub sample: u32,
+    pub time_us: f64,
+    pub pass: bool,
+    /// 1-based select number within the clip.
+    pub select: Option<u32>,
+    pub reasons: Vec<String>,
+    pub score: f32,
+    pub overall: f32,
+    pub tier_multiplier: f32,
+    pub camera_factor: f32,
+    pub force_in: bool,
+    pub force_out: bool,
+    pub flags: Vec<String>,
+    pub groups: Vec<InspectGroup>,
+    pub subs: Vec<InspectSub>,
+    pub raw: Vec<InspectRaw>,
+    pub tile_cols: u32,
+    pub tile_rows: u32,
+    pub tiles: Vec<f32>,
+    pub mv_cols: u32,
+    pub mv_rows: u32,
+    /// Flattened (dx, dy) per motion cell, working-image pixels.
+    pub mvs: Vec<i32>,
+    pub hist: Vec<u32>,
+    pub working_w: u32,
+    pub working_h: u32,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct InspectGroup {
+    pub key: String,
+    pub label: String,
+    pub score: f32,
+    pub weight: f32,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct InspectSub {
+    pub key: String,
+    pub label: String,
+    pub group: String,
+    /// Normalised measurement (0–1).
+    pub value: f32,
+    /// Sub-metric score (0–1) after the preference/target curve.
+    pub score: f32,
+    pub weight: f32,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct InspectRaw {
+    pub key: String,
+    pub value: f32,
+}
+
+/// Inspector data for `sample` of `clip` with the current settings.
+#[tauri::command]
+#[specta::specta]
+async fn inspect_sample(state: State<'_, AppState>, settings: Settings, clip: f64, sample: u32) -> Result<InspectResult, String> {
+    let s = state.session()?;
+    blocking(move || {
+        let i = s.inspect(clippro_types::ClipId(clip as i64), &settings, sample as usize).map_err(|e| e.to_string())?;
+        let b = &i.breakdown;
+        let gkey = |g: clippro_types::MetricGroup| format!("{g:?}").to_lowercase();
+        Ok(InspectResult {
+            sample: i.sample as u32,
+            time_us: i.time_us as f64,
+            pass: i.pass,
+            select: i.select.map(|x| x as u32 + 1),
+            reasons: i.reasons.clone(),
+            score: b.score,
+            overall: b.overall,
+            tier_multiplier: b.tier_multiplier,
+            camera_factor: b.camera_factor,
+            force_in: b.force_in,
+            force_out: b.force_out,
+            flags: b.flags.iter().map(|f| f.key().to_string()).collect(),
+            groups: b.groups.iter().map(|(g, sc, w)| InspectGroup { key: gkey(*g), label: g.label().to_string(), score: *sc, weight: *w }).collect(),
+            subs: b
+                .subs
+                .iter()
+                .map(|(sm, v, sc, w)| InspectSub { key: sm.key().to_string(), label: sm.label().to_string(), group: gkey(sm.group()), value: *v, score: *sc, weight: *w })
+                .collect(),
+            raw: i.raw.iter().map(|(k, v)| InspectRaw { key: (*k).to_string(), value: *v }).collect(),
+            tile_cols: i.tile_dims.0 as u32,
+            tile_rows: i.tile_dims.1 as u32,
+            tiles: i.tiles.clone(),
+            mv_cols: i.mv_dims.0 as u32,
+            mv_rows: i.mv_dims.1 as u32,
+            mvs: i.mvs.iter().flat_map(|v| [v[0] as i32, v[1] as i32]).collect(),
+            hist: i.hist.iter().map(|&h| h as u32).collect(),
+            working_w: i.working.0,
+            working_h: i.working.1,
+        })
+    })
+    .await
+}
+
 /// How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
 /// when it can play natively.
 #[tauri::command]
@@ -470,6 +570,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             export_selects,
             media_source,
             preview_shared,
+            inspect_sample,
             bench_config,
             bench_report,
         ])

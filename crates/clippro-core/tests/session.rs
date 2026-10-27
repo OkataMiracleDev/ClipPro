@@ -87,3 +87,57 @@ fn import_analyse_score_reopen_and_cache() {
     s2.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// PLAN P6.4: the inspector agrees with the selects for 1,000 random samples.
+#[test]
+fn inspect_agrees_with_selects() {
+    let Some(dir) = corpus() else { return };
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-inspect-test");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let s = Session::create(&tmp.join("p.clippro"), "Inspect", SessionOptions { cache_path: None, ..opts(&tmp) }).unwrap();
+    let files: Vec<PathBuf> = ["tripod_static.mp4", "handheld_shake.mp4", "solid_black.mp4", "hard_cuts.mp4", "focus_hunt.mp4"].iter().map(|f| dir.join(f)).collect();
+    s.import(&files).unwrap();
+    s.queue_analysis().unwrap();
+    s.wait(|_| {});
+    let clips = s.clip_inputs().unwrap();
+    assert_eq!(clips.len(), 5);
+
+    let mut rng = 0x2545_f491_4f6c_dd1du64;
+    let mut next = || {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        rng
+    };
+    let (mut passes, mut fails) = (0, 0);
+    for preset in ["All-Rounder", "Cleanup", "Locked-Off"] {
+        let settings = Settings::from_preset(&builtin(preset).unwrap()).unwrap();
+        let sel = s.score(&settings).unwrap();
+        for _ in 0..334 {
+            let c = &clips[(next() % clips.len() as u64) as usize];
+            let k = (next() % c.ms.len() as u64) as usize;
+            let ins = s.inspect(c.id, &settings, k).unwrap();
+            let cs = sel.clips.iter().find(|x| x.clip == c.id).unwrap();
+            let in_select = cs.segments.iter().any(|g| (g.first_sample..=g.last_sample).contains(&k));
+            assert_eq!(ins.pass, in_select, "{preset} clip {:?} sample {k}: {:?}", c.id, ins.reasons);
+            let f = cs.scores.score[k];
+            let b = ins.breakdown.score;
+            assert!((f.is_nan() && b.is_nan()) || (f - b).abs() < 1e-5, "{preset} sample {k}: engine {f}, explain {b}");
+            assert_eq!(ins.breakdown.force_out, cs.scores.force_out[k]);
+            assert_eq!(ins.breakdown.force_in, cs.scores.force_in[k]);
+            assert!(!(ins.pass && ins.breakdown.force_out), "force-excluded samples are never selected");
+            assert!(!ins.reasons.is_empty());
+            assert_eq!(ins.raw.len(), clippro_measure::columns::NCOLS);
+            if ins.pass {
+                passes += 1;
+            } else {
+                fails += 1;
+            }
+        }
+    }
+    eprintln!("inspected {} samples: {passes} in selects, {fails} not", passes + fails);
+    assert!(passes > 50 && fails > 50, "both outcomes exercised ({passes}/{fails})");
+    s.close().unwrap();
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

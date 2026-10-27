@@ -9,6 +9,8 @@ import { scoreColor } from "../components/ui";
 import { FLAGS } from "../lib/domain";
 import { fetchFrame } from "../lib/frames";
 import { GlView, type Overlay } from "../lib/glview";
+import { useInspection } from "../lib/inspect";
+import { MeasureOverlay, type MeasureOverlayKind } from "./MeasureOverlay";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
 
@@ -58,7 +60,8 @@ function useFitBox(aspect: number) {
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
 
 export function Viewer() {
-  const { clips, scored, selectedClip, playheadUs, playing, setPlaying, setPlayhead, overlay, toggleOverlay } = useApp();
+  const { clips, scored, selectedClip, playheadUs, playing, setPlaying, setPlayhead, overlay, toggleOverlay, measureOverlay, toggleMeasureOverlay, setRightTab } = useApp();
+  const inspection = useInspection(measureOverlay !== "none");
   const clip = clips.find((c) => c.clip === selectedClip);
   const sc = scored?.clips.find((c) => c.clip === selectedClip);
   const media = useMediaSource(clip?.media ?? null);
@@ -109,6 +112,12 @@ export function Viewer() {
         toggleOverlay("false_colour");
       } else if (e.key === "p" || e.key === "P") {
         toggleOverlay("peaking");
+      } else if (e.key === "t" || e.key === "T") {
+        toggleMeasureOverlay("tiles");
+      } else if (e.key === "m" || e.key === "M") {
+        toggleMeasureOverlay("motion");
+      } else if (e.key === "i" || e.key === "I") {
+        setRightTab(useApp.getState().rightTab === "frame" ? "tuning" : "frame");
       } else if (e.key === "Home") {
         seek(0);
       } else if (e.key === "End") {
@@ -118,7 +127,7 @@ export function Viewer() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [clip, durationUs, frameUs, seek, setPlaying, toggleOverlay]);
+  }, [clip, durationUs, frameUs, seek, setPlaying, toggleOverlay, toggleMeasureOverlay, setRightTab]);
 
   const togglePlay = () => {
     if (!playing && playheadUs >= durationUs - frameUs) seek(0);
@@ -149,6 +158,7 @@ export function Viewer() {
             ) : (
               <FrameCanvas key={clip.media} media={clip.media} clip={clip.clip} src={src} width={box.w} frameUs={frameUs} onError={setError} />
             )}
+            <MeasureOverlay kind={measureOverlay} data={inspection.data} />
           </div>
         ) : null}
         {clip && (
@@ -159,7 +169,7 @@ export function Viewer() {
         )}
         {clip && src && (
           <div className="absolute top-3 right-3 flex items-center gap-2">
-            <OverlayBar value={overlay} onToggle={toggleOverlay} />
+            <OverlayBar value={overlay} onToggle={toggleOverlay} measure={measureOverlay} onMeasure={toggleMeasureOverlay} />
             <div className="rounded-md bg-black/45 px-2 py-1 font-mono text-[10px] text-white/60 backdrop-blur" title={native ? "Native playback" : "Decoded frames"}>
               {src.codec.toUpperCase()} · {src.width}×{src.height} · {native ? "native" : "frames"}
             </div>
@@ -201,9 +211,26 @@ const OVERLAYS: { value: Overlay; label: string; key: string }[] = [
   { value: "peaking", label: "Focus peaking", key: "P" },
 ];
 
-function OverlayBar({ value, onToggle }: { value: Overlay; onToggle: (o: Overlay) => void }) {
+const MEASURE_OVERLAYS: { value: MeasureOverlayKind; label: string; key: string }[] = [
+  { value: "tiles", label: "Focus map", key: "T" },
+  { value: "motion", label: "Motion", key: "M" },
+];
+
+function OverlayBar({ value, onToggle, measure, onMeasure }: { value: Overlay; onToggle: (o: Overlay) => void; measure: MeasureOverlayKind; onMeasure: (o: MeasureOverlayKind) => void }) {
   return (
-    <div role="group" aria-label="Overlays" className="flex rounded-md bg-black/45 p-0.5 backdrop-blur">
+    <div role="group" aria-label="Overlays" className="flex items-center rounded-md bg-black/45 p-0.5 backdrop-blur">
+      {MEASURE_OVERLAYS.map((o) => (
+        <button
+          key={o.value}
+          aria-pressed={measure === o.value}
+          title={`${o.label} (${o.key})`}
+          onClick={() => onMeasure(o.value)}
+          className={`rounded px-1.5 py-0.5 text-[10px] ${measure === o.value ? "bg-white/85 text-black" : "text-white/70 hover:text-white"}`}
+        >
+          {o.label}
+        </button>
+      ))}
+      <span className="mx-0.5 h-3 w-px bg-white/20" />
       {OVERLAYS.map((o) => (
         <button
           key={o.value}

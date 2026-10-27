@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Overlay } from "./lib/glview";
+import type { MeasureOverlayKind } from "./views/MeasureOverlay";
 import { api, isTauri, type AnalysisEvent, type Clip, type PresetInfo, type ProjectInfo, type Scored, type Settings, type SortOrder } from "./api";
 
 export interface Toast {
@@ -27,6 +28,8 @@ interface AppState {
   analysis: { active: boolean; paused: boolean; jobs: Record<number, number> };
   inspectorOpen: boolean;
   overlay: Overlay;
+  measureOverlay: MeasureOverlayKind;
+  rightTab: "tuning" | "frame";
   toasts: Toast[];
 
   init(): Promise<void>;
@@ -49,6 +52,8 @@ interface AppState {
   toggleInspector(): void;
   /** Turns an overlay on, or off when it is already showing. */
   toggleOverlay(o: Overlay): void;
+  toggleMeasureOverlay(o: MeasureOverlayKind): void;
+  setRightTab(t: "tuning" | "frame"): void;
   toast(text: string, tone?: Toast["tone"]): void;
   dismissToast(id: number): void;
 }
@@ -76,6 +81,8 @@ export const useApp = create<AppState>((set, get) => ({
   analysis: { active: false, paused: false, jobs: {} },
   inspectorOpen: true,
   overlay: "none",
+  measureOverlay: "none",
+  rightTab: "tuning",
   toasts: [],
 
   async init() {
@@ -205,6 +212,8 @@ export const useApp = create<AppState>((set, get) => ({
   setPlaying: (playing) => set({ playing }),
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
   toggleOverlay: (o) => set((s) => ({ overlay: s.overlay === o ? "none" : o })),
+  toggleMeasureOverlay: (o) => set((s) => ({ measureOverlay: s.measureOverlay === o ? "none" : o })),
+  setRightTab: (rightTab) => set({ rightTab, inspectorOpen: true }),
   toast(text, tone = "info") {
     const id = ++toastId;
     set((s) => ({ toasts: [...s.toasts, { id, text, tone }] }));

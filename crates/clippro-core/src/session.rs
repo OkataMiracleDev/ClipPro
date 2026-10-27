@@ -86,7 +86,7 @@ pub struct Session {
     store: Arc<ProjectStore>,
     sched: Scheduler,
     events: Mutex<Receiver<Event>>,
-    engine: Mutex<Engine>,
+    pub(crate) engine: Mutex<Engine>,
     opts: SessionOptions,
     cal: Calibration,
     loaded: Mutex<HashMap<i64, Arc<MeasurementSet>>>,

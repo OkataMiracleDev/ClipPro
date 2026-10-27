@@ -30,6 +30,8 @@ export const commands = {
 	 *  SharedBuffer (`sharedbufferreceived`; `additionalData` is `{"media","us","tag"}`).
 	 */
 	previewShared: (media: number | null, us: number | null, width: number, tag: number) => typedError<null, string>(__TAURI_INVOKE("preview_shared", { media, us, width, tag })),
+	/**  Inspector data for `sample` of `clip` with the current settings. */
+	inspectSample: (settings: Settings_Deserialize, clip: number | null, sample: number) => typedError<InspectResult_Serialize, string>(__TAURI_INVOKE("inspect_sample", { settings, clip, sample })),
 	/**  Clips to benchmark when started with `--bench-preview`, else `None`. */
 	benchConfig: () => typedError<BenchClip[] | null, string>(__TAURI_INVOKE("bench_config")),
 	/**  Writes the benchmark report and exits. */
@@ -152,6 +154,92 @@ export type ImportResult = {
 	proxies_linked: number,
 	cache_hits: number,
 	failed: ImportFailure[],
+};
+
+export type InspectGroup = {
+	key: string,
+	label: string,
+	score: number | null,
+	weight: number | null,
+};
+
+export type InspectRaw = {
+	key: string,
+	value: number | null,
+};
+
+/**  Frame inspector payload (SPEC VIE-2/4/5). Unavailable values are `null` (NaN in Rust). */
+export type InspectResult = InspectResult_Serialize | InspectResult_Deserialize;
+
+/**  Frame inspector payload (SPEC VIE-2/4/5). Unavailable values are `null` (NaN in Rust). */
+export type InspectResult_Deserialize = {
+	sample: number,
+	time_us: number | null,
+	pass: boolean,
+	/**  1-based select number within the clip. */
+	select?: number | null,
+	reasons: string[],
+	score: number | null,
+	overall: number | null,
+	tier_multiplier: number | null,
+	camera_factor: number | null,
+	force_in: boolean,
+	force_out: boolean,
+	flags: string[],
+	groups: InspectGroup[],
+	subs: InspectSub[],
+	raw: InspectRaw[],
+	tile_cols: number,
+	tile_rows: number,
+	tiles: (number | null)[],
+	mv_cols: number,
+	mv_rows: number,
+	/**  Flattened (dx, dy) per motion cell, working-image pixels. */
+	mvs: number[],
+	hist: number[],
+	working_w: number,
+	working_h: number,
+};
+
+/**  Frame inspector payload (SPEC VIE-2/4/5). Unavailable values are `null` (NaN in Rust). */
+export type InspectResult_Serialize = {
+	sample: number,
+	time_us: number | null,
+	pass: boolean,
+	/**  1-based select number within the clip. */
+	select: number | null,
+	reasons: string[],
+	score: number | null,
+	overall: number | null,
+	tier_multiplier: number | null,
+	camera_factor: number | null,
+	force_in: boolean,
+	force_out: boolean,
+	flags: string[],
+	groups: InspectGroup[],
+	subs: InspectSub[],
+	raw: InspectRaw[],
+	tile_cols: number,
+	tile_rows: number,
+	tiles: (number | null)[],
+	mv_cols: number,
+	mv_rows: number,
+	/**  Flattened (dx, dy) per motion cell, working-image pixels. */
+	mvs: number[],
+	hist: number[],
+	working_w: number,
+	working_h: number,
+};
+
+export type InspectSub = {
+	key: string,
+	label: string,
+	group: string,
+	/**  Normalised measurement (0–1). */
+	value: number | null,
+	/**  Sub-metric score (0–1) after the preference/target curve. */
+	score: number | null,
+	weight: number | null,
 };
 
 export type LongSegmentMode = "split" | "trim_best";

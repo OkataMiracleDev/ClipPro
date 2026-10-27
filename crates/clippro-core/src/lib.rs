@@ -2,7 +2,9 @@
 //! analysis orchestration and scoring.
 
 pub mod import;
+pub mod inspect;
 pub mod session;
 pub mod store;
 
+pub use inspect::Inspection;
 pub use session::{ClipStatus, ImportReport, Session, SessionError, SessionOptions};

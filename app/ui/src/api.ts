@@ -8,6 +8,7 @@ import type {
   ExportRequest,
   ExportResult,
   ImportResult,
+  InspectResult_Serialize as RawInspect,
   MediaSource_Serialize as RawMediaSource,
   PresetInfo,
   ProjectInfo,
@@ -84,6 +85,30 @@ export interface AnalysisEvent {
   error: string | null;
 }
 
+/** Frame inspector data for one sample (SPEC VIE-2/4/5). NaN = unavailable. */
+export interface Inspection {
+  clip: number;
+  sample: number;
+  timeUs: number;
+  pass: boolean;
+  select: number | null;
+  reasons: string[];
+  score: number;
+  overall: number;
+  tierMultiplier: number;
+  cameraFactor: number;
+  forceIn: boolean;
+  forceOut: boolean;
+  flags: string[];
+  groups: { key: string; label: string; score: number; weight: number }[];
+  subs: { key: string; label: string; group: string; value: number; score: number; weight: number }[];
+  raw: { key: string; value: number }[];
+  tiles: { cols: number; rows: number; values: Float32Array };
+  mvs: { cols: number; rows: number; values: Int16Array };
+  hist: number[];
+  working: { w: number; h: number };
+}
+
 export interface Backend {
   projectNew(path: string, name: string): Promise<ProjectInfo>;
   projectOpen(path: string): Promise<ProjectInfo>;
@@ -99,6 +124,7 @@ export interface Backend {
   exportSelects(settings: Settings, sort: SortOrder, request: ExportRequest): Promise<ExportResult>;
   onAnalysis(cb: (e: AnalysisEvent) => void): Promise<() => void>;
   mediaSource(media: number): Promise<MediaSource>;
+  inspect(settings: Settings, clip: number, sample: number): Promise<Inspection>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
   frameUrl(media: number, us: number, width: number): string;
 }
@@ -184,6 +210,33 @@ function adaptSource(r: RawMediaSource, toUrl: (path: string) => string): MediaS
   };
 }
 
+const f = (v: number | null | undefined) => (v === null || v === undefined ? NaN : v);
+
+export function adaptInspect(clip: number, r: RawInspect): Inspection {
+  return {
+    clip,
+    sample: r.sample,
+    timeUs: n(r.time_us),
+    pass: r.pass,
+    select: r.select ?? null,
+    reasons: r.reasons,
+    score: f(r.score),
+    overall: f(r.overall),
+    tierMultiplier: f(r.tier_multiplier),
+    cameraFactor: f(r.camera_factor),
+    forceIn: r.force_in,
+    forceOut: r.force_out,
+    flags: r.flags,
+    groups: r.groups.map((g) => ({ key: g.key, label: g.label, score: f(g.score), weight: f(g.weight) })),
+    subs: r.subs.map((s) => ({ key: s.key, label: s.label, group: s.group, value: f(s.value), score: f(s.score), weight: f(s.weight) })),
+    raw: r.raw.map((x) => ({ key: x.key, value: f(x.value) })),
+    tiles: { cols: r.tile_cols, rows: r.tile_rows, values: Float32Array.from(r.tiles, f) },
+    mvs: { cols: r.mv_cols, rows: r.mv_rows, values: Int16Array.from(r.mvs) },
+    hist: r.hist,
+    working: { w: r.working_w, h: r.working_h },
+  };
+}
+
 const tauriBackend: Backend = {
   projectNew: async (path, name) => unwrap(await commands.projectNew(path, name)),
   projectOpen: async (path) => unwrap(await commands.projectOpen(path)),
@@ -201,6 +254,7 @@ const tauriBackend: Backend = {
     const { convertFileSrc } = await import("@tauri-apps/api/core");
     return adaptSource(unwrap(await commands.mediaSource(media)), (p) => convertFileSrc(p));
   },
+  inspect: async (settings, clip, sample) => adaptInspect(clip, unwrap(await commands.inspectSample(settings, clip, sample))),
   frameUrl: (media, us, width) => `http://clippro.localhost/frame/${media}/${Math.max(0, Math.round(us))}?w=${Math.round(width)}`,
   onAnalysis: async (cb) =>
     events.analysisEvent.listen((e) =>

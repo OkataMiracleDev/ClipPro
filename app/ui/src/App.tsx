@@ -2,13 +2,14 @@ import * as RTooltip from "@radix-ui/react-tooltip";
 import { FilePlus2, FolderOpen, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { isTauri } from "./api";
-import { Button, cx, EmptyState } from "./components/ui";
+import { Button, cx, EmptyState, Segmented } from "./components/ui";
 import { pickFolder, pickMedia, pickNewProject, pickProjectToOpen } from "./lib/dialogs";
 import { useApp } from "./store";
 import { ClipList, Sidebar } from "./views/ClipList";
 import { ScoreChart } from "./views/ScoreChart";
 import { Timeline } from "./views/Timeline";
 import { TitleBar } from "./views/TitleBar";
+import { FramePanel } from "./views/FramePanel";
 import { TuningPanel } from "./views/TuningPanel";
 import { Viewer } from "./views/Viewer";
 
@@ -111,7 +112,7 @@ function useDragDrop() {
 }
 
 export function App() {
-  const { init, project, clips, inspectorOpen } = useApp();
+  const { init, project, clips, inspectorOpen, rightTab, setRightTab } = useApp();
   const dropping = useDragDrop();
   useEffect(() => {
     void init();
@@ -150,8 +151,20 @@ export function App() {
                 </div>
               )}
             </main>
-            <aside className={cx("row-span-2 min-h-0 border-l border-separator bg-sidebar", !inspectorOpen && "hidden")}>
-              <TuningPanel />
+            <aside className={cx("row-span-2 flex min-h-0 flex-col border-l border-separator bg-sidebar", !inspectorOpen && "hidden")}>
+              <div className="flex justify-center border-b border-separator px-4 py-2">
+                <Segmented
+                  label="Panel"
+                  size="sm"
+                  value={rightTab}
+                  onChange={setRightTab}
+                  options={[
+                    { value: "tuning", label: "Tuning" },
+                    { value: "frame", label: "Frame", title: "Frame inspector (I)" },
+                  ]}
+                />
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">{rightTab === "tuning" ? <TuningPanel /> : <FramePanel />}</div>
             </aside>
             <section className="col-start-2 min-h-0 border-t border-separator bg-window">
               <Timeline />
