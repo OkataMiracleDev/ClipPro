@@ -213,3 +213,32 @@ fn retry_bump_and_link_proxy() {
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// PLAN P9.2: the Pan / Tilt / Twist / Locked-Off presets select the matching corpus clips.
+#[test]
+fn camera_presets_pick_matching_clips() {
+    let Some(dir) = corpus() else { return };
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-camera-test");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let s = Session::create(&tmp.join("p.clippro"), "Camera", SessionOptions { cache_path: None, ..opts(&tmp) }).unwrap();
+    let names = ["pan_left", "pan_right", "tilt_up", "tilt_down", "rotate_cw", "rotate_ccw", "tripod_static"];
+    s.import(&names.iter().map(|n| dir.join(format!("{n}.mp4"))).collect::<Vec<_>>()).unwrap();
+    s.queue_analysis().unwrap();
+    s.wait(|_| {});
+    let by_id: std::collections::HashMap<_, _> = s.clip_statuses().unwrap().into_iter().map(|c| (c.clip, c.name)).collect();
+    for (preset, want) in [("Pan", &["pan_left", "pan_right"][..]), ("Tilt", &["tilt_up", "tilt_down"]), ("Twist", &["rotate_cw", "rotate_ccw"]), ("Locked-Off", &["tripod_static"])] {
+        let settings = Settings::from_preset(&builtin(preset).unwrap()).unwrap();
+        let top = s.camera_matches(&settings, 7).unwrap();
+        let got: Vec<&str> = top.iter().map(|(c, _)| by_id[c].as_str()).collect();
+        eprintln!("{preset}: {:?}", top.iter().map(|(c, v)| format!("{} {:.2}", by_id[c], v)).collect::<Vec<_>>());
+        let mut head: Vec<&str> = got[..want.len()].to_vec();
+        head.sort();
+        let mut w = want.to_vec();
+        w.sort();
+        assert_eq!(head, w, "{preset} ranks {got:?}");
+        assert!(top[want.len() - 1].1 > top[want.len()].1 + 0.05, "{preset}: matches clearly separated: {top:?}");
+    }
+    s.close().unwrap();
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

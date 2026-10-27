@@ -17,6 +17,15 @@ const measure = q.get("measure");
 if (measure === "tiles" || measure === "motion") useApp.setState({ measureOverlay: measure });
 if (q.get("panel") === "frame") useApp.setState({ rightTab: "frame" });
 if (q.get("scope") === "1") useApp.setState({ scope: true });
+// `?preset=Pan` starts with that preset (screenshots).
+const preset = q.get("preset");
+if (preset) {
+  const stop = useApp.subscribe((s) => {
+    if (!s.project) return;
+    stop();
+    void s.setPreset(preset);
+  });
+}
 
 function mount() {
   const root = document.getElementById("root");

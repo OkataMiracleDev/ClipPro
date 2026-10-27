@@ -592,6 +592,30 @@ async fn inspect_sample(state: State<'_, AppState>, settings: Settings, clip: f6
     .await
 }
 
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct CameraMatch {
+    pub clip: f64,
+    pub name: String,
+    /// Mean camera-filter factor over the clip (0–1).
+    pub score: f32,
+}
+
+/// The clips that best match the camera-movement filter in `settings` (live preview, TUN-6).
+#[tauri::command]
+#[specta::specta]
+async fn camera_matches(state: State<'_, AppState>, settings: Settings, count: u32) -> Result<Vec<CameraMatch>, String> {
+    let s = state.session()?;
+    blocking(move || {
+        let names = s.clip_names().map_err(|e| e.to_string())?;
+        Ok(s.camera_matches(&settings, count as usize)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|(c, score)| CameraMatch { clip: c.0 as f64, name: names.get(&c).map(|n| n.0.clone()).unwrap_or_default(), score })
+            .collect())
+    })
+    .await
+}
+
 /// One sub-metric, in `Settings::subs` order (SPEC TUN-5).
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
 pub struct SubMetricInfo {
@@ -911,6 +935,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             system_info,
             settings_get,
             submetrics_list,
+            camera_matches,
             settings_set,
             open_settings,
             clip_bump,

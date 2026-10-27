@@ -100,7 +100,7 @@ function defaultSettings(name: string): Settings {
             : { enabled: d !== null, pref: (d as number | null) ?? 0, target: 0.5, tol: 0.2, strength: 1 },
     ),
     tiers: Array.from({ length: 18 }, (_, i) => (i === 1 || i === 2 ? "force_exclude" : i === 0 || (i >= 4 && i <= 6) ? "disfavour" : "neutral")),
-    camera: { enabled: false, radius: 0, direction: 0, zoom: 0, rotate: 0, static_only: false, mirror: false },
+    camera: name === "Pan" ? { enabled: true, radius: 0.7, direction: 0, zoom: 0, rotate: 0, static_only: false, mirror: true } : { enabled: false, radius: 0, direction: 0, zoom: 0, rotate: 0, static_only: false, mirror: false },
     gap_s: 0.75,
     centre_weighting: 0.2,
     stability_emphasis: 0.4,
@@ -278,6 +278,13 @@ export const mockBackend: Backend = {
   reveal: async () => {},
   systemInfo: async () => ({ hwDecode: true, version: "0.1.0" }),
   getSettings: async () => mockSettings,
+  cameraMatches: async (s, count) => {
+    const want = s.camera.static_only ? ["SLATE_TEST", "INTERVIEW_SARAH_WIDE", "INTERVIEW_SARAH_CU"] : ["DRONE_COAST_01", "DRONE_COAST_02", "GIMBAL_MARKET_03"];
+    return demo
+      .map((d, i) => ({ clip: d.clip.clip, name: d.clip.name, score: want.includes(d.clip.name) ? 0.9 - want.indexOf(d.clip.name) * 0.07 : 0.1 + ((i * 37) % 30) / 100 }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, count);
+  },
   submetrics: async () =>
     ([
       ["sharpness", "Sharpness", "focus"], ["detail", "Detail", "focus"], ["focus_stability", "Focus stability", "focus"],

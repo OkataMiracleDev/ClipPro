@@ -48,6 +48,8 @@ export const commands = {
 	systemInfo: () => typedError<SystemInfo, string>(__TAURI_INVOKE("system_info")),
 	settingsGet: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_get")),
 	submetricsList: () => typedError<SubMetricInfo[], string>(__TAURI_INVOKE("submetrics_list")),
+	/**  The clips that best match the camera-movement filter in `settings` (live preview, TUN-6). */
+	cameraMatches: (settings: Settings_Deserialize, count: number) => typedError<CameraMatch[], string>(__TAURI_INVOKE("camera_matches", { settings, count })),
 	/**  Saves the app settings and tells every window (`AppSettings` event). */
 	settingsSet: (settings: AppSettings_Deserialize) => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_set", { settings })),
 	/**  Opens (or focuses) the Settings window. */
@@ -156,6 +158,13 @@ export type CameraFilter = {
 	rotate: number | null,
 	static_only: boolean,
 	mirror: boolean,
+};
+
+export type CameraMatch = {
+	clip: number | null,
+	name: string,
+	/**  Mean camera-filter factor over the clip (0–1). */
+	score: number | null,
 };
 
 export type ClipId = number | null;

@@ -6,6 +6,7 @@ import { cx, Popover, PopoverClose, Segmented, Switch } from "../components/ui";
 import { ACTIVE_FLAGS, FLAGS, TIERS } from "../lib/domain";
 import { formatDuration, parseCount, parseDuration, parseScore } from "../lib/typed";
 import { useApp } from "../store";
+import { CameraFilterPanel } from "./CameraWheel";
 import { Weighting } from "./Weighting";
 import type { Tier } from "../bindings";
 
@@ -120,6 +121,10 @@ export function TuningPanel() {
 
       <Section title="Weighting">
         <Weighting />
+      </Section>
+
+      <Section key={`camera-${settings.preset_name}`} title="Camera movement" defaultOpen={settings.camera.enabled}>
+        <CameraFilterPanel />
       </Section>
 
       <Section title="Filters">

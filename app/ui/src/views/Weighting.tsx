@@ -146,7 +146,7 @@ export function BipolarSlider({ label, value, ends, disabled, onChange }: { labe
           e.preventDefault();
         }}
       >
-        <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-control-hover" />
+        <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-separator-strong" />
         <div className="absolute top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-accent" style={{ left: `${Math.min(pos, 0.5) * 100}%`, width: `${Math.abs(pos - 0.5) * 100}%` }} />
         <div className="absolute top-1/2 left-1/2 h-2 w-px -translate-y-1/2 bg-text-3" aria-hidden />
         <div className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow ring-1 ring-black/20" style={{ left: `${pos * 100}%` }} />
@@ -167,7 +167,7 @@ function TargetSlider({ k, target, tol, disabled, onChange }: { k: string; targe
   return (
     <div className={cx("flex flex-col gap-1", disabled && "opacity-40")}>
       <div className="relative h-4">
-        <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-control-hover" />
+        <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-separator-strong" />
         <div
           className="absolute top-1/2 h-[7px] -translate-y-1/2 rounded-full bg-accent-soft ring-1 ring-accent/40"
           style={{ left: `${Math.max(0, frac(target - tol)) * 100}%`, width: `${(Math.min(1, frac(target + tol)) - Math.max(0, frac(target - tol))) * 100}%` }}

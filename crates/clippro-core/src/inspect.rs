@@ -115,3 +115,33 @@ impl Session {
         })
     }
 }
+
+impl Session {
+    /// The clips that best match the camera-movement filter (SPEC TUN-6 "live best 5 matches"):
+    /// mean camera factor per clip, scoring with metrics and flags switched off so the filter
+    /// alone decides. Best first.
+    pub fn camera_matches(&self, settings: &Settings, n: usize) -> Result<Vec<(ClipId, f32)>> {
+        let mut s = settings.clone();
+        s.switches.metrics = false;
+        s.switches.flags = false;
+        s.switches.camera_filter = true;
+        s.camera.enabled = true;
+        let clips = self.clip_inputs()?;
+        let overrides = self.overrides()?;
+        let sel = lock(&self.engine)
+            .score(&clips, &s, &overrides, &AtomicBool::new(false))
+            .ok_or_else(|| SessionError::Other("scoring was cancelled".into()))?;
+        let mut out: Vec<(ClipId, f32)> = sel
+            .clips
+            .iter()
+            .filter_map(|c| {
+                let v: Vec<f32> = c.scores.score.iter().copied().filter(|x| x.is_finite()).collect();
+                (!v.is_empty()).then(|| (c.clip, v.iter().sum::<f32>() / v.len() as f32))
+            })
+            .collect();
+        out.sort_by(|a, b| b.1.total_cmp(&a.1));
+        out.truncate(n);
+        Ok(out)
+    }
+}
+

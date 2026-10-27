@@ -147,6 +147,8 @@ export interface Backend {
   systemInfo(): Promise<{ hwDecode: boolean; version: string }>;
   /** Sub-metrics in `Settings.subs` order. */
   submetrics(): Promise<import("./lib/submetrics").SubMetricInfo[]>;
+  /** Clips best matching the camera-movement filter (live preview). */
+  cameraMatches(settings: Settings, count: number): Promise<{ clip: number; name: string; score: number }[]>;
   getSettings(): Promise<AppSettings>;
   setSettings(s: AppSettings): Promise<AppSettings>;
   openSettings(): Promise<void>;
@@ -298,6 +300,7 @@ const tauriBackend: Backend = {
   reveal: async (path) => void unwrap(await commands.revealInExplorer(path)),
   getSettings: async () => unwrap(await commands.settingsGet()),
   submetrics: async () => unwrap(await commands.submetricsList()),
+  cameraMatches: async (settings, count) => unwrap(await commands.cameraMatches(settings, count)).map((m) => ({ clip: n(m.clip), name: m.name, score: n(m.score) })),
   setSettings: async (s) => unwrap(await commands.settingsSet(s)),
   openSettings: async () => void unwrap(await commands.openSettings()),
   onSettings: async (cb) => events.appSettings.listen((e) => cb(e.payload)),
