@@ -33,6 +33,21 @@ export async function pickExportPath(defaultName: string, ext: string, label: st
   return r.toLowerCase().endsWith(`.${ext}`) ? r : `${r}.${ext}`;
 }
 
+export async function pickPresetFile(): Promise<string | null> {
+  if (!isTauri) return "D:/Presets/demo.toml";
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const r = await open({ title: "Import a preset", filters: [{ name: "ClipPro preset", extensions: ["toml"] }] });
+  return typeof r === "string" ? r : null;
+}
+
+export async function pickPresetExport(name: string): Promise<string | null> {
+  if (!isTauri) return `D:/Presets/${name}.toml`;
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const r = await save({ title: "Export preset", defaultPath: `${name}.toml`, filters: [{ name: "ClipPro preset", extensions: ["toml"] }] });
+  if (!r) return null;
+  return r.toLowerCase().endsWith(".toml") ? r : `${r}.toml`;
+}
+
 export async function pickProxy(): Promise<string | null> {
   if (!isTauri) return "D:/Footage/Proxy/clip_Proxy.mov";
   const { open } = await import("@tauri-apps/plugin-dialog");

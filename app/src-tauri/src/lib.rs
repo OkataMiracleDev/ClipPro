@@ -12,6 +12,7 @@ use tauri::{Manager, State};
 use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
 pub mod audio_out;
+pub mod presets;
 pub mod preview;
 pub mod settings;
 #[cfg(windows)]
@@ -24,6 +25,7 @@ pub struct AppState {
     preview: preview::PreviewCache,
     settings: Mutex<settings::AppSettings>,
     settings_path: Mutex<Option<PathBuf>>,
+    presets_dir: Mutex<Option<PathBuf>>,
     audio: audio_out::AudioOut,
     /// `--bench-preview` report file (ADR-002); `None` in normal runs.
     bench_out: Mutex<Option<PathBuf>>,
@@ -104,6 +106,8 @@ pub struct ClipRow {
 pub struct PresetInfo {
     pub name: String,
     pub description: String,
+    /// Shipped with ClipPro (can't be renamed or deleted).
+    pub builtin: bool,
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
@@ -291,15 +295,61 @@ async fn clips_list(state: State<'_, AppState>) -> Result<Vec<ClipRow>, String> 
 
 #[tauri::command]
 #[specta::specta]
-async fn presets_list() -> Result<Vec<PresetInfo>, String> {
-    Ok(builtins().into_iter().map(|p| PresetInfo { name: p.preset.name, description: p.preset.description }).collect())
+async fn presets_list(state: State<'_, AppState>) -> Result<Vec<PresetInfo>, String> {
+    let mut out: Vec<PresetInfo> = builtins().into_iter().map(|p| PresetInfo { name: p.preset.name, description: p.preset.description, builtin: true }).collect();
+    if let Some(up) = user_presets(&state) {
+        out.extend(up.list().into_iter().map(|p| PresetInfo { name: p.preset.name, description: p.preset.description, builtin: false }));
+    }
+    Ok(out)
+}
+
+fn user_presets(state: &AppState) -> Option<presets::UserPresets> {
+    lock(&state.presets_dir).clone().map(|dir| presets::UserPresets { dir })
+}
+
+fn find_preset(state: &AppState, name: &str) -> Result<clippro_score::Preset, String> {
+    clippro_score::builtin(name).or_else(|| user_presets(state).and_then(|u| u.get(name))).ok_or_else(|| format!("Unknown preset “{name}”."))
 }
 
 #[tauri::command]
 #[specta::specta]
-async fn preset_settings(name: String) -> Result<Settings, String> {
-    let p = clippro_score::builtin(&name).ok_or_else(|| format!("Unknown preset “{name}”."))?;
-    Settings::from_preset(&p).map_err(|e| e.to_string())
+async fn preset_settings(state: State<'_, AppState>, name: String) -> Result<Settings, String> {
+    Settings::from_preset(&find_preset(&state, &name)?).map_err(|e| e.to_string())
+}
+
+/// Saves the current settings as a custom preset (`overwrite` replaces one with that name).
+#[tauri::command]
+#[specta::specta]
+async fn preset_save(state: State<'_, AppState>, name: String, description: String, settings: Settings, overwrite: bool) -> Result<(), String> {
+    let up = user_presets(&state).ok_or("No preset folder")?;
+    up.save(&clippro_score::Preset::from_settings(&settings, name.trim(), description.trim()), overwrite)
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn preset_delete(state: State<'_, AppState>, name: String) -> Result<(), String> {
+    user_presets(&state).ok_or("No preset folder")?.delete(&name)
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn preset_rename(state: State<'_, AppState>, old: String, name: String) -> Result<(), String> {
+    user_presets(&state).ok_or("No preset folder")?.rename(&old, &name)
+}
+
+/// Imports a `.toml` preset file; returns its (possibly de-duplicated) name.
+#[tauri::command]
+#[specta::specta]
+async fn preset_import(state: State<'_, AppState>, path: String) -> Result<String, String> {
+    Ok(user_presets(&state).ok_or("No preset folder")?.import(std::path::Path::new(&path))?.preset.name)
+}
+
+/// Writes `settings` as a preset TOML file (export of the current tuning or any preset).
+#[tauri::command]
+#[specta::specta]
+async fn preset_export(name: String, description: String, settings: Settings, path: String) -> Result<(), String> {
+    let text = clippro_score::Preset::from_settings(&settings, name.trim(), description.trim()).to_toml().map_err(|e| e.to_string())?;
+    std::fs::write(path, text).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -935,6 +985,11 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             system_info,
             settings_get,
             submetrics_list,
+            preset_save,
+            preset_delete,
+            preset_rename,
+            preset_import,
+            preset_export,
             camera_matches,
             settings_set,
             open_settings,
@@ -1020,6 +1075,9 @@ pub fn run(bench: Option<Bench>) {
         .setup(move |app| {
             builder.mount_events(app);
             // Self-test runs (bench, pdf-check) leave the user's settings alone.
+            if let Ok(dir) = app.path().app_config_dir() {
+                *lock(&app.state::<AppState>().presets_dir) = Some(dir.join("presets"));
+            }
             if let (true, Ok(dir)) = (bench.is_none(), app.path().app_config_dir()) {
                 let p = settings::settings_path(dir);
                 let state = app.state::<AppState>();

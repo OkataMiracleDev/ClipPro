@@ -17,6 +17,8 @@ interface AppState {
   settings: Settings | null;
   /** Name of the preset the settings came from (settings may since have been edited). */
   presetName: string;
+  /** Settings as loaded from the preset (for the diff view). */
+  baseSettings: Settings | null;
   modified: boolean;
   scored: Scored | null;
   scoring: boolean;
@@ -59,6 +61,12 @@ interface AppState {
   bumpClip(clip: number): Promise<void>;
   linkProxy(clip: number, path: string): Promise<void>;
   setPreset(name: string): Promise<void>;
+  /** Saves the current tuning as a custom preset and switches to it. */
+  savePreset(name: string, description: string, overwrite: boolean): Promise<boolean>;
+  deletePreset(name: string): Promise<void>;
+  renamePreset(old: string, name: string): Promise<boolean>;
+  importPreset(path: string): Promise<void>;
+  revertPreset(): void;
   updateSettings(fn: (s: Settings) => Settings): void;
   rescore(immediate?: boolean): void;
   setSort(s: SortOrder): void;
@@ -102,6 +110,7 @@ export const useApp = create<AppState>((set, get) => ({
   presets: [],
   settings: null,
   presetName: "All-Rounder",
+  baseSettings: null,
   modified: false,
   scored: null,
   scoring: false,
@@ -242,7 +251,62 @@ export const useApp = create<AppState>((set, get) => ({
 
   async setPreset(name) {
     const settings = await api.presetSettings(name);
-    set({ settings, presetName: name, modified: false });
+    set({ settings, baseSettings: structuredClone(settings), presetName: name, modified: false });
+    get().rescore(true);
+  },
+
+  async savePreset(name, description, overwrite) {
+    const { settings } = get();
+    if (!settings) return false;
+    try {
+      await api.presetSave(name, description, settings, overwrite);
+      set({ presets: await api.presetsList() });
+      await get().setPreset(name);
+      get().toast(`Saved preset “${name}”`);
+      return true;
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+      return false;
+    }
+  },
+
+  async deletePreset(name) {
+    try {
+      await api.presetDelete(name);
+      set({ presets: await api.presetsList() });
+      if (get().presetName === name) await get().setPreset("All-Rounder");
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+    }
+  },
+
+  async renamePreset(old, name) {
+    try {
+      await api.presetRename(old, name);
+      set({ presets: await api.presetsList() });
+      if (get().presetName === old) set({ presetName: name });
+      return true;
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+      return false;
+    }
+  },
+
+  async importPreset(path) {
+    try {
+      const name = await api.presetImport(path);
+      set({ presets: await api.presetsList() });
+      await get().setPreset(name);
+      get().toast(`Imported preset “${name}”`);
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+    }
+  },
+
+  revertPreset() {
+    const { baseSettings } = get();
+    if (!baseSettings) return;
+    set({ settings: structuredClone(baseSettings), modified: false });
     get().rescore(true);
   },
 

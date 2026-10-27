@@ -1,13 +1,14 @@
-import { Check, ChevronDown, ChevronRight, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { n } from "../api";
 import { linearScale, RangeSlider, SingleSlider, stopScale } from "../components/TypedSlider";
-import { cx, Popover, PopoverClose, Segmented, Switch } from "../components/ui";
+import { cx, Segmented, Switch } from "../components/ui";
 import { ACTIVE_FLAGS, FLAGS, TIERS } from "../lib/domain";
 import { formatDuration, parseCount, parseDuration, parseScore } from "../lib/typed";
 import { nextRun } from "../lib/flagRuns";
 import { useApp } from "../store";
 import { CameraFilterPanel } from "./CameraWheel";
+import { PresetChanges, PresetPicker } from "./PresetMenu";
 import { Weighting } from "./Weighting";
 import type { Tier } from "../bindings";
 
@@ -41,42 +42,8 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
   );
 }
 
-export function PresetPicker() {
-  const { presets, presetName, modified, setPreset } = useApp();
-  return (
-    <Popover
-      trigger={
-        <button className="flex h-7 w-full items-center justify-between rounded-(--radius-control) border border-separator-strong bg-control px-2.5 text-[13px] hover:bg-control-hover">
-          <span className="flex items-center gap-1.5 truncate">
-            {presetName}
-            {modified && <span className="h-1.5 w-1.5 rounded-full bg-accent" title="Modified" />}
-          </span>
-          <ChevronDown size={14} className="text-text-3" />
-        </button>
-      }
-    >
-      <div className="w-[280px] py-1">
-        {presets.map((p) => (
-          <PopoverClose asChild key={p.name}>
-            <button
-              onClick={() => void setPreset(p.name)}
-              className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent hover:text-accent-fg"
-            >
-              <span className="mt-0.5 w-3.5">{p.name === presetName && <Check size={13} />}</span>
-              <span>
-                <span className="block text-[13px]">{p.name}</span>
-                <span className="block text-[11px] opacity-70">{p.description}</span>
-              </span>
-            </button>
-          </PopoverClose>
-        ))}
-      </div>
-    </Popover>
-  );
-}
-
 export function TuningPanel() {
-  const { settings, updateSettings, scored, presetName, modified, setPreset } = useApp();
+  const { settings, updateSettings, scored } = useApp();
   if (!settings) return null;
   const runs = new Map(scored?.summary.flagRuns ?? []);
   const jumpToRun = (i: number) => {
@@ -92,16 +59,7 @@ export function TuningPanel() {
         <div className="min-w-0 flex-1">
           <PresetPicker />
         </div>
-        {modified && (
-          <button
-            className="rounded p-1 text-text-3 hover:bg-control-hover hover:text-text"
-            title={`Revert to ${presetName}`}
-            aria-label={`Revert to ${presetName}`}
-            onClick={() => void setPreset(presetName)}
-          >
-            <RotateCcw size={14} />
-          </button>
-        )}
+        <PresetChanges />
       </div>
 
       <Section title="Selects">

@@ -24,7 +24,8 @@ const PRESETS: PresetInfo[] = [
   ["Product / Tabletop", "Pin-sharp, well-exposed product shots."],
   ["Gimbal Walk", "Smooth moving gimbal shots."],
   ["Audio-First", "Podcasts and vlogs: clean, present speech."],
-].map(([name, description]) => ({ name: name!, description: description! }));
+].map(([name, description]) => ({ name: name!, description: description!, builtin: true }));
+const userPresets = new Map<string, { description: string; settings: Settings }>();
 
 const NAMES = [
   "A001C003_241012_R1AB", "A001C004_241012_R1AB", "A001C007_241012_R1AB", "B002C001_241012_R2CD",
@@ -252,8 +253,25 @@ export const mockBackend: Backend = {
   analysisPause: async () => {},
   analysisResume: async () => {},
   clipsList: async () => demo.map((d) => d.clip),
-  presetsList: async () => PRESETS,
-  presetSettings: async (name) => defaultSettings(name),
+  presetsList: async () => [...PRESETS, ...[...userPresets].map(([name, p]) => ({ name, description: p.description, builtin: false }))],
+  presetSettings: async (name) => structuredClone(userPresets.get(name)?.settings) ?? defaultSettings(name),
+  presetSave: async (name, description, settings, overwrite) => {
+    if (PRESETS.some((p) => p.name === name)) throw new Error(`“${name}” is a built-in preset; choose another name.`);
+    if (userPresets.has(name) && !overwrite) throw new Error(`A preset called “${name}” already exists.`);
+    userPresets.set(name, { description, settings: { ...structuredClone(settings), preset_name: name } });
+  },
+  presetDelete: async (name) => void userPresets.delete(name),
+  presetRename: async (old, name) => {
+    const p = userPresets.get(old);
+    if (!p) throw new Error(`No custom preset called “${old}”.`);
+    userPresets.delete(old);
+    userPresets.set(name, p);
+  },
+  presetImport: async () => {
+    userPresets.set("Imported preset", { description: "From a file", settings: defaultSettings("All-Rounder") });
+    return "Imported preset";
+  },
+  presetExport: async () => {},
   score: async (settings) => scoreAll(settings),
   exportSelects: async (settings, _sort, request) => ({ path: request.path, selects: scoreAll(settings).selects.length }),
   mediaSource: async (media): Promise<MediaSource> => {

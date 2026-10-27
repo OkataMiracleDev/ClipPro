@@ -48,6 +48,14 @@ export const commands = {
 	systemInfo: () => typedError<SystemInfo, string>(__TAURI_INVOKE("system_info")),
 	settingsGet: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_get")),
 	submetricsList: () => typedError<SubMetricInfo[], string>(__TAURI_INVOKE("submetrics_list")),
+	/**  Saves the current settings as a custom preset (`overwrite` replaces one with that name). */
+	presetSave: (name: string, description: string, settings: Settings_Deserialize, overwrite: boolean) => typedError<null, string>(__TAURI_INVOKE("preset_save", { name, description, settings, overwrite })),
+	presetDelete: (name: string) => typedError<null, string>(__TAURI_INVOKE("preset_delete", { name })),
+	presetRename: (old: string, name: string) => typedError<null, string>(__TAURI_INVOKE("preset_rename", { old, name })),
+	/**  Imports a `.toml` preset file; returns its (possibly de-duplicated) name. */
+	presetImport: (path: string) => typedError<string, string>(__TAURI_INVOKE("preset_import", { path })),
+	/**  Writes `settings` as a preset TOML file (export of the current tuning or any preset). */
+	presetExport: (name: string, description: string, settings: Settings_Deserialize, path: string) => typedError<null, string>(__TAURI_INVOKE("preset_export", { name, description, settings, path })),
 	/**  The clips that best match the camera-movement filter in `settings` (live preview, TUN-6). */
 	cameraMatches: (settings: Settings_Deserialize, count: number) => typedError<CameraMatch[], string>(__TAURI_INVOKE("camera_matches", { settings, count })),
 	/**  Saves the app settings and tells every window (`AppSettings` event). */
@@ -402,6 +410,8 @@ export type MediaSource_Serialize = {
 export type PresetInfo = {
 	name: string,
 	description: string,
+	/**  Shipped with ClipPro (can't be renamed or deleted). */
+	builtin: boolean,
 };
 
 /**

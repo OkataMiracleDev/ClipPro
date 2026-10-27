@@ -124,6 +124,12 @@ export interface Backend {
   clipsList(): Promise<Clip[]>;
   presetsList(): Promise<PresetInfo[]>;
   presetSettings(name: string): Promise<Settings>;
+  /** Custom presets (P9.4). */
+  presetSave(name: string, description: string, settings: Settings, overwrite: boolean): Promise<void>;
+  presetDelete(name: string): Promise<void>;
+  presetRename(old: string, name: string): Promise<void>;
+  presetImport(path: string): Promise<string>;
+  presetExport(name: string, description: string, settings: Settings, path: string): Promise<void>;
   score(settings: Settings, sort: SortOrder): Promise<Scored>;
   exportSelects(settings: Settings, sort: SortOrder, request: ExportRequest): Promise<ExportResult>;
   onAnalysis(cb: (e: AnalysisEvent) => void): Promise<() => void>;
@@ -278,6 +284,11 @@ const tauriBackend: Backend = {
   clipsList: async () => unwrap(await commands.clipsList()).map(adaptClip),
   presetsList: async () => unwrap(await commands.presetsList()),
   presetSettings: async (name) => unwrap(await commands.presetSettings(name)),
+  presetSave: async (name, description, settings, overwrite) => void unwrap(await commands.presetSave(name, description, settings, overwrite)),
+  presetDelete: async (name) => void unwrap(await commands.presetDelete(name)),
+  presetRename: async (old, name) => void unwrap(await commands.presetRename(old, name)),
+  presetImport: async (path) => unwrap(await commands.presetImport(path)),
+  presetExport: async (name, description, settings, path) => void unwrap(await commands.presetExport(name, description, settings, path)),
   score: async (settings, sort) => adaptScore(unwrap(await commands.score(settings, sort))),
   exportSelects: async (settings, sort, request) => unwrap(await commands.exportSelects(settings, sort, request)),
   mediaSource: async (media) => {

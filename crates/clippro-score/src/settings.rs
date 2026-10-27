@@ -263,8 +263,79 @@ impl Hasher for KeyHasher {
     }
 }
 
+impl Preset {
+    /// A preset that reproduces `s` exactly (custom presets, SPEC P9.4): every sub-metric, flag
+    /// tier and advanced value is written out, so later default changes don't alter it.
+    pub fn from_settings(s: &Settings, name: &str, description: &str) -> Preset {
+        use crate::preset::*;
+        let secs = |v: f64| format!("{v}s");
+        let mut groups: [std::collections::BTreeMap<String, SubPref>; 5] = Default::default();
+        for sm in SubMetric::ALL {
+            let cur = &s.subs[sm as usize];
+            let v = if sm.is_target() {
+                SubPref::Target(TargetPref { enabled: cur.enabled, target: cur.target, tolerance: cur.tol, strength: cur.strength })
+            } else if !cur.enabled {
+                SubPref::Switch(false)
+            } else {
+                SubPref::Pref(cur.pref)
+            };
+            groups[sm.group() as usize].insert(sm.key().to_string(), v);
+        }
+        let [focus, exposure, motion, audio, content] = groups;
+        Preset {
+            preset: PresetMeta { name: name.to_string(), version: 1, description: description.to_string(), extra: Extra::new() },
+            thresholds: Thresholds {
+                score: [s.score_lo, s.score_hi],
+                segment_length: [secs(s.len_min_s), s.len_max_s.map(secs).unwrap_or_else(|| "none".into())],
+                max_per_clip: s.max_per_clip.map(|n| n.to_string()).unwrap_or_else(|| "none".into()),
+                extra: Extra::new(),
+            },
+            weights: Weights { focus: s.weights[0], exposure: s.weights[1], motion: s.weights[2], audio: s.weights[3], content: s.weights[4], extra: Extra::new() },
+            focus,
+            exposure,
+            motion,
+            audio,
+            content,
+            flags: FlagKind::ALL.iter().map(|f| (f.key().to_string(), s.tier(*f))).collect(),
+            camera_filter: CameraFilterToml {
+                enabled: s.camera.enabled,
+                radius: s.camera.radius,
+                direction: s.camera.direction,
+                zoom: s.camera.zoom,
+                rotate: s.camera.rotate,
+                static_only: s.camera.static_only,
+                mirror: s.camera.mirror,
+                extra: Extra::new(),
+            },
+            advanced: Advanced {
+                gap_tolerance: secs(s.gap_s),
+                centre_weighting: s.centre_weighting,
+                stability_emphasis: s.stability_emphasis,
+                handles_samples: s.handles_samples,
+                snap_to_sentences: s.snap_to_sentences,
+                long_segment_mode: s.long_mode,
+                extra: Extra::new(),
+            },
+            switches: Switches { metrics: s.switches.metrics, flags: s.switches.flags, camera_filter: s.switches.camera_filter },
+            extra: Extra::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn presets_round_trip_through_settings() {
+        for p in crate::builtins() {
+            let s = Settings::from_preset(&p).unwrap();
+            let back = Preset::from_settings(&s, &p.preset.name, &p.preset.description);
+            let text = back.to_toml().unwrap();
+            let s2 = Settings::from_preset(&Preset::parse(&text).unwrap()).unwrap();
+            assert_eq!(s2, s, "{} doesn't round-trip:
+{text}", p.preset.name);
+        }
+    }
+
     use super::*;
     use crate::preset::builtin;
 
