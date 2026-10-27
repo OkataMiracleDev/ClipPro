@@ -60,7 +60,8 @@ mod tests {
 
     #[test]
     fn stable_and_sensitive() {
-        let dir = std::env::temp_dir().join(format!("clippro-fp-{}", std::process::id()));
+        // Under target/ (not the system temp folder on C:), removed at the end.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-fp-test");
         std::fs::create_dir_all(&dir).unwrap();
         let a = dir.join("a.bin");
         let data: Vec<u8> = (0..5_000_000u32).map(|i| (i * 31 % 251) as u8).collect();

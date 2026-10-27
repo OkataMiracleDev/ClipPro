@@ -605,6 +605,7 @@ mod tests {
         assert_eq!(db.media_by_fingerprint("fp1").unwrap().len(), 1);
         db.close().unwrap();
         std::fs::remove_dir_all(&d).unwrap();
+        let _ = std::fs::remove_dir(d.parent().unwrap());
     }
 
     #[test]
@@ -630,5 +631,6 @@ mod tests {
         assert_eq!(c.evict_to(150).unwrap(), 1);
         drop(c);
         std::fs::remove_dir_all(&d).unwrap();
+        let _ = std::fs::remove_dir(d.parent().unwrap());
     }
 }

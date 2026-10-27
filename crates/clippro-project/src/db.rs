@@ -334,6 +334,7 @@ mod tests {
         assert_eq!(c.name().unwrap(), "Test");
         c.close().unwrap();
         std::fs::remove_dir_all(&d).unwrap();
+        let _ = std::fs::remove_dir(d.parent().unwrap());
     }
 
     #[test]
@@ -343,6 +344,7 @@ mod tests {
         Connection::open(&p).unwrap().execute_batch("CREATE TABLE t(a);").unwrap();
         assert!(matches!(Db::open(&p), Err(ProjectError::NotAProject(_))));
         std::fs::remove_dir_all(&d).unwrap();
+        let _ = std::fs::remove_dir(d.parent().unwrap());
     }
 
     #[test]
@@ -374,6 +376,7 @@ mod tests {
         assert_eq!(legacy, 42);
         drop(c);
         std::fs::remove_dir_all(&d).unwrap();
+        let _ = std::fs::remove_dir(d.parent().unwrap());
     }
 
     #[test]

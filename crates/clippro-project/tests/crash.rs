@@ -87,4 +87,5 @@ fn killed_writer_recovers() {
     }
     db.close().unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
+    let _ = std::fs::remove_dir(dir.parent().unwrap());
 }
