@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { CubeLut } from "./lib/cube";
 import type { Overlay } from "./lib/glview";
 import type { MeasureOverlayKind } from "./views/MeasureOverlay";
 import { api, isTauri, type AnalysisEvent, type Clip, type PresetInfo, type ProjectInfo, type Scored, type Settings, type SortOrder } from "./api";
@@ -32,6 +33,10 @@ interface AppState {
   analysis: { active: boolean; paused: boolean; jobs: Record<number, number> };
   inspectorOpen: boolean;
   overlay: Overlay;
+  /** Viewer LUT chosen by the user (replaces the built-in profile transform). */
+  userLut: { name: string; lut: CubeLut } | null;
+  /** Before/after split position (fraction of width), null = off. */
+  split: number | null;
   measureOverlay: MeasureOverlayKind;
   rightTab: "tuning" | "frame";
   toasts: Toast[];
@@ -58,6 +63,9 @@ interface AppState {
   toggleInspector(): void;
   /** Turns an overlay on, or off when it is already showing. */
   toggleOverlay(o: Overlay): void;
+  setUserLut(l: { name: string; lut: CubeLut } | null): void;
+  setSplit(x: number | null): void;
+  setClipProfile(media: number, profile: import("./api").ColourProfile): Promise<void>;
   toggleMeasureOverlay(o: MeasureOverlayKind): void;
   setRightTab(t: "tuning" | "frame"): void;
   toast(text: string, tone?: Toast["tone"]): void;
@@ -89,6 +97,8 @@ export const useApp = create<AppState>((set, get) => ({
   analysis: { active: false, paused: false, jobs: {} },
   inspectorOpen: true,
   overlay: "none",
+  userLut: null,
+  split: null,
   measureOverlay: "none",
   rightTab: "tuning",
   toasts: [],
@@ -222,6 +232,17 @@ export const useApp = create<AppState>((set, get) => ({
   toggleLoop: () => set((s) => ({ loop: !s.loop })),
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
   toggleOverlay: (o) => set((s) => ({ overlay: s.overlay === o ? "none" : o })),
+  setUserLut: (userLut) => set({ userLut }),
+  setSplit: (split) => set({ split }),
+  setClipProfile: async (media, profile) => {
+    try {
+      await api.setProfile(media, profile);
+      set((s) => ({ clips: s.clips.map((c) => (c.media === media ? { ...c, profile } : c)) }));
+      get().rescore(true);
+    } catch (e) {
+      get().toast(`Couldn't set the profile: ${e}`, "error");
+    }
+  },
   toggleMeasureOverlay: (o) => set((s) => ({ measureOverlay: s.measureOverlay === o ? "none" : o })),
   setRightTab: (rightTab) => set({ rightTab, inspectorOpen: true }),
   toast(text, tone = "info") {

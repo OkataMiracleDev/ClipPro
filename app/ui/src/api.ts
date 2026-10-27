@@ -5,6 +5,7 @@
 import { commands, events } from "./bindings";
 import type {
   ClipRow_Serialize as RawClip,
+  ColourProfile,
   ExportRequest,
   ExportResult,
   ImportResult,
@@ -18,7 +19,7 @@ import type {
 } from "./bindings";
 import { mockBackend } from "./mock";
 
-export type { ExportRequest, ExportResult, ImportResult, PresetInfo, ProjectInfo, SortOrder };
+export type { ColourProfile, ExportRequest, ExportResult, ImportResult, PresetInfo, ProjectInfo, SortOrder };
 export type Settings = RawSettings;
 
 /** How the viewer shows a clip (ADR-002). */
@@ -43,6 +44,7 @@ export interface Clip {
   state: ClipState;
   progress: number;
   error: string | null;
+  profile: ColourProfile;
 }
 
 export interface Segment {
@@ -131,6 +133,11 @@ export interface Backend {
   audioStop(): Promise<void>;
   /** Media time being heard (µs), null when no audio is playing. */
   audioClock(): Promise<number | null>;
+  setProfile(media: number, profile: ColourProfile): Promise<void>;
+  /** Built-in display transform for a log profile (decode LUT + gamut matrix). */
+  previewColour(profile: ColourProfile): Promise<{ lut: Float32Array; matrix: Float32Array }>;
+  /** Text of a user `.cube` file. */
+  readLut(path: string): Promise<string>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
   frameUrl(media: number, us: number, width: number): string;
 }
@@ -203,6 +210,7 @@ const adaptClip = (c: RawClip): Clip => ({
   state: (c.state as ClipState) ?? "queued",
   progress: n(c.progress),
   error: c.error ?? null,
+  profile: c.profile,
 });
 
 function adaptSource(r: RawMediaSource, toUrl: (path: string) => string): MediaSource {
@@ -265,6 +273,12 @@ const tauriBackend: Backend = {
   audioPlay: async (media, us) => unwrap(await commands.audioPlay(media, us)),
   audioStop: async () => void unwrap(await commands.audioStop()),
   audioClock: async () => unwrap(await commands.audioClock()) ?? null,
+  setProfile: async (media, profile) => void unwrap(await commands.mediaSetProfile(media, profile)),
+  previewColour: async (profile) => {
+    const r = unwrap(await commands.previewColour(profile));
+    return { lut: Float32Array.from(r.lut, (v) => n(v)), matrix: Float32Array.from(r.matrix, (v) => n(v)) };
+  },
+  readLut: async (path) => unwrap(await commands.lutRead(path)),
   frameUrl: (media, us, width) => `http://clippro.localhost/frame/${media}/${Math.max(0, Math.round(us))}?w=${Math.round(width)}`,
   onAnalysis: async (cb) =>
     events.analysisEvent.listen((e) =>

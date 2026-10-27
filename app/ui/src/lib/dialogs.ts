@@ -33,6 +33,13 @@ export async function pickExportPath(defaultName: string, ext: string, label: st
   return r.toLowerCase().endsWith(`.${ext}`) ? r : `${r}.${ext}`;
 }
 
+export async function pickLut(): Promise<string | null> {
+  if (!isTauri) return "D:/LUTs/Demo.cube";
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const r = await open({ title: "Choose a viewer LUT", filters: [{ name: "Cube LUT", extensions: ["cube"] }] });
+  return typeof r === "string" ? r : null;
+}
+
 export async function pickNewProject(): Promise<string | null> {
   if (!isTauri) return "Untitled.clippro";
   const { save } = await import("@tauri-apps/plugin-dialog");

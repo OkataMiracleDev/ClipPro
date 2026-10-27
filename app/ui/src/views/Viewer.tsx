@@ -4,11 +4,13 @@
 
 import { ChevronLeft, ChevronRight, Film, Pause, Play, Repeat } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type MediaSource } from "../api";
+import { api, type ColourProfile, type MediaSource } from "../api";
 import { scoreColor } from "../components/ui";
-import { FLAGS } from "../lib/domain";
+import { parseCube } from "../lib/cube";
+import { pickLut } from "../lib/dialogs";
+import { FLAGS, PROFILES } from "../lib/domain";
 import { fetchFrame } from "../lib/frames";
-import { GlView, type Overlay } from "../lib/glview";
+import { GlView, type Overlay, type ProfileColour } from "../lib/glview";
 import { useInspection } from "../lib/inspect";
 import { shuttle, type ShuttleKey } from "../lib/shuttle";
 import { MeasureOverlay, type MeasureOverlayKind } from "./MeasureOverlay";
@@ -79,7 +81,11 @@ export function Viewer() {
   const [fallback, setFallback] = useState<Record<number, boolean>>({});
   // Overlays read pixels, which the cross-origin <video> doesn't allow, and <video> can't play
   // backwards: both use frames.
-  const native = src?.nativeUrl && clip && !fallback[clip.media] && overlay === "none" && !(playing && rate < 0) ? src.nativeUrl : null;
+  const userLut = useApp((s) => s.userLut);
+  const split = useApp((s) => s.split);
+  // Log footage and user LUTs need the shader's colour stage, so they use frames too.
+  const graded = (clip?.profile ?? "rec709") !== "rec709" || userLut !== null;
+  const native = src?.nativeUrl && clip && !fallback[clip.media] && overlay === "none" && !graded && !(playing && rate < 0) ? src.nativeUrl : null;
   const durationUs = src?.durationUs ?? sc?.durationUs ?? 0;
   const frameUs = 1e6 / (src?.fps || 25);
   const { ref, box } = useFitBox(src ? src.width / Math.max(1, src.height) : 16 / 9);
@@ -141,6 +147,9 @@ export function Viewer() {
         toggleMeasureOverlay("tiles");
       } else if (e.key === "m" || e.key === "M") {
         toggleMeasureOverlay("motion");
+      } else if (e.key === "b" || e.key === "B") {
+        const st = useApp.getState();
+        st.setSplit(st.split === null ? 0.5 : null);
       } else if (e.key === "i" || e.key === "I") {
         setRightTab(useApp.getState().rightTab === "frame" ? "tuning" : "frame");
       } else if (e.key === "Home") {
@@ -173,6 +182,7 @@ export function Viewer() {
           </div>
         ) : src ? (
           <div className="relative" style={{ width: box.w, height: box.h }}>
+            {split !== null && !native && graded && <SplitHandle split={split} />}
             {native ? (
               <NativeVideo
                 key={native}
@@ -183,7 +193,7 @@ export function Viewer() {
                 onFallback={() => setFallback((f) => ({ ...f, [clip.media]: true }))}
               />
             ) : (
-              <FrameCanvas key={clip.media} media={clip.media} clip={clip.clip} src={src} width={box.w} frameUs={frameUs} onError={setError} />
+              <FrameCanvas key={clip.media} media={clip.media} clip={clip.clip} profile={clip.profile} src={src} width={box.w} frameUs={frameUs} onError={setError} />
             )}
             <MeasureOverlay kind={measureOverlay} data={inspection.data} />
           </div>
@@ -196,6 +206,7 @@ export function Viewer() {
         )}
         {clip && src && (
           <div className="absolute top-3 right-3 flex items-center gap-2">
+            <ColourMenu media={clip.media} profile={clip.profile} />
             <OverlayBar value={overlay} onToggle={toggleOverlay} measure={measureOverlay} onMeasure={toggleMeasureOverlay} />
             <div className="rounded-md bg-black/45 px-2 py-1 font-mono text-[10px] text-white/60 backdrop-blur" title={native ? "Native playback" : "Decoded frames"}>
               {src.codec.toUpperCase()} · {src.width}×{src.height} · {native ? "native" : "frames"}
@@ -241,6 +252,82 @@ const OVERLAYS: { value: Overlay; label: string; key: string }[] = [
   { value: "false_colour", label: "False colour", key: "C" },
   { value: "peaking", label: "Focus peaking", key: "P" },
 ];
+
+/** Profile picker, viewer LUT and before/after split (SPEC VIE-6, P6.5/P6.6). */
+function ColourMenu({ media, profile }: { media: number; profile: ColourProfile }) {
+  const userLut = useApp((s) => s.userLut);
+  const split = useApp((s) => s.split);
+  const { setClipProfile, setUserLut, setSplit, toast } = useApp.getState();
+  const chip = "rounded px-1.5 py-0.5 text-[10px]";
+  async function loadLut() {
+    const path = await pickLut();
+    if (!path) return;
+    try {
+      const lut = parseCube(await api.readLut(path));
+      setUserLut({ name: lut.title || path.split(/[\\/]/).pop()!.replace(/\.cube$/i, ""), lut });
+    } catch (e) {
+      toast(`Couldn't load the LUT: ${e instanceof Error ? e.message : e}`, "error");
+    }
+  }
+  return (
+    <div className="flex items-center gap-0.5 rounded-md bg-black/45 p-0.5 text-white/80 backdrop-blur">
+      <select
+        aria-label="Colour profile"
+        title="Colour profile of this clip"
+        value={profile}
+        onChange={(e) => void setClipProfile(media, e.target.value as ColourProfile)}
+        className={`${chip} cursor-pointer bg-transparent outline-none hover:text-white`}
+      >
+        {PROFILES.map((p) => (
+          <option key={p.value} value={p.value} className="bg-[#1c1c1e] text-white">
+            {p.label}
+          </option>
+        ))}
+      </select>
+      <span className="mx-0.5 h-3 w-px bg-white/20" />
+      {userLut ? (
+        <button className={`${chip} bg-white/85 text-black`} title="Viewer LUT — click to remove" onClick={() => setUserLut(null)}>
+          {userLut.name} ✕
+        </button>
+      ) : (
+        <button className={`${chip} hover:text-white`} title="Load a .cube viewer LUT" onClick={() => void loadLut()}>
+          LUT…
+        </button>
+      )}
+      <button
+        className={`${chip} ${split !== null ? "bg-white/85 text-black" : "hover:text-white"}`}
+        aria-pressed={split !== null}
+        title="Before/after split (B)"
+        onClick={() => setSplit(split === null ? 0.5 : null)}
+      >
+        A|B
+      </button>
+    </div>
+  );
+}
+
+/** Draggable divider for the before/after split. */
+function SplitHandle({ split }: { split: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const onDown = (e: React.PointerEvent) => {
+    const box = ref.current?.parentElement?.getBoundingClientRect();
+    if (!box) return;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => useApp.getState().setSplit(Math.min(0.98, Math.max(0.02, (ev.clientX - box.left) / box.width)));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return (
+    <div ref={ref} className="absolute inset-y-0 z-10 w-4 -translate-x-1/2 cursor-ew-resize" style={{ left: `${split * 100}%` }} onPointerDown={onDown} role="separator" aria-label="Before/after split" aria-valuenow={Math.round(split * 100)}>
+      <span className="absolute top-2 -left-9 rounded bg-black/55 px-1 text-[9px] text-white/80">Before</span>
+      <span className="absolute top-2 left-5 rounded bg-black/55 px-1 text-[9px] text-white/80">After</span>
+    </div>
+  );
+}
 
 const MEASURE_OVERLAYS: { value: MeasureOverlayKind; label: string; key: string }[] = [
   { value: "tiles", label: "Focus map", key: "T" },
@@ -351,7 +438,9 @@ function NativeVideo({ url, clip, frameUs, durationUs, onFallback }: { url: stri
 
 /** Frames decoded by the backend into a WebGL view, one request in flight; playback drops
  * frames rather than lag. Overlay changes redraw without refetching. */
-function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: number; clip: number; src: MediaSource; width: number; frameUs: number; onError: (e: string | null) => void }) {
+const profileColours = new Map<ColourProfile, Promise<ProfileColour>>();
+
+function FrameCanvas({ media, clip, profile, src, width, frameUs, onError }: { media: number; clip: number; profile: ColourProfile; src: MediaSource; width: number; frameUs: number; onError: (e: string | null) => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const view = useRef<GlView | null>(null);
   const playing = useApp((s) => s.playing);
@@ -363,12 +452,16 @@ function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: num
   playingRef.current = playing;
   const overlayRef = useRef(overlay);
   overlayRef.current = overlay;
+  const userLut = useApp((s) => s.userLut);
+  const split = useApp((s) => s.split);
+  const splitRef = useRef(split);
+  splitRef.current = split;
   // Request width: device pixels, capped at the source, in 64 px steps so the backend's scaler
   // is reused while the window resizes.
   const reqW = Math.min(src.width, Math.max(64, Math.ceil((width * (window.devicePixelRatio || 1)) / 64) * 64));
 
   const draw = useCallback(() => {
-    view.current?.draw({ overlay: overlayRef.current, zebra: [0.7, 0.95], peaking: 0.35, time: performance.now() / 1000 });
+    view.current?.draw({ overlay: overlayRef.current, zebra: [0.7, 0.95], peaking: 0.35, time: performance.now() / 1000, split: splitRef.current });
   }, []);
 
   useEffect(() => {
@@ -394,7 +487,36 @@ function FrameCanvas({ media, clip, src, width, frameUs, onError }: { media: num
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [overlay, draw, width]);
+  }, [overlay, draw, width, split]);
+
+  // Colour transform: the clip's profile (built-in) or the user's LUT.
+  useEffect(() => {
+    let live = true;
+    if (profile === "rec709") {
+      view.current?.setProfile(null);
+      draw();
+    } else {
+      let p = profileColours.get(profile);
+      if (!p) {
+        p = api.previewColour(profile);
+        profileColours.set(profile, p);
+        p.catch(() => profileColours.delete(profile));
+      }
+      p.then((c) => {
+        if (!live) return;
+        view.current?.setProfile(c);
+        draw();
+      }, () => onError("Couldn't load this profile's transform"));
+    }
+    return () => {
+      live = false;
+    };
+  }, [profile, draw, onError]);
+
+  useEffect(() => {
+    view.current?.setCube(userLut?.lut ?? null);
+    draw();
+  }, [userLut, draw]);
 
   const snap = useCallback((us: number) => Math.max(0, Math.min(src.durationUs - frameUs, Math.round(us / frameUs) * frameUs)), [src.durationUs, frameUs]);
 

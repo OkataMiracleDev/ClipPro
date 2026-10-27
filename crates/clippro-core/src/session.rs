@@ -72,6 +72,7 @@ pub struct ClipStatus {
     pub state: RunState,
     pub progress: f64,
     pub error: Option<String>,
+    pub profile: ColourProfile,
 }
 
 struct Probed {
@@ -214,6 +215,12 @@ impl Session {
         }
         let pj = probe_json(&p)?;
         let id = db.add_media(&new_media(&p, &pj))?;
+        // Log footage: guess the profile from camera metadata (the user can change it).
+        if let Some(profile) = clippro_score::colour::guess_profile(&p.info.tags) {
+            if let Ok(key) = serde_json::to_string(&profile) {
+                db.set_profile(id, key.trim_matches('"'))?;
+            }
+        }
         let name = p.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         let clip = db.add_clip(id, &name)?;
         if let Some(cache) = &self.store.cache {
@@ -376,7 +383,8 @@ impl Session {
                     }
                 }
             }
-            out.push(ClipStatus { clip: c.id, media: m.id, name: c.name, path: m.path, state, progress, error });
+            let profile: ColourProfile = serde_json::from_str(&format!("\"{}\"", m.profile)).unwrap_or_default();
+            out.push(ClipStatus { clip: c.id, media: m.id, name: c.name, path: m.path, state, progress, error, profile });
         }
         Ok(out)
     }
@@ -409,7 +417,8 @@ impl Session {
             let profile: ColourProfile = serde_json::from_str(&format!("\"{}\"", m.profile)).unwrap_or_default();
             out.push(ClipInput {
                 id: c.id,
-                version: run.id.0 as u64,
+                // The profile changes the Luma sub-metric, so it's part of the version.
+                version: run.id.0 as u64 | (profile as u64) << 56,
                 ms,
                 duration_us: m.duration_us,
                 profile,

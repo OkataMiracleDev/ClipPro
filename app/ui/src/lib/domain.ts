@@ -27,6 +27,22 @@ export const FLAGS: { key: string; label: string; hint: string }[] = [
 /** Flags whose detectors run today (audio and AI flags arrive in later phases). */
 export const ACTIVE_FLAGS = new Set(["clipping", "duplicate", "solid_colour", "hard_cut", "motion_blur", "shaky", "low_light", "focus_hunting", "colour_bars", "horizon_tilt"]);
 
+export const PROFILES: { value: import("../bindings").ColourProfile; label: string }[] = [
+  { value: "rec709", label: "Rec.709" },
+  { value: "s_log3", label: "Sony S-Log3" },
+  { value: "log_c3", label: "ARRI LogC3" },
+  { value: "log_c4", label: "ARRI LogC4" },
+  { value: "v_log", label: "Panasonic V-Log" },
+  { value: "c_log2", label: "Canon Log 2" },
+  { value: "c_log3", label: "Canon Log 3" },
+  { value: "n_log", label: "Nikon N-Log" },
+  { value: "f_log2", label: "Fujifilm F-Log2" },
+  { value: "d_log", label: "DJI D-Log" },
+  { value: "apple_log", label: "Apple Log" },
+  { value: "log3_g10", label: "RED Log3G10" },
+  { value: "bmd_film_gen5", label: "Blackmagic Film Gen 5" },
+];
+
 export const TIERS: { value: Tier; label: string; title: string }[] = [
   { value: "force_exclude", label: "Exclude", title: "Always drop samples with this flag" },
   { value: "disfavour", label: "−", title: "Disfavour (score ×0.6)" },

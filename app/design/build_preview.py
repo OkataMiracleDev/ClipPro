@@ -1,6 +1,6 @@
 """Builds a single-file, self-contained HTML preview of the UI (mock backend) for review.
 
-Run after `npm --prefix app/ui run build`:
+Run after `npm --prefix app/ui run build -- --mode preview` (one bundle, into target/preview/dist):
     python app/design/build_preview.py  ->  target/preview/clippro-preview.html
 
 JS and CSS are inlined; font files referenced by the CSS are embedded as data URIs
@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DIST = ROOT / "app" / "ui" / "dist"
+DIST = ROOT / "target" / "preview" / "dist"
 OUT = ROOT / "target" / "preview" / "clippro-preview.html"
 
 html = (DIST / "index.html").read_text(encoding="utf8")
@@ -37,7 +37,8 @@ js = "\n".join((DIST / f).read_text(encoding="utf8") for f in js_files)
 # Inline module code must not contain a literal closing script tag.
 js = js.replace("</script", "<\\/script")
 
-page = f"""<title>ClipPro Preview</title>
+page = f"""<meta charset="utf-8">
+<title>ClipPro Preview</title>
 <style>
 {css}
 /* Preview frame: the desktop window scrolls inside its own container on small screens. */

@@ -91,6 +91,8 @@ pub struct ClipRow {
     pub state: String,
     pub progress: f64,
     pub error: Option<String>,
+    /// Log/colour profile used for preview and log-aware exposure.
+    pub profile: clippro_types::ColourProfile,
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
@@ -262,6 +264,7 @@ async fn clips_list(state: State<'_, AppState>) -> Result<Vec<ClipRow>, String> 
                 state: format!("{:?}", c.state).to_lowercase(),
                 progress: c.progress,
                 error: c.error,
+                profile: c.profile,
             })
             .collect())
     })
@@ -460,6 +463,47 @@ async fn inspect_sample(state: State<'_, AppState>, settings: Settings, clip: f6
     .await
 }
 
+/// Assigns a log/colour profile to `media` (SPEC VIE-6). Rescore afterwards: it changes Luma.
+#[tauri::command]
+#[specta::specta]
+async fn media_set_profile(state: State<'_, AppState>, media: f64, profile: clippro_types::ColourProfile) -> Result<(), String> {
+    let s = state.session()?;
+    blocking(move || s.set_profile(clippro_types::MediaId(media as i64), profile).map_err(|e| e.to_string())).await
+}
+
+/// Viewer colour transform for `profile`: a per-channel decode LUT (code value → scene linear,
+/// `PREVIEW_LUT` entries) and the gamut → BT.709 matrix (row-major). The shader then applies
+/// the display rendering, which matches `clippro_score::colour::display`.
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct PreviewColour {
+    pub lut: Vec<f32>,
+    pub matrix: Vec<f32>,
+}
+
+const PREVIEW_LUT: usize = 1024;
+
+/// Reads a `.cube` LUT the user picked (parsed in the UI). Only `.cube` files up to 32 MB.
+#[tauri::command]
+#[specta::specta]
+async fn lut_read(path: String) -> Result<String, String> {
+    let p = PathBuf::from(&path);
+    if !p.extension().is_some_and(|e| e.eq_ignore_ascii_case("cube")) {
+        return Err("Choose a .cube file.".into());
+    }
+    let len = std::fs::metadata(&p).map_err(|e| e.to_string())?.len();
+    if len > 32 << 20 {
+        return Err("This LUT is larger than 32 MB.".into());
+    }
+    std::fs::read_to_string(&p).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn preview_colour(profile: clippro_types::ColourProfile) -> Result<PreviewColour, String> {
+    use clippro_score::colour;
+    Ok(PreviewColour { lut: colour::preview_lut(profile, PREVIEW_LUT), matrix: colour::gamut_to_709(profile).iter().flatten().copied().collect() })
+}
+
 /// How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
 /// when it can play natively.
 #[tauri::command]
@@ -612,6 +656,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             preview_shared,
             inspect_sample,
             audio_play,
+            media_set_profile,
+            preview_colour,
+            lut_read,
             audio_stop,
             audio_clock,
             bench_config,

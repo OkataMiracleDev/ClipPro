@@ -1,6 +1,9 @@
-// WebGL2 frame renderer (P6.2/P6.3, ADR-002). Takes I420 planes (24-byte `CPF1` header from the
-// backend) or any image, converts YUV→RGB with the frame's matrix and range, and draws the
-// shader overlays: zebras, false colour and focus peaking.
+// WebGL2 frame renderer (P6.2/P6.3/P6.5, ADR-002). Takes I420 planes (24-byte `CPF1` header from
+// the backend) or any image, converts YUV→RGB with the frame's matrix and range, applies the
+// colour transform (a log profile's built-in display transform or a user `.cube`), and draws
+// the shader overlays: zebras, false colour and focus peaking.
+
+import type { CubeLut } from "./cube";
 
 export type Overlay = "none" | "zebras" | "false_colour" | "peaking";
 
@@ -12,6 +15,16 @@ export interface DrawOptions {
   peaking: number;
   /** Stripe phase so zebras crawl. */
   time: number;
+  /** Apply the colour transform (off = the log picture as recorded). */
+  colour?: boolean;
+  /** Before/after split: left of this fraction of the width shows the untransformed picture. */
+  split?: number | null;
+}
+
+/** Built-in profile transform from the backend: decode LUT and gamut matrix (row-major). */
+export interface ProfileColour {
+  lut: Float32Array;
+  matrix: Float32Array;
 }
 
 export interface FrameHeader {
@@ -65,7 +78,15 @@ void main() {
 
 const FS = `#version 300 es
 precision highp float;
-uniform sampler2D uY, uU, uV, uRGB;
+precision highp sampler3D;
+uniform sampler2D uY, uU, uV, uRGB, uLutP, uLut1;
+uniform sampler3D uLut3;
+uniform int uColour;
+uniform mat3 uGamut;
+uniform vec3 uDomMin, uDomMax;
+uniform float uLutSize;
+uniform bool uFull;
+uniform float uSplit;
 uniform int uSrc;
 uniform mat3 uM;
 uniform vec3 uOff;
@@ -84,6 +105,29 @@ vec3 rgbAt(vec2 uv) {
 }
 float lumaAt(vec2 uv) { return dot(rgbAt(uv), vec3(0.2126, 0.7152, 0.0722)); }
 
+// Normalised code value (CV/1023), the domain log curves and camera LUTs are defined on.
+vec3 toCode(vec3 c) { return uFull ? c : (c * 876.0 + 64.0) / 1023.0; }
+// ClipPro display rendering (clippro_score::colour::display).
+vec3 displayRender(vec3 lin) {
+  vec3 x = max(lin, 0.0) * 0.6;
+  vec3 t = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+  return pow(clamp(t, 0.0, 1.0), vec3(1.0 / 2.4));
+}
+vec3 colourise(vec3 c) {
+  if (uColour == 1) {
+    vec3 uv = (toCode(c) * (uLutSize - 1.0) + 0.5) / uLutSize;
+    vec3 lin = vec3(texture(uLutP, vec2(uv.r, 0.5)).r, texture(uLutP, vec2(uv.g, 0.5)).r, texture(uLutP, vec2(uv.b, 0.5)).r);
+    return displayRender(uGamut * lin);
+  }
+  if (uColour == 2 || uColour == 3) {
+    vec3 d = clamp((toCode(c) - uDomMin) / (uDomMax - uDomMin), 0.0, 1.0);
+    vec3 uvw = (d * (uLutSize - 1.0) + 0.5) / uLutSize;
+    if (uColour == 2) return texture(uLut3, uvw).rgb;
+    return vec3(texture(uLut1, vec2(uvw.r, 0.5)).r, texture(uLut1, vec2(uvw.g, 0.5)).g, texture(uLut1, vec2(uvw.b, 0.5)).b);
+  }
+  return c;
+}
+
 vec3 falseColour(float y) {
   float ire = y * 100.0;
   if (ire < 2.5) return vec3(0.45, 0.0, 0.6);
@@ -97,6 +141,9 @@ vec3 falseColour(float y) {
 
 void main() {
   vec3 c = rgbAt(vUv);
+  bool before = uSplit >= 0.0 && vUv.x < uSplit;
+  if (!before) c = colourise(c);
+  if (uSplit >= 0.0 && abs(vUv.x - uSplit) < uTexel.x * 1.5) { o = vec4(1.0, 1.0, 1.0, 1.0); return; }
   if (uMode == 1) {
     float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
     float d = gl_FragCoord.x + gl_FragCoord.y + uTime * 24.0;
@@ -135,6 +182,14 @@ export class GlView {
   private w = 0;
   private h = 0;
   private matrix = { m: yuvToRgb(1, false).m, off: yuvToRgb(1, false).off };
+  private full = false;
+  /** 0 none, 1 profile, 2 cube 3D, 3 cube 1D. */
+  private colourMode = 0;
+  private lutSize = 2;
+  private gamut: Float32Array = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  private dom: [Float32Array, Float32Array] = [new Float32Array([0, 0, 0]), new Float32Array([1, 1, 1])];
+  private profile: ProfileColour | null = null;
+  private cube: CubeLut | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: false });
@@ -147,24 +202,28 @@ export class GlView {
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? "link");
     this.prog = p;
     gl.useProgram(p);
-    for (const n of ["uY", "uU", "uV", "uRGB", "uSrc", "uM", "uOff", "uMode", "uZebra", "uPeak", "uTexel", "uTime"]) this.u[n] = gl.getUniformLocation(p, n);
+    for (const n of ["uY", "uU", "uV", "uRGB", "uLutP", "uLut1", "uLut3", "uColour", "uGamut", "uDomMin", "uDomMax", "uLutSize", "uFull", "uSplit", "uSrc", "uM", "uOff", "uMode", "uZebra", "uPeak", "uTexel", "uTime"])
+      this.u[n] = gl.getUniformLocation(p, n);
     const vb = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vb);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
     const loc = gl.getAttribLocation(p, "aPos");
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    this.tex = [0, 1, 2, 3].map((i) => {
+    // Units: 0–2 Y/U/V, 3 RGB image, 4 profile LUT, 5 cube 1D, 6 cube 3D.
+    this.tex = [0, 1, 2, 3, 4, 5, 6].map((i) => {
+      const target = i === 6 ? gl.TEXTURE_3D : gl.TEXTURE_2D;
       const t = gl.createTexture()!;
       gl.activeTexture(gl.TEXTURE0 + i);
-      gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindTexture(target, t);
+      gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      if (i === 6) gl.texParameteri(target, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
       return t;
     });
-    ["uY", "uU", "uV", "uRGB"].forEach((n, i) => gl.uniform1i(this.u[n]!, i));
+    ["uY", "uU", "uV", "uRGB", "uLutP", "uLut1", "uLut3"].forEach((n, i) => gl.uniform1i(this.u[n]!, i));
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   }
 
@@ -187,7 +246,52 @@ export class GlView {
     this.w = w;
     this.h = h;
     this.matrix = yuvToRgb(hd.matrix, hd.range === 1);
+    this.full = hd.range === 1;
     return hd;
+  }
+
+  /** The clip's built-in profile transform (null for Rec.709 or none). A user cube wins. */
+  setProfile(p: ProfileColour | null) {
+    this.profile = p;
+    if (p) {
+      const gl = this.gl;
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, this.tex[4]!);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, p.lut.length, 1, 0, gl.RED, gl.FLOAT, p.lut);
+    }
+    this.pickColour();
+  }
+
+  /** A user `.cube` LUT (null to remove). Applied to code values, output is display RGB. */
+  setCube(l: CubeLut | null) {
+    this.cube = l;
+    if (l) {
+      const gl = this.gl;
+      if (l.kind === "3d") {
+        gl.activeTexture(gl.TEXTURE6);
+        gl.bindTexture(gl.TEXTURE_3D, this.tex[6]!);
+        gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA16F, l.size, l.size, l.size, 0, gl.RGBA, gl.FLOAT, l.data);
+      } else {
+        gl.activeTexture(gl.TEXTURE5);
+        gl.bindTexture(gl.TEXTURE_2D, this.tex[5]!);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, l.size, 1, 0, gl.RGBA, gl.FLOAT, l.data);
+      }
+    }
+    this.pickColour();
+  }
+
+  private pickColour() {
+    if (this.cube) {
+      this.colourMode = this.cube.kind === "3d" ? 2 : 3;
+      this.lutSize = this.cube.size;
+      this.dom = [Float32Array.from(this.cube.domainMin), Float32Array.from(this.cube.domainMax)];
+    } else if (this.profile) {
+      this.colourMode = 1;
+      this.lutSize = this.profile.lut.length;
+      this.gamut = this.profile.matrix;
+    } else {
+      this.colourMode = 0;
+    }
   }
 
   setImage(img: TexImageSource, w: number, h: number) {
@@ -225,6 +329,15 @@ export class GlView {
     gl.uniform1f(this.u.uPeak!, o.peaking);
     gl.uniform2f(this.u.uTexel!, 1 / this.w, 1 / this.h);
     gl.uniform1f(this.u.uTime!, o.time);
+    // Images (browser preview) are already display-referred: no colour transform.
+    const colour = o.colour !== false && this.src === 0 ? this.colourMode : 0;
+    gl.uniform1i(this.u.uColour!, colour);
+    gl.uniformMatrix3fv(this.u.uGamut!, true, this.gamut);
+    gl.uniform3fv(this.u.uDomMin!, this.dom[0]);
+    gl.uniform3fv(this.u.uDomMax!, this.dom[1]);
+    gl.uniform1f(this.u.uLutSize!, this.lutSize);
+    gl.uniform1i(this.u.uFull!, this.full ? 1 : 0);
+    gl.uniform1f(this.u.uSplit!, colour && o.split !== null && o.split !== undefined ? o.split : -1);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 }

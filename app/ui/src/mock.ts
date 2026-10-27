@@ -66,7 +66,7 @@ function makeDemo(): DemoClip[] {
       }
     }
     return {
-      clip: { clip: i + 1, media: i + 1, name, path: `D:/Footage/${name}.mov`, state: "done", progress: 1, error: null },
+      clip: { clip: i + 1, media: i + 1, name, path: `D:/Footage/${name}.mov`, state: "done", progress: 1, error: null, profile: name.startsWith("DRONE") ? "d_log" : name.startsWith("A001") ? "s_log3" : "rec709" },
       durationUs: dur,
       bar,
       flags,
@@ -255,6 +255,13 @@ export const mockBackend: Backend = {
   audioPlay: async () => false,
   audioStop: async () => {},
   audioClock: async () => null,
+  setProfile: async (media, profile) => {
+    const d = demo.find((x) => x.clip.media === media);
+    if (d) d.clip = { ...d.clip, profile };
+  },
+  // The browser preview shows display-referred images, so the transform is never applied.
+  previewColour: async () => ({ lut: Float32Array.from({ length: 1024 }, (_, i) => (i / 1023) ** 2.4), matrix: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]) }),
+  readLut: async () => "TITLE \"Demo\"\nLUT_1D_SIZE 2\n0 0 0\n1 1 1\n",
   onAnalysis: async (cb) => {
     listeners.add(cb);
     return () => listeners.delete(cb);

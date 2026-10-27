@@ -37,6 +37,11 @@ export const commands = {
 	 *  Returns false when the media has no audio.
 	 */
 	audioPlay: (media: number | null, us: number | null) => typedError<boolean, string>(__TAURI_INVOKE("audio_play", { media, us })),
+	/**  Assigns a log/colour profile to `media` (SPEC VIE-6). Rescore afterwards: it changes Luma. */
+	mediaSetProfile: (media: number | null, profile: ColourProfile) => typedError<null, string>(__TAURI_INVOKE("media_set_profile", { media, profile })),
+	previewColour: (profile: ColourProfile) => typedError<PreviewColour, string>(__TAURI_INVOKE("preview_colour", { profile })),
+	/**  Reads a `.cube` LUT the user picked (parsed in the UI). Only `.cube` files up to 32 MB. */
+	lutRead: (path: string) => typedError<string, string>(__TAURI_INVOKE("lut_read", { path })),
 	audioStop: () => typedError<null, string>(__TAURI_INVOKE("audio_stop")),
 	/**  Media time being heard (µs), `null` when no audio is playing. */
 	audioClock: () => typedError<number | null, string>(__TAURI_INVOKE("audio_clock")),
@@ -104,6 +109,8 @@ export type ClipRow_Deserialize = {
 	state: string,
 	progress: number | null,
 	error?: string | null,
+	/**  Log/colour profile used for preview and log-aware exposure. */
+	profile: ColourProfile,
 };
 
 export type ClipRow_Serialize = {
@@ -115,6 +122,8 @@ export type ClipRow_Serialize = {
 	state: string,
 	progress: number | null,
 	error: string | null,
+	/**  Log/colour profile used for preview and log-aware exposure. */
+	profile: ColourProfile,
 };
 
 export type ClipScore = {
@@ -127,6 +136,9 @@ export type ClipScore = {
 	flags: string,
 	segments: Segment[],
 };
+
+/**  Log/colour profiles for preview and log-aware exposure (SPEC VIE-6). */
+export type ColourProfile = "rec709" | "s_log3" | "log_c3" | "log_c4" | "v_log" | "c_log2" | "c_log3" | "n_log" | "f_log2" | "d_log" | "apple_log" | "log3_g10" | "bmd_film_gen5";
 
 export type ExportRequest = {
 	/**  xmeml | fcpxml | otio | edl | ale | avid-markers | csv | json */
@@ -298,6 +310,16 @@ export type MediaSource_Serialize = {
 export type PresetInfo = {
 	name: string,
 	description: string,
+};
+
+/**
+ *  Viewer colour transform for `profile`: a per-channel decode LUT (code value → scene linear,
+ *  `PREVIEW_LUT` entries) and the gamut → BT.709 matrix (row-major). The shader then applies
+ *  the display rendering, which matches `clippro_score::colour::display`.
+ */
+export type PreviewColour = {
+	lut: (number | null)[],
+	matrix: (number | null)[],
 };
 
 export type ProjectInfo = {
