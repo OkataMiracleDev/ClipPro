@@ -34,3 +34,8 @@ opt-level = 2
 lto = "thin"
 codegen-units = 4
 debug = "line-tables-only"
+
+# Build scripts run optimised: ffmpeg-sys's bindgen pass overflows the 1 MB Windows main-thread
+# stack when compiled at opt-level 0 alongside Tauri's dependency features.
+[profile.release.build-override]
+opt-level = 3
