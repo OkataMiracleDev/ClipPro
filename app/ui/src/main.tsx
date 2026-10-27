@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles/app.css";
 import { App } from "./App";
+import { SettingsWindow } from "./views/SettingsWindow";
 import { isTauri } from "./api";
 import { useApp } from "./store";
 
@@ -20,11 +21,9 @@ if (q.get("scope") === "1") useApp.setState({ scope: true });
 function mount() {
   const root = document.getElementById("root");
   if (root) {
-    createRoot(root).render(
-      <StrictMode>
-        <App />
-      </StrictMode>,
-    );
+    // `?window=settings` is the Settings window (opened by the backend's open_settings).
+    const settings = q.get("window") === "settings";
+    createRoot(root).render(<StrictMode>{settings ? <SettingsWindow /> : <App />}</StrictMode>);
   }
 }
 

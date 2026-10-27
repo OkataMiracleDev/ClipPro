@@ -13,6 +13,7 @@ use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
 pub mod audio_out;
 pub mod preview;
+pub mod settings;
 #[cfg(windows)]
 mod shared;
 
@@ -21,6 +22,8 @@ pub struct AppState {
     session: Mutex<Option<Arc<Session>>>,
     path: Mutex<Option<PathBuf>>,
     preview: preview::PreviewCache,
+    settings: Mutex<settings::AppSettings>,
+    settings_path: Mutex<Option<PathBuf>>,
     audio: audio_out::AudioOut,
     /// `--bench-preview` report file (ADR-002); `None` in normal runs.
     bench_out: Mutex<Option<PathBuf>>,
@@ -134,15 +137,26 @@ pub struct AnalysisEvent {
 
 // ---------- Commands ----------
 
-fn options() -> SessionOptions {
-    SessionOptions::default()
+/// Session options from the app settings (analysis and performance defaults).
+fn options(state: &AppState) -> SessionOptions {
+    lock(&state.settings).session_options()
+}
+
+/// Remembers the open project for "reopen at start-up".
+fn remember_project(state: &AppState, path: &std::path::Path) {
+    let mut st = lock(&state.settings);
+    st.last_project = Some(path.to_string_lossy().into_owned());
+    if let Some(p) = lock(&state.settings_path).as_ref() {
+        let _ = st.save(p);
+    }
 }
 
 #[tauri::command]
 #[specta::specta]
 async fn project_new(state: State<'_, AppState>, path: String, name: String) -> Result<ProjectInfo, String> {
     let p = PathBuf::from(&path);
-    let s = blocking(move || Session::create(&p, &name, options()).map_err(|e| e.to_string())).await?;
+    let o = options(&state);
+    let s = blocking(move || Session::create(&p, &name, o).map_err(|e| e.to_string())).await?;
     let name = lock(&s.db).name().map_err(|e| e.to_string())?;
     replace_session(&state, Arc::new(s), PathBuf::from(&path));
     Ok(ProjectInfo { path, name, recovered: false })
@@ -152,13 +166,15 @@ async fn project_new(state: State<'_, AppState>, path: String, name: String) -> 
 #[specta::specta]
 async fn project_open(state: State<'_, AppState>, path: String) -> Result<ProjectInfo, String> {
     let p = PathBuf::from(&path);
-    let (s, rep) = blocking(move || Session::open(&p, options()).map_err(|e| e.to_string())).await?;
+    let o = options(&state);
+    let (s, rep) = blocking(move || Session::open(&p, o).map_err(|e| e.to_string())).await?;
     let name = lock(&s.db).name().map_err(|e| e.to_string())?;
     replace_session(&state, Arc::new(s), PathBuf::from(&path));
     Ok(ProjectInfo { path, name, recovered: rep.recovered })
 }
 
 fn replace_session(state: &AppState, s: Arc<Session>, path: PathBuf) {
+    remember_project(state, &path);
     state.preview.clear();
     state.audio.stop();
     let old = lock(&state.session).replace(s);
@@ -406,7 +422,7 @@ async fn pdf_check(app: &tauri::AppHandle, out: &std::path::Path, clips: &[PathB
     let clips = clips.to_vec();
     let p2 = proj.clone();
     let s = blocking(move || {
-        let s = Session::create(&p2, "PDF check", SessionOptions { cache_path: None, ..options() }).map_err(|e| e.to_string())?;
+        let s = Session::create(&p2, "PDF check", SessionOptions { cache_path: None, ..settings::AppSettings::default().session_options() }).map_err(|e| e.to_string())?;
         s.import(&clips).map_err(|e| e.to_string())?;
         s.queue_analysis().map_err(|e| e.to_string())?;
         s.wait(|_| {});
@@ -574,6 +590,49 @@ async fn inspect_sample(state: State<'_, AppState>, settings: Settings, clip: f6
         })
     })
     .await
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn settings_get(state: State<'_, AppState>) -> Result<settings::AppSettings, String> {
+    Ok(lock(&state.settings).clone())
+}
+
+/// Saves the app settings and tells every window (`AppSettings` event).
+#[tauri::command]
+#[specta::specta]
+async fn settings_set(app: tauri::AppHandle, state: State<'_, AppState>, settings: settings::AppSettings) -> Result<settings::AppSettings, String> {
+    let s = settings.sanitised();
+    if let Some(p) = lock(&state.settings_path).as_ref() {
+        s.save(p)?;
+    }
+    *lock(&state.settings) = s.clone();
+    let _ = s.emit(&app);
+    Ok(s)
+}
+
+/// Opens (or focuses) the Settings window.
+#[tauri::command]
+#[specta::specta]
+async fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("settings") {
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    let w = tauri::WebviewWindowBuilder::new(&app, "settings", tauri::WebviewUrl::App("index.html?window=settings".into()))
+        .title("ClipPro Settings")
+        .inner_size(620.0, 460.0)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .decorations(false)
+        .transparent(true)
+        .center()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let material = apply_material(&w);
+    let _ = w.eval(format!("document.body.classList.toggle('has-material', {material});"));
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
@@ -830,6 +889,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             media_set_profile,
             clip_retry,
             system_info,
+            settings_get,
+            settings_set,
+            open_settings,
             clip_bump,
             clip_link_proxy,
             reveal_in_explorer,
@@ -840,7 +902,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             bench_config,
             bench_report,
         ])
-        .events(collect_events![AnalysisEvent])
+        .events(collect_events![AnalysisEvent, settings::AppSettings])
 }
 
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../ui/src/bindings.ts");
@@ -911,6 +973,13 @@ pub fn run(bench: Option<Bench>) {
         })
         .setup(move |app| {
             builder.mount_events(app);
+            // Self-test runs (bench, pdf-check) leave the user's settings alone.
+            if let (true, Ok(dir)) = (bench.is_none(), app.path().app_config_dir()) {
+                let p = settings::settings_path(dir);
+                let state = app.state::<AppState>();
+                *lock(&state.settings) = settings::AppSettings::load(&p);
+                *lock(&state.settings_path) = Some(p);
+            }
             if let Some(b) = bench.as_ref().filter(|b| b.pdf) {
                 let (out, clips, app) = (b.out.clone(), b.clips.clone(), app.handle().clone());
                 tauri::async_runtime::spawn(async move {
@@ -931,7 +1000,7 @@ pub fn run(bench: Option<Bench>) {
             if let Some(b) = bench {
                 let proj = b.out.with_extension("clippro");
                 let _ = std::fs::remove_file(&proj);
-                let s = Session::create(&proj, "bench", SessionOptions { cache_path: None, ..options() })?;
+                let s = Session::create(&proj, "bench", SessionOptions { cache_path: None, ..settings::AppSettings::default().session_options() })?;
                 s.import(&b.clips)?;
                 let state = app.state::<AppState>();
                 replace_session(&state, Arc::new(s), proj);

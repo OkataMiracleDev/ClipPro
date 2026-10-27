@@ -1,7 +1,7 @@
-import { ArrowDownUp, Check, FolderOpen, ListFilter, PanelRight, Pause, Play, Plus, Share } from "lucide-react";
+import { ArrowDownUp, Check, FolderOpen, ListFilter, Minus, PanelRight, Pause, Play, Plus, Settings, Share, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ExportSheet } from "./ExportSheet";
-import { isTauri, type SortOrder } from "../api";
+import { api, isTauri, type SortOrder } from "../api";
 import { cx, IconButton, Popover, PopoverClose, Spinner } from "../components/ui";
 import { useApp } from "../store";
 import { pickMedia, pickProjectToOpen } from "../lib/dialogs";
@@ -11,7 +11,27 @@ async function win() {
   return getCurrentWindow();
 }
 
-function TrafficLights() {
+/** Windows-style caption buttons (Settings → General → Window controls). */
+export function CaptionButtons({ maximise = true }: { maximise?: boolean }) {
+  const btn = "no-drag grid h-(--h-titlebar) w-11 place-items-center text-text-2 hover:bg-control-hover hover:text-text";
+  return (
+    <div className="flex self-stretch" role="group" aria-label="Window controls">
+      <button aria-label="Minimise" className={btn} onClick={async () => isTauri && (await win()).minimize()}>
+        <Minus size={14} />
+      </button>
+      {maximise && (
+        <button aria-label="Maximise" className={btn} onClick={async () => isTauri && (await win()).toggleMaximize()}>
+          <Square size={11} />
+        </button>
+      )}
+      <button aria-label="Close" className={cx(btn, "hover:bg-[#c42b1c] hover:text-white")} onClick={async () => isTauri && (await win()).close()}>
+        <X size={15} />
+      </button>
+    </div>
+  );
+}
+
+export function TrafficLights() {
   const btn = "no-drag group grid h-3 w-3 place-items-center rounded-full ring-1 ring-black/15";
   return (
     <div className="flex items-center gap-2 pl-4" role="group" aria-label="Window controls">
@@ -67,13 +87,17 @@ function AnalysisStatus() {
 }
 
 export function TitleBar() {
-  const { project, importPaths, openProject, selectsOnly, toggleSelectsOnly, sort, setSort, inspectorOpen, toggleInspector } = useApp();
+  const { project, importPaths, openProject, selectsOnly, toggleSelectsOnly, sort, setSort, inspectorOpen, toggleInspector, appSettings } = useApp();
+  const windowsControls = appSettings?.window_controls === "windows";
   const [exportOpen, setExportOpen] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === "e" && project) {
         e.preventDefault();
         setExportOpen(true);
+      } else if (e.ctrlKey && e.key === ",") {
+        e.preventDefault();
+        void api.openSettings();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -87,8 +111,8 @@ export function TitleBar() {
         if (e.target === e.currentTarget && isTauri) (await win()).toggleMaximize();
       }}
     >
-      <TrafficLights />
-      <div className="no-drag ml-3 flex items-center gap-0.5">
+      {!windowsControls && <TrafficLights />}
+      <div className={cx("no-drag flex items-center gap-0.5", windowsControls ? "ml-2" : "ml-3")}>
         <IconButton label="Open project…" onClick={async () => {
           const p = await pickProjectToOpen();
           if (p) await openProject(p);
@@ -137,7 +161,11 @@ export function TitleBar() {
         <IconButton label={inspectorOpen ? "Hide inspector" : "Show inspector"} active={inspectorOpen} onClick={toggleInspector}>
           <PanelRight size={16} />
         </IconButton>
+        <IconButton label="Settings (Ctrl+,)" onClick={() => void api.openSettings()}>
+          <Settings size={16} />
+        </IconButton>
       </div>
+      {windowsControls && <CaptionButtons />}
       <ExportSheet open={exportOpen} onOpenChange={setExportOpen} />
     </header>
   );

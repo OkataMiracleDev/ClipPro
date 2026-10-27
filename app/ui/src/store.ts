@@ -33,6 +33,7 @@ interface AppState {
   analysis: { active: boolean; paused: boolean; jobs: Record<number, number> };
   inspectorOpen: boolean;
   overlay: Overlay;
+  appSettings: import("./api").AppSettings | null;
   /** Viewer LUT chosen by the user (replaces the built-in profile transform). */
   userLut: { name: string; lut: CubeLut } | null;
   /** Before/after split position (fraction of width), null = off. */
@@ -71,6 +72,7 @@ interface AppState {
   toggleInspector(): void;
   /** Turns an overlay on, or off when it is already showing. */
   toggleOverlay(o: Overlay): void;
+  applySettings(s: import("./api").AppSettings): void;
   setUserLut(l: { name: string; lut: CubeLut } | null): void;
   setSplit(x: number | null): void;
   toggleScope(): void;
@@ -80,6 +82,13 @@ interface AppState {
   setRightTab(t: "tuning" | "frame"): void;
   toast(text: string, tone?: Toast["tone"]): void;
   dismissToast(id: number): void;
+}
+
+/** `system` follows the OS; `?theme=` in the URL (screenshots) wins over the setting. */
+function applyTheme(theme: string) {
+  if (new URLSearchParams(location.search).has("theme")) return;
+  if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
 }
 
 let scoreSeq = 0;
@@ -107,6 +116,7 @@ export const useApp = create<AppState>((set, get) => ({
   analysis: { active: false, paused: false, jobs: {} },
   inspectorOpen: true,
   overlay: "none",
+  appSettings: null,
   userLut: null,
   split: null,
   scope: false,
@@ -121,8 +131,12 @@ export const useApp = create<AppState>((set, get) => ({
       set({ presets });
       await get().setPreset(get().presetName);
       if (!unlisten) unlisten = await api.onAnalysis((e) => onAnalysisEvent(e, set, get));
-      // Browser preview: open the mock demo project straight away.
+      const st = await api.getSettings();
+      get().applySettings(st);
+      void api.onSettings((s) => get().applySettings(s));
+      // Browser preview: open the mock demo project straight away. The app reopens the last one.
       if (!isTauri) await get().openProject("Demo.clippro");
+      else if (st.reopen_last && st.last_project) await get().openProject(st.last_project);
     } catch (e) {
       get().toast(String(e), "error");
     }
@@ -274,6 +288,10 @@ export const useApp = create<AppState>((set, get) => ({
   toggleLoop: () => set((s) => ({ loop: !s.loop })),
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
   toggleOverlay: (o) => set((s) => ({ overlay: s.overlay === o ? "none" : o })),
+  applySettings: (appSettings) => {
+    set({ appSettings });
+    applyTheme(appSettings.theme);
+  },
   setUserLut: (userLut) => set({ userLut }),
   setSplit: (split) => set({ split }),
   toggleScope: () => set((s) => ({ scope: !s.scope })),

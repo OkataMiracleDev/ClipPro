@@ -4,6 +4,7 @@
 
 import { commands, events } from "./bindings";
 import type {
+  AppSettings_Serialize as AppSettings,
   ClipRow_Serialize as RawClip,
   ColourProfile,
   ExportRequest,
@@ -19,7 +20,7 @@ import type {
 } from "./bindings";
 import { mockBackend } from "./mock";
 
-export type { ColourProfile, ExportRequest, ExportResult, ImportResult, PresetInfo, ProjectInfo, SortOrder };
+export type { AppSettings, ColourProfile, ExportRequest, ExportResult, ImportResult, PresetInfo, ProjectInfo, SortOrder };
 export type Settings = RawSettings;
 
 /** How the viewer shows a clip (ADR-002). */
@@ -144,6 +145,10 @@ export interface Backend {
   linkProxy(clip: number, path: string): Promise<void>;
   reveal(path: string): Promise<void>;
   systemInfo(): Promise<{ hwDecode: boolean; version: string }>;
+  getSettings(): Promise<AppSettings>;
+  setSettings(s: AppSettings): Promise<AppSettings>;
+  openSettings(): Promise<void>;
+  onSettings(cb: (s: AppSettings) => void): Promise<() => void>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
   frameUrl(media: number, us: number, width: number): string;
 }
@@ -289,6 +294,10 @@ const tauriBackend: Backend = {
   bumpClip: async (clip) => void unwrap(await commands.clipBump(clip)),
   linkProxy: async (clip, path) => void unwrap(await commands.clipLinkProxy(clip, path)),
   reveal: async (path) => void unwrap(await commands.revealInExplorer(path)),
+  getSettings: async () => unwrap(await commands.settingsGet()),
+  setSettings: async (s) => unwrap(await commands.settingsSet(s)),
+  openSettings: async () => void unwrap(await commands.openSettings()),
+  onSettings: async (cb) => events.appSettings.listen((e) => cb(e.payload)),
   systemInfo: async () => {
     const r = unwrap(await commands.systemInfo());
     return { hwDecode: r.hw_decode, version: r.version };

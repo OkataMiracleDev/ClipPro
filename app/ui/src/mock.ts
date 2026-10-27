@@ -1,7 +1,7 @@
 // Mock backend for the browser preview and component tests. Deterministic demo data with a
 // simplified selects rule (threshold + length + cap); the real engine lives in Rust.
 
-import type { AnalysisEvent, Backend, Clip, Inspection, MediaSource, Scored, Segment, Settings } from "./api";
+import type { AnalysisEvent, AppSettings, Backend, Clip, Inspection, MediaSource, Scored, Segment, Settings } from "./api";
 import type { PresetInfo } from "./bindings";
 
 const PRESETS: PresetInfo[] = [
@@ -75,6 +75,8 @@ function makeDemo(): DemoClip[] {
 }
 
 const demo = makeDemo();
+let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true };
+const settingsListeners = new Set<(s: AppSettings) => void>();
 const listeners = new Set<(e: AnalysisEvent) => void>();
 
 function defaultSettings(name: string): Settings {
@@ -266,6 +268,20 @@ export const mockBackend: Backend = {
   linkProxy: async () => {},
   reveal: async () => {},
   systemInfo: async () => ({ hwDecode: true, version: "0.1.0" }),
+  getSettings: async () => mockSettings,
+  setSettings: async (s) => {
+    mockSettings = s;
+    settingsListeners.forEach((l) => l(s));
+    return s;
+  },
+  // The browser preview has one window: the settings page opens with `?window=settings`.
+  openSettings: async () => {
+    location.search = "?window=settings";
+  },
+  onSettings: async (cb) => {
+    settingsListeners.add(cb);
+    return () => settingsListeners.delete(cb);
+  },
   readLut: async () => "TITLE \"Demo\"\nLUT_1D_SIZE 2\n0 0 0\n1 1 1\n",
   onAnalysis: async (cb) => {
     listeners.add(cb);

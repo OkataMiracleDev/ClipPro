@@ -46,6 +46,11 @@ export const commands = {
 	clipRetry: (clip: number | null, cpu: boolean) => typedError<boolean, string>(__TAURI_INVOKE("clip_retry", { clip, cpu })),
 	/**  Machine capabilities for the status bar. */
 	systemInfo: () => typedError<SystemInfo, string>(__TAURI_INVOKE("system_info")),
+	settingsGet: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_get")),
+	/**  Saves the app settings and tells every window (`AppSettings` event). */
+	settingsSet: (settings: AppSettings_Deserialize) => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_set", { settings })),
+	/**  Opens (or focuses) the Settings window. */
+	openSettings: () => typedError<null, string>(__TAURI_INVOKE("open_settings")),
 	/**  Moves a queued clip to the front of the analysis queue. */
 	clipBump: (clip: number | null) => typedError<null, string>(__TAURI_INVOKE("clip_bump", { clip })),
 	/**  Links a proxy file to a clip by hand and re-analyses from it. */
@@ -67,6 +72,7 @@ export const commands = {
 /** Events */
 export const events = {
 	analysisEvent: makeEvent<AnalysisEvent_Serialize, AnalysisEvent_Deserialize>("analysis-event"),
+	appSettings: makeEvent<AppSettings_Serialize, AppSettings_Deserialize>("app-settings"),
 };
 
 /* Types */
@@ -88,6 +94,48 @@ export type AnalysisEvent_Serialize = {
 	done: number | null,
 	total: number | null,
 	error: string | null,
+};
+
+export type AppSettings = AppSettings_Serialize | AppSettings_Deserialize;
+
+export type AppSettings_Deserialize = {
+	/**  system | light | dark */
+	theme?: string,
+	/**  mac (traffic lights, left) | windows (minimise/maximise/close, right) */
+	window_controls?: string,
+	/**  Open the last project at start-up. */
+	reopen_last?: boolean,
+	last_project?: string | null,
+	/**  Analysis workers; 0 = automatic (by CPU count). */
+	workers?: number,
+	/**  Decode on the GPU (D3D11VA) when the codec allows. */
+	gpu_decode?: boolean,
+	/**  Reuse measurements across projects (global cache). */
+	use_cache?: boolean,
+	/**  draft | fast | standard | detailed | thorough | all */
+	sample_rate?: string,
+	/**  Measure motion from frame pairs (more accurate shake and blur). */
+	pair_sampling?: boolean,
+};
+
+export type AppSettings_Serialize = {
+	/**  system | light | dark */
+	theme: string,
+	/**  mac (traffic lights, left) | windows (minimise/maximise/close, right) */
+	window_controls: string,
+	/**  Open the last project at start-up. */
+	reopen_last: boolean,
+	last_project: string | null,
+	/**  Analysis workers; 0 = automatic (by CPU count). */
+	workers: number,
+	/**  Decode on the GPU (D3D11VA) when the codec allows. */
+	gpu_decode: boolean,
+	/**  Reuse measurements across projects (global cache). */
+	use_cache: boolean,
+	/**  draft | fast | standard | detailed | thorough | all */
+	sample_rate: string,
+	/**  Measure motion from frame pairs (more accurate shake and blur). */
+	pair_sampling: boolean,
 };
 
 export type BenchClip = {
