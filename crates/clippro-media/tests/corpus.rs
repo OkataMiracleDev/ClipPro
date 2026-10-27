@@ -296,3 +296,45 @@ fn audio_seek_and_rate() {
         .unwrap();
     assert!((first_quiet as f64 / sr - 0.5).abs() < 0.03, "silence starts at {}", first_quiet as f64 / sr);
 }
+
+/// PLAN P6.1: scrubbing shows exactly the frame at the requested time, across the codec corpus
+/// (long-GOP H.264/HEVC, intra ProRes/DNx, 10-bit 4:2:2, VFR).
+#[test]
+fn preview_seek_accuracy_across_codecs() {
+    let Some(dir) = corpus() else { return };
+    for name in ["pan_right.mp4", "long_clip.mp4", "hevc10.mp4", "prores_hq.mov", "dnxhr.mxf", "h264_422_10.mov", "vfr.mkv"] {
+        let p = dir.join(name);
+        if !p.exists() {
+            continue;
+        }
+        let info = probe(&p).unwrap();
+        let (all, _) = collect(&p, SampleRate::All, false, HwMode::Off);
+        let pts: Vec<i64> = all.iter().map(|x| x.2).collect();
+        assert!(pts.len() > 10, "{name}: {} frames", pts.len());
+        let half = (info.fps().frame_duration_us() / 2.0) as i64;
+        let expected = |t: i64| pts.iter().copied().filter(|&q| q <= t + half).max().unwrap_or(pts[0]);
+        let mut dec = VideoDecoder::open(&p, &info, &DecodeOptions { threads: 2, hw: HwMode::Off }).unwrap();
+        let span = *pts.last().unwrap();
+        let mut rng = 0x9e37_79b9_7f4a_7c15u64;
+        let mut misses = Vec::new();
+        let mut last = 0i64;
+        for k in 0..30 {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            // Mix random scrubs with one- and three-frame forward steps (the playback path).
+            let t = match k % 3 {
+                0 => (rng % span.max(1) as u64) as i64,
+                1 => (last + 2 * half).min(span),
+                _ => (last + 6 * half).min(span),
+            };
+            last = t;
+            let f = dec.frame_near(t).unwrap().expect("frame");
+            let got = dec.rel_pts_us(&f);
+            if got != expected(t) {
+                misses.push((t, got, expected(t)));
+            }
+        }
+        assert!(misses.is_empty(), "{name}: wrong frames (target, got, want): {misses:?}");
+    }
+}
