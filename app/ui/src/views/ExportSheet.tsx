@@ -24,7 +24,12 @@ const FORMATS: FormatDef[] = [
   { value: "avid-markers", label: "Avid markers", hint: "Marker list for Import Markers", ext: "txt", filter: "Avid markers", timeline: false },
   { value: "csv", label: "CSV report", hint: "One row per select", ext: "csv", filter: "CSV", timeline: false },
   { value: "json", label: "JSON report", hint: "For scripts and pipelines", ext: "json", filter: "JSON", timeline: false },
+  { value: "html", label: "HTML report", hint: "Thumbnails, sortable tables, one file", ext: "html", filter: "HTML", timeline: false },
+  { value: "pdf", label: "PDF contact sheet", hint: "Best frame of each select, for clients", ext: "pdf", filter: "PDF", timeline: false },
 ];
+
+/** Reports have no markers, handles or audio. */
+const REPORTS = new Set(["html", "pdf"]);
 
 export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { settings, sort, project, scored, toast } = useApp();
@@ -57,6 +62,7 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
         markers,
         marker_name: markerName,
         marker_comment: "{flags}",
+        generated: new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }),
       });
       toast(`Exported ${r.selects} select${r.selects === 1 ? "" : "s"} to ${r.path.split(/[\\/]/).pop()}`);
       onOpenChange(false);
@@ -99,10 +105,12 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
             />
           </div>
         )}
-        <label className={row}>
-          <span className="text-[12px] text-text-2">Include handles</span>
-          <Switch label="Include handles" checked={handles} onChange={setHandles} />
-        </label>
+        {!REPORTS.has(format) && (
+          <label className={row}>
+            <span className="text-[12px] text-text-2">Include handles</span>
+            <Switch label="Include handles" checked={handles} onChange={setHandles} />
+          </label>
+        )}
         {def.timeline && layout === "selects" && (
           <label className={row}>
             <span className="text-[12px] text-text-2">Gap between selects (seconds)</span>
@@ -121,11 +129,13 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
             <Switch label="Include audio" checked={audio} onChange={setAudio} />
           </label>
         )}
-        <label className={row}>
-          <span className="text-[12px] text-text-2">Markers</span>
-          <Switch label="Markers" checked={markers} onChange={setMarkers} />
-        </label>
-        {markers && (
+        {!REPORTS.has(format) && (
+          <label className={row}>
+            <span className="text-[12px] text-text-2">Markers</span>
+            <Switch label="Markers" checked={markers} onChange={setMarkers} />
+          </label>
+        )}
+        {markers && !REPORTS.has(format) && (
           <label className="flex flex-col gap-1">
             <span className="text-[12px] text-text-2">Marker name</span>
             <input

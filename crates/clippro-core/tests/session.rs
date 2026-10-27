@@ -141,3 +141,43 @@ fn inspect_agrees_with_selects() {
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// PLAN P7.6: the HTML report and contact sheet are self-contained (no external URLs), carry a
+/// WebP thumbnail per select and have balanced markup.
+#[test]
+fn html_report_and_contact_sheet() {
+    use clippro_core::report::{render_contact_sheet, render_html, ReportOptions};
+    let Some(dir) = corpus() else { return };
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-report-test");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let s = Session::create(&tmp.join("p.clippro"), "Report", SessionOptions { cache_path: None, ..opts(&tmp) }).unwrap();
+    let files: Vec<PathBuf> = ["tripod_static.mp4", "handheld_shake.mp4", "solid_black.mp4", "prores_hq.mov"].iter().map(|f| dir.join(f)).collect();
+    s.import(&files).unwrap();
+    s.queue_analysis().unwrap();
+    s.wait(|_| {});
+    let settings = Settings::from_preset(&builtin("Cleanup").unwrap()).unwrap();
+    let t = std::time::Instant::now();
+    let d = s.report_data(&settings, SortOrder::Timeline, &ReportOptions { title: "Report <test> & co".into(), generated: "2026-10-27 10:00".into(), thumb_width: 320 }).unwrap();
+    eprintln!("report data for {} selects in {:?}", d.rows.len(), t.elapsed());
+    assert!(!d.rows.is_empty());
+    assert_eq!(d.clips.len(), 4);
+    for r in &d.rows {
+        assert!(r.thumb.starts_with("data:image/webp;base64,UklGR"), "select {} has no WebP thumbnail", r.index);
+        assert!(r.tc_in.contains(':') && r.duration_s > 0.0);
+    }
+    for (name, html) in [("report", render_html(&d)), ("sheet", render_contact_sheet(&d))] {
+        assert!(!html.contains("http://") && !html.contains("https://") && !html.contains("//cdn"), "{name} has an external URL");
+        assert!(html.starts_with("<!doctype html>") && html.ends_with("</html>"));
+        assert!(html.contains("Report &lt;test&gt; &amp; co"), "{name} escapes the title");
+        for tag in ["div", "table", "thead", "tbody", "tr", "td", "th", "span", "h1", "h2", "footer"] {
+            let open = html.matches(&format!("<{tag}>")).count() + html.matches(&format!("<{tag} ")).count();
+            let close = html.matches(&format!("</{tag}>")).count();
+            assert_eq!(open, close, "{name}: <{tag}> opened {open} times, closed {close}");
+        }
+        assert_eq!(html.matches("data:image/webp").count(), d.rows.len());
+        std::fs::write(tmp.join(format!("{name}.html")), &html).unwrap();
+    }
+    s.close().unwrap();
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

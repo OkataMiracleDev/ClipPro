@@ -70,7 +70,7 @@ enum Cmd {
     /// Export the selects for an NLE or as a report.
     Export {
         project: PathBuf,
-        /// xmeml (Premiere/Resolve) | fcpxml (FCP/Resolve) | otio | edl | ale | avid-markers | csv | json
+        /// xmeml (Premiere/Resolve) | fcpxml (FCP/Resolve) | otio | edl | ale | avid-markers | csv | json | html | contact-sheet
         #[arg(long)]
         format: String,
         #[arg(long)]
@@ -414,7 +414,11 @@ fn export(
     if !project.exists() {
         return Err(fail(1, format!("{} doesn't exist", project.display())));
     }
-    let fmt = clippro_interchange::Format::parse(format).ok_or_else(|| fail(1, format!("unknown format '{format}'")))?;
+    let report = clippro_core::report::ReportKind::parse(format);
+    let fmt = clippro_interchange::Format::parse(format);
+    if fmt.is_none() && report.is_none() {
+        return Err(fail(1, format!("unknown format '{format}'")));
+    }
     let mut settings = Settings::from_preset(&load_preset(preset)?).map_err(|e| fail(1, e.to_string()))?;
     for kv in sets {
         apply_set(&mut settings, kv)?;
@@ -437,10 +441,19 @@ fn export(
     let mut so = SessionOptions::default();
     so.cache_path = None;
     let (s, _) = Session::open(project, so).map_err(|e| fail(4, e.to_string()))?;
-    let n = s.export_to(&settings, sort_order(sort)?, &opts, fmt, out).map_err(|e| fail(4, e.to_string()))?;
+    let n = match (fmt, report) {
+        (Some(fmt), _) => s.export_to(&settings, sort_order(sort)?, &opts, fmt, out),
+        (None, Some(kind)) => {
+            let title = if name.is_empty() { project.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default() } else { name.to_string() };
+            let ro = clippro_core::report::ReportOptions { title, generated: clippro_core::report::utc_now_string(), ..Default::default() };
+            s.write_report(&settings, sort_order(sort)?, kind, &ro, out)
+        }
+        (None, None) => Err(clippro_core::SessionError::Other(format!("unknown format {format}"))),
+    }
+    .map_err(|e| fail(4, e.to_string()))?;
     s.close().map_err(|e| fail(4, e.to_string()))?;
     if json_out {
-        println!("{}", json!({ "path": out, "format": format!("{fmt:?}").to_lowercase(), "selects": n }));
+        println!("{}", json!({ "path": out, "format": format, "selects": n }));
     } else {
         println!("wrote {n} select(s) to {}", out.display());
     }

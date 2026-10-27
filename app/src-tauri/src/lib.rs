@@ -26,10 +26,12 @@ pub struct AppState {
     bench_out: Mutex<Option<PathBuf>>,
 }
 
-/// Preview transport benchmark run: `ClipPro --bench-preview <out.json> <clip>...`.
+/// Self-test runs. `--bench-preview <out.json> <clip>...` measures the preview transports;
+/// `--pdf-check <out.pdf> <clip>...` analyses the clips and prints the contact sheet to a PDF.
 pub struct Bench {
     pub out: PathBuf,
     pub clips: Vec<PathBuf>,
+    pub pdf: bool,
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
@@ -317,7 +319,7 @@ async fn score(state: State<'_, AppState>, settings: Settings, sort: SortOrder) 
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
 pub struct ExportRequest {
-    /// xmeml | fcpxml | otio | edl | ale | avid-markers | csv | json
+    /// xmeml | fcpxml | otio | edl | ale | avid-markers | csv | json | html | pdf
     pub format: String,
     pub path: String,
     pub name: String,
@@ -329,6 +331,8 @@ pub struct ExportRequest {
     pub markers: bool,
     pub marker_name: String,
     pub marker_comment: String,
+    /// Shown in report headers (the UI's local time); reports only.
+    pub generated: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
@@ -339,8 +343,11 @@ pub struct ExportResult {
 
 #[tauri::command]
 #[specta::specta]
-async fn export_selects(state: State<'_, AppState>, settings: Settings, sort: SortOrder, request: ExportRequest) -> Result<ExportResult, String> {
+async fn export_selects(app: tauri::AppHandle, state: State<'_, AppState>, settings: Settings, sort: SortOrder, request: ExportRequest) -> Result<ExportResult, String> {
     let s = state.session()?;
+    if request.format == "html" || request.format == "pdf" {
+        return export_report(app, s, settings, sort, request).await;
+    }
     blocking(move || {
         let format = clippro_interchange::Format::parse(&request.format).ok_or_else(|| format!("Unknown export format “{}”.", request.format))?;
         let opts = clippro_interchange::ExportOptions {
@@ -359,6 +366,112 @@ async fn export_selects(state: State<'_, AppState>, settings: Settings, sort: So
         Ok(ExportResult { path: request.path, selects: n as u32 })
     })
     .await
+}
+
+/// HTML report, or the contact sheet printed to PDF in a hidden WebView2 window (P7.6).
+async fn export_report(app: tauri::AppHandle, s: Arc<Session>, settings: Settings, sort: SortOrder, request: ExportRequest) -> Result<ExportResult, String> {
+    use clippro_core::report::{render_contact_sheet, render_html, utc_now_string, ReportOptions};
+    let opts = ReportOptions { title: request.name.clone(), generated: request.generated.clone().unwrap_or_else(utc_now_string), ..Default::default() };
+    let pdf = request.format == "pdf";
+    let (n, html) = blocking(move || {
+        let d = s.report_data(&settings, sort, &opts).map_err(|e| e.to_string())?;
+        Ok((d.rows.len(), if pdf { render_contact_sheet(&d) } else { render_html(&d) }))
+    })
+    .await?;
+    let out = PathBuf::from(&request.path);
+    if !pdf {
+        std::fs::write(&out, html).map_err(|e| e.to_string())?;
+        return Ok(ExportResult { path: request.path, selects: n as u32 });
+    }
+    #[cfg(windows)]
+    {
+        // The sheet is loaded from a temporary file beside the PDF (never the system temp dir).
+        let tmp = out.with_extension("contact-sheet.tmp.html");
+        std::fs::write(&tmp, html).map_err(|e| e.to_string())?;
+        let result = print_sheet(&app, &tmp, &out).await;
+        let _ = std::fs::remove_file(&tmp);
+        result?;
+        Ok(ExportResult { path: request.path, selects: n as u32 })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, html, n);
+        Err("PDF export needs WebView2".into())
+    }
+}
+
+async fn pdf_check(app: &tauri::AppHandle, out: &std::path::Path, clips: &[PathBuf]) -> Result<usize, String> {
+    let proj = out.with_extension("clippro");
+    let _ = std::fs::remove_file(&proj);
+    let clips = clips.to_vec();
+    let p2 = proj.clone();
+    let s = blocking(move || {
+        let s = Session::create(&p2, "PDF check", SessionOptions { cache_path: None, ..options() }).map_err(|e| e.to_string())?;
+        s.import(&clips).map_err(|e| e.to_string())?;
+        s.queue_analysis().map_err(|e| e.to_string())?;
+        s.wait(|_| {});
+        Ok(Arc::new(s))
+    })
+    .await?;
+    let settings = Settings::from_preset(&clippro_score::builtin("Cleanup").ok_or("no preset")?).map_err(|e| e.to_string())?;
+    let req = ExportRequest {
+        format: "pdf".into(),
+        path: out.to_string_lossy().into_owned(),
+        name: "PDF check".into(),
+        layout: "selects".into(),
+        handles: true,
+        gap_s: 0.0,
+        with_audio: false,
+        markers: false,
+        marker_name: String::new(),
+        marker_comment: String::new(),
+        generated: None,
+    };
+    let r = export_report(app.clone(), s.clone(), settings, SortOrder::Timeline, req).await;
+    close_session(s);
+    for ext in ["clippro", "clippro-wal", "clippro-shm"] {
+        let _ = std::fs::remove_file(out.with_extension(ext));
+    }
+    r.map(|r| r.selects as usize)
+}
+
+#[cfg(windows)]
+async fn print_sheet(app: &tauri::AppHandle, html: &std::path::Path, pdf: &std::path::Path) -> Result<(), String> {
+    use tauri::Manager as _;
+    app.asset_protocol_scope().allow_file(html).map_err(|e| e.to_string())?;
+    let encoded: String = html
+        .to_string_lossy()
+        .bytes()
+        // Same encoding as `convertFileSrc` (encodeURIComponent).
+        .map(|b| if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect();
+    let url: tauri::Url = format!("http://asset.localhost/{encoded}").parse().map_err(|e| format!("{e}"))?;
+    static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let label = format!("pdf-{}", SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let tx = Mutex::new(Some(tx));
+    let window = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(url))
+        .visible(false)
+        .inner_size(1123.0, 794.0)
+        .on_page_load(move |_, p| {
+            if p.event() == tauri::webview::PageLoadEvent::Finished {
+                if let Some(tx) = lock(&tx).take() {
+                    let _ = tx.send(());
+                }
+            }
+        })
+        .build()
+        .map_err(|e| e.to_string())?;
+    let pdf = pdf.to_path_buf();
+    let w = window.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(std::time::Duration::from_secs(30)).map_err(|_| "The contact sheet didn't load".to_string())?;
+        shared::print_to_pdf(&w, &pdf)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let _ = window.destroy();
+    r
 }
 
 // ---------- Wiring ----------
@@ -735,6 +848,23 @@ pub fn run(bench: Option<Bench>) {
         })
         .setup(move |app| {
             builder.mount_events(app);
+            if let Some(b) = bench.as_ref().filter(|b| b.pdf) {
+                let (out, clips, app) = (b.out.clone(), b.clips.clone(), app.handle().clone());
+                tauri::async_runtime::spawn(async move {
+                    let code = match pdf_check(&app, &out, &clips).await {
+                        Ok(n) => {
+                            println!("pdf-check: {n} select(s) -> {}", out.display());
+                            0
+                        }
+                        Err(e) => {
+                            eprintln!("pdf-check failed: {e}");
+                            1
+                        }
+                    };
+                    app.exit(code);
+                });
+                return Ok(());
+            }
             if let Some(b) = bench {
                 let proj = b.out.with_extension("clippro");
                 let _ = std::fs::remove_file(&proj);

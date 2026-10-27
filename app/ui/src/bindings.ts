@@ -19,7 +19,7 @@ export const commands = {
 	presetsList: () => typedError<PresetInfo[], string>(__TAURI_INVOKE("presets_list")),
 	presetSettings: (name: string) => typedError<Settings_Serialize, string>(__TAURI_INVOKE("preset_settings", { name })),
 	score: (settings: Settings_Deserialize, sort: SortOrder) => typedError<ScoreResult, string>(__TAURI_INVOKE("score", { settings, sort })),
-	exportSelects: (settings: Settings_Deserialize, sort: SortOrder, request: ExportRequest) => typedError<ExportResult, string>(__TAURI_INVOKE("export_selects", { settings, sort, request })),
+	exportSelects: (settings: Settings_Deserialize, sort: SortOrder, request: ExportRequest_Deserialize) => typedError<ExportResult, string>(__TAURI_INVOKE("export_selects", { settings, sort, request })),
 	/**
 	 *  How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
 	 *  when it can play natively.
@@ -140,8 +140,10 @@ export type ClipScore = {
 /**  Log/colour profiles for preview and log-aware exposure (SPEC VIE-6). */
 export type ColourProfile = "rec709" | "s_log3" | "log_c3" | "log_c4" | "v_log" | "c_log2" | "c_log3" | "n_log" | "f_log2" | "d_log" | "apple_log" | "log3_g10" | "bmd_film_gen5";
 
-export type ExportRequest = {
-	/**  xmeml | fcpxml | otio | edl | ale | avid-markers | csv | json */
+export type ExportRequest = ExportRequest_Serialize | ExportRequest_Deserialize;
+
+export type ExportRequest_Deserialize = {
+	/**  xmeml | fcpxml | otio | edl | ale | avid-markers | csv | json | html | pdf */
 	format: string,
 	path: string,
 	name: string,
@@ -153,6 +155,25 @@ export type ExportRequest = {
 	markers: boolean,
 	marker_name: string,
 	marker_comment: string,
+	/**  Shown in report headers (the UI's local time); reports only. */
+	generated?: string | null,
+};
+
+export type ExportRequest_Serialize = {
+	/**  xmeml | fcpxml | otio | edl | ale | avid-markers | csv | json | html | pdf */
+	format: string,
+	path: string,
+	name: string,
+	/**  selects | with_rejects */
+	layout: string,
+	handles: boolean,
+	gap_s: number | null,
+	with_audio: boolean,
+	markers: boolean,
+	marker_name: string,
+	marker_comment: string,
+	/**  Shown in report headers (the UI's local time); reports only. */
+	generated: string | null,
 };
 
 export type ExportResult = {

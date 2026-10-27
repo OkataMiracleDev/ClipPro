@@ -46,7 +46,7 @@ fn analyze_score_info_and_exit_codes() {
     assert!(!sel.iter().any(|s| s["name"] == "solid_black"));
 
     // Every export format writes a file; XML formats are well formed.
-    for fmt in ["xmeml", "fcpxml", "otio", "edl", "ale", "avid-markers", "csv", "json"] {
+    for fmt in ["xmeml", "fcpxml", "otio", "edl", "ale", "avid-markers", "csv", "json", "html", "contact-sheet"] {
         let out_path = tmp.join(format!("selects.{fmt}"));
         let out = Command::new(exe())
             .arg("export")
