@@ -30,11 +30,15 @@ Four transports were measured (PLAN P6.0):
 | | Raw I420 protocol | 1920 | 33.8 | 34.8 | 29.6 | 3038 |
 | | **SharedBuffer I420** | 960 | **10.5** | 10.9 | **95.1** | 759 |
 | | **SharedBuffer I420** | 1920 | **14.6** | 15.3 | **68.4** | 3038 |
+| | SharedBuffer + decode-ahead | 960 | 8.3 | 8.7 | 121.2 | 759 |
+| | **SharedBuffer + decode-ahead** | 1920 | **11.1** | 11.8 | **89.9** | 3038 |
 | 2160p ProRes | JPEG fetch + bitmap | 1920 | 60.9 | 65.1 | 16.4 | 96 |
 | | Raw I420 protocol | 1920 | 49.1 | 51.5 | 20.4 | 3038 |
 | | SharedBuffer I420 | 960 | 27.9 | 35.0 | 35.9 | 759 |
 | | SharedBuffer I420 | 1920 | 29.5 | 32.8 | 33.9 | 3038 |
 | | SharedBuffer I420 | 3840 | 48.6 | 55.7 | 20.6 | 12150 |
+| | SharedBuffer + decode-ahead | 1920 | 27.4 | 28.2 | 36.5 | 3038 |
+| | SharedBuffer + decode-ahead | 3840 | 40.0 | 46.0 | 25.0 | 12150 |
 
 ### Backend stage costs at full width
 Measured in-process by `preview::tests::frame_transport_throughput` with `CLIPPRO_PERF=1`.
@@ -49,7 +53,8 @@ Measured in-process by `preview::tests::frame_transport_throughput` with `CLIPPR
 - **JPEG.** Encoding dominates. It is cheap to transfer, but no amount of transfer tuning saves it at full 1080p.
 - **Raw over the custom protocol.** The bytes are copied through the WebView2 resource-stream path at about 150 MB/s, so a 3 MB 1080p frame spends about 20 ms in transit.
 - **SharedBuffer.** It removes that copy. At 1080p the remaining cost is decode plus scaling, which meets the 60 fps target.
-- **4K.** ProRes 4K decode and scaling set the limit, not the transport. The fix belongs in P8 (GPU colour conversion and decode-ahead), not in a different transport.
+- **Decode-ahead.** Playback requests carry `play={rate}`. After answering, the backend renders the frame the next request will want, so decode overlaps transfer and upload. That lifts 1080p to about 90 fps and full-width 4K ProRes to 25 fps (real time for 25p).
+- **4K.** ProRes 4K decode and scaling set the limit, not the transport. Further headroom belongs in P8 (GPU colour conversion, NV12 straight from D3D11VA), not in a different transport.
 
 ## Decision
 1. **Native `<video>`** through the Tauri asset protocol for clips WebView2 can play: H.264 8-bit 4:2:0 in MP4/MOV, HEVC 4:2:0, and VP8/VP9/AV1, all with AAC, MP3, Opus, Vorbis or FLAC audio. This is the zero-copy, hardware-decoded path, and it brings audio for free.
@@ -64,8 +69,8 @@ Measured in-process by `preview::tests::frame_transport_throughput` with `CLIPPR
 
 ## Consequences
 - **Backend.** `VideoDecoder::frame_near` decodes forward during playback (one seek per scrub, not per frame). `to_preview` produces RGB24 or I420 at any width. `PreviewCache` keeps three decoders open.
-- **Follow-ups (P6.1 and P8).**
-  - Decode-ahead on a worker so decode overlaps the transfer and upload. Throughput becomes the slowest stage instead of the sum of all stages.
+- **Decode-ahead (done).** A one-frame decode-ahead runs per open decoder. A playback request takes the prefetched frame when it is within one step of the target. Stills always decode the exact frame.
+- **Follow-ups (P8).**
   - swscale writing straight into the shared buffer, which saves one memcpy.
   - GPU NV12 output from D3D11VA without the CPU transfer.
 - **Audio.** Audio for frame-served clips comes with the P6.1 playback engine (cpal master clock). Until then, frame playback is silent and paced by the wall clock.

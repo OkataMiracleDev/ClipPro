@@ -36,7 +36,7 @@ function listen(wv: WebViewHost) {
   });
 }
 
-async function viaShared(wv: WebViewHost, media: number, us: number, width: number): Promise<FrameData> {
+async function viaShared(wv: WebViewHost, media: number, us: number, width: number, rate: number | null): Promise<FrameData> {
   listen(wv);
   const tag = ++tagSeq;
   const got = new Promise<ArrayBuffer>((resolve, reject) => {
@@ -45,7 +45,7 @@ async function viaShared(wv: WebViewHost, media: number, us: number, width: numb
       if (waiting.delete(tag)) reject(new Error("Frame timed out"));
     }, 5000);
   });
-  const r = await commands.previewShared(media, us, Math.round(width), tag);
+  const r = await commands.previewShared(media, us, Math.round(width), tag, rate);
   if (r.status === "error") {
     waiting.delete(tag);
     throw new Error(r.error);
@@ -54,8 +54,9 @@ async function viaShared(wv: WebViewHost, media: number, us: number, width: numb
   return { kind: "i420", buf, done: () => wv.releaseBuffer(buf) };
 }
 
-async function viaProtocol(media: number, us: number, width: number): Promise<FrameData> {
-  const r = await fetch(api.frameUrl(media, us, width).replace("/frame/", "/raw/"));
+async function viaProtocol(media: number, us: number, width: number, rate: number | null): Promise<FrameData> {
+  const url = api.frameUrl(media, us, width).replace("/frame/", "/raw/");
+  const r = await fetch(rate ? `${url}&play=${rate}` : url);
   if (!r.ok) throw new Error(await r.text());
   return { kind: "i420", buf: await r.arrayBuffer(), done: () => {} };
 }
@@ -68,17 +69,18 @@ async function viaImage(media: number, us: number, width: number): Promise<Frame
   return { kind: "image", img, done: () => {} };
 }
 
-/** The frame shown at `us`, at most `width` pixels wide. */
-export async function fetchFrame(media: number, us: number, width: number): Promise<FrameData> {
+/** The frame shown at `us`, at most `width` pixels wide. `rate` marks playback requests so the
+ * backend decodes the next frame ahead. */
+export async function fetchFrame(media: number, us: number, width: number, rate: number | null = null): Promise<FrameData> {
   if (!isTauri) return viaImage(media, us, width);
   const wv = webview();
   if (wv && sharedOk) {
     try {
-      return await viaShared(wv, media, us, width);
+      return await viaShared(wv, media, us, width, rate);
     } catch (e) {
       if (!String(e instanceof Error ? e.message : e).startsWith("SharedBuffer")) throw e;
       sharedOk = false; // older runtime: fall back for the rest of the session
     }
   }
-  return viaProtocol(media, us, width);
+  return viaProtocol(media, us, width, rate);
 }

@@ -29,7 +29,7 @@ export const commands = {
 	 *  Decodes the frame shown at `us` as raw I420 and posts it to the page through a WebView2
 	 *  SharedBuffer (`sharedbufferreceived`; `additionalData` is `{"media","us","tag"}`).
 	 */
-	previewShared: (media: number | null, us: number | null, width: number, tag: number) => typedError<null, string>(__TAURI_INVOKE("preview_shared", { media, us, width, tag })),
+	previewShared: (media: number | null, us: number | null, width: number, tag: number, rate: number | null) => typedError<null, string>(__TAURI_INVOKE("preview_shared", { media, us, width, tag, rate })),
 	/**  Inspector data for `sample` of `clip` with the current settings. */
 	inspectSample: (settings: Settings_Deserialize, clip: number | null, sample: number) => typedError<InspectResult_Serialize, string>(__TAURI_INVOKE("inspect_sample", { settings, clip, sample })),
 	/**  Clips to benchmark when started with `--bench-preview`, else `None`. */

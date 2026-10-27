@@ -475,19 +475,26 @@ async fn media_source(app: tauri::AppHandle, state: State<'_, AppState>, media: 
 /// SharedBuffer (`sharedbufferreceived`; `additionalData` is `{"media","us","tag"}`).
 #[tauri::command]
 #[specta::specta]
-async fn preview_shared(window: tauri::WebviewWindow, state: State<'_, AppState>, media: f64, us: f64, width: u32, tag: u32) -> Result<(), String> {
+async fn preview_shared(window: tauri::WebviewWindow, state: State<'_, AppState>, media: f64, us: f64, width: u32, tag: u32, rate: Option<f64>) -> Result<(), String> {
     let s = state.session()?;
     let app = window.app_handle().clone();
     let (m, t) = (media as i64, us as i64);
-    let data = blocking(move || app.state::<AppState>().preview.frame(&s, preview::FrameKind::Raw, m, t, width)).await?;
-    let meta = format!(r#"{{"media":{m},"us":{t},"tag":{tag}}}"#);
+    let rate = rate.filter(|r| r.is_finite() && *r != 0.0);
+    let s2 = s.clone();
+    let (pts, data) = blocking(move || app.state::<AppState>().preview.frame_at(&s2, preview::FrameKind::Raw, m, t, width, rate)).await?;
+    let meta = format!(r#"{{"media":{m},"us":{t},"pts":{pts},"tag":{tag}}}"#);
     #[cfg(windows)]
     {
-        shared::post(&window, data, meta)
+        let posted = shared::post(&window, data, meta);
+        if let (Some(rate), Ok(())) = (rate, &posted) {
+            let app = window.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().preview.prefetch(&s, preview::FrameKind::Raw, m, pts, width, rate));
+        }
+        posted
     }
     #[cfg(not(windows))]
     {
-        let _ = (data, meta);
+        let _ = (data, meta, s);
         Err("SharedBuffer needs WebView2".into())
     }
 }
@@ -506,8 +513,8 @@ fn frame_response(app: &tauri::AppHandle, req: &tauri::http::Request<Vec<u8>>) -
         preview::FrameKind::Jpeg => "image/jpeg",
         preview::FrameKind::Raw => "application/octet-stream",
     };
-    match state.preview.frame(&session, r.kind, r.media, r.us, r.width) {
-        Ok(jpeg) => Response::builder()
+    match state.preview.frame_at(&session, r.kind, r.media, r.us, r.width, r.rate) {
+        Ok((_, jpeg)) => Response::builder()
             .header(header::CONTENT_TYPE, mime)
             .header(header::CACHE_CONTROL, "no-store")
             .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
@@ -632,7 +639,16 @@ pub fn run(bench: Option<Bench>) {
         .invoke_handler(invoke)
         .register_asynchronous_uri_scheme_protocol("clippro", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
-            tauri::async_runtime::spawn_blocking(move || responder.respond(frame_response(&app, &request)));
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(frame_response(&app, &request));
+                // Playback: render the next frame while this one travels to the page.
+                if let Some(r) = preview::parse_frame_uri(request.uri().path(), request.uri().query()) {
+                    if let (Some(rate), Ok(s)) = (r.rate, app.state::<AppState>().session()) {
+                        let pts = r.us; // close enough: the ready frame is matched within one step
+                        app.state::<AppState>().preview.prefetch(&s, r.kind, r.media, pts, r.width, rate);
+                    }
+                }
+            });
         })
         .setup(move |app| {
             builder.mount_events(app);

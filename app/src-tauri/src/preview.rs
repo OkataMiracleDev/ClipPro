@@ -4,6 +4,9 @@
 //! - `/frame/{media}/{us}?w={max_width}`: JPEG, for `<img>` and the 2D canvas.
 //! - `/raw/{media}/{us}?w={max_width}`: I420 planes behind a 24-byte header, for WebGL (no
 //!   encode cost; see ADR-002 for the numbers).
+//!
+//! `&play={rate}` marks a playback request: after answering, the decoder renders the frame the
+//! next request will want (decode-ahead), so decoding overlaps the transfer and GPU upload.
 
 use clippro_core::Session;
 use clippro_media::video::{DecodeOptions, HwMode, PreviewFormat, VideoDecoder};
@@ -27,13 +30,29 @@ struct Entry {
     last_us: i64,
     /// (matrix, range) codes for raw frames; see `raw_header`.
     colour: (u8, u8),
-    dec: Arc<Mutex<VideoDecoder>>,
+    frame_us: f64,
+    slot: Arc<Mutex<Slot>>,
 }
 
+/// A decoder and the frame it rendered ahead of time.
+struct Slot {
+    dec: VideoDecoder,
+    ready: Option<Ready>,
+}
+
+struct Ready {
+    kind: FrameKind,
+    width: u32,
+    pts: i64,
+    bytes: Vec<u8>,
+}
+
+#[derive(Clone)]
 struct Open {
-    dec: Arc<Mutex<VideoDecoder>>,
+    slot: Arc<Mutex<Slot>>,
     last_us: i64,
     colour: (u8, u8),
+    frame_us: f64,
 }
 
 /// Matrix code (0 = BT.601, 1 = BT.709, 2 = BT.2020) and range code (0 = limited, 1 = full) of
@@ -76,43 +95,83 @@ impl PreviewCache {
         let mut open = lock(&self.open);
         if let Some(i) = open.iter().position(|e| e.media == media && e.path == path) {
             let e = open.remove(i);
-            let out = Open { dec: e.dec.clone(), last_us: e.last_us, colour: e.colour };
+            let out = Open { slot: e.slot.clone(), last_us: e.last_us, colour: e.colour, frame_us: e.frame_us };
             open.insert(0, e);
             return Ok(out);
         }
         let dec = VideoDecoder::open(&path, &info, &DecodeOptions { threads: 0, hw: HwMode::Auto }).map_err(|e| e.to_string())?;
-        let frame = info.video.as_ref().map_or(40_000.0, |v| v.fps.frame_duration_us());
-        let last_us = (info.duration_us as f64 - frame).max(0.0) as i64;
+        let frame_us = info.video.as_ref().map_or(40_000.0, |v| v.fps.frame_duration_us());
+        let last_us = (info.duration_us as f64 - frame_us).max(0.0) as i64;
         let colour = raw_colour(&info);
-        let dec = Arc::new(Mutex::new(dec));
-        open.insert(0, Entry { media, path, last_us, colour, dec: dec.clone() });
+        let slot = Arc::new(Mutex::new(Slot { dec, ready: None }));
+        let o = Open { slot: slot.clone(), last_us, colour, frame_us };
+        open.insert(0, Entry { media, path, last_us, colour, frame_us, slot });
         open.truncate(OPEN_DECODERS);
-        Ok(Open { dec, last_us, colour })
+        Ok(o)
     }
 
-    /// The frame shown at `us` (µs from the first video frame), at most `max_w` wide, as JPEG
-    /// or as raw I420 with a header.
-    pub fn frame(&self, session: &Session, kind: FrameKind, media: i64, us: i64, max_w: u32) -> Result<Vec<u8>, String> {
-        let o = self.decoder(session, media)?;
-        let mut dec = lock(&o.dec);
+    fn render(slot: &mut Slot, o: &Open, kind: FrameKind, us: i64, max_w: u32) -> Result<(i64, Vec<u8>), String> {
+        let dec = &mut slot.dec;
         let frame = dec.frame_near(us.clamp(0, o.last_us)).map_err(|e| e.to_string())?.ok_or("No frame at that time")?;
         let pts = dec.rel_pts_us(&frame);
-        let max_w = max_w.clamp(16, MAX_WIDTH);
-        match kind {
+        let bytes = match kind {
             FrameKind::Jpeg => {
                 let (w, h, rgb) = dec.to_rgb(&frame, max_w).map_err(|e| e.to_string())?;
                 let mut out = Vec::with_capacity(rgb.len() / 8);
                 encode_jpeg(&mut out, &rgb, w, h)?;
-                Ok(out)
+                out
             }
             FrameKind::Raw => {
                 let (w, h, planes) = dec.to_preview(&frame, max_w, PreviewFormat::I420).map_err(|e| e.to_string())?;
                 let mut out = Vec::with_capacity(RAW_HEADER + planes.len());
                 out.extend_from_slice(&raw_header(w, h, o.colour, pts));
                 out.extend_from_slice(&planes);
-                Ok(out)
+                out
+            }
+        };
+        Ok((pts, bytes))
+    }
+
+    /// Renders the frame a playback request at `rate` will ask for after `pts`, so it's ready
+    /// when the request arrives. Call after answering a playback request.
+    pub fn prefetch(&self, session: &Session, kind: FrameKind, media: i64, pts: i64, max_w: u32, rate: f64) {
+        let Ok(o) = self.decoder(session, media) else { return };
+        let mut slot = lock(&o.slot);
+        if slot.ready.is_some() {
+            return;
+        }
+        let next = pts + (o.frame_us * rate.clamp(-8.0, 8.0)).round() as i64;
+        if next < 0 || next > o.last_us {
+            return;
+        }
+        let max_w = max_w.clamp(16, MAX_WIDTH);
+        if let Ok((pts, bytes)) = Self::render(&mut slot, &o, kind, next, max_w) {
+            slot.ready = Some(Ready { kind, width: max_w, pts, bytes });
+        }
+    }
+
+    /// The frame shown at `us` (µs from the first video frame), at most `max_w` wide, as JPEG
+    /// or as raw I420 with a header, and its pts. `rate` is set for playback requests, which
+    /// may take the decoded-ahead frame when it is within one step of `us`.
+    pub fn frame_at(&self, session: &Session, kind: FrameKind, media: i64, us: i64, max_w: u32, rate: Option<f64>) -> Result<(i64, Vec<u8>), String> {
+        let o = self.decoder(session, media)?;
+        let mut slot = lock(&o.slot);
+        let max_w = max_w.clamp(16, MAX_WIDTH);
+        let target = us.clamp(0, o.last_us);
+        if let Some(r) = slot.ready.take() {
+            let tol = match rate {
+                Some(r) => o.frame_us * r.abs().max(1.0),
+                None => o.frame_us / 2.0,
+            };
+            if r.kind == kind && r.width == max_w && ((r.pts - target).abs() as f64) <= tol {
+                return Ok((r.pts, r.bytes));
             }
         }
+        Self::render(&mut slot, &o, kind, target, max_w)
+    }
+
+    pub fn frame(&self, session: &Session, kind: FrameKind, media: i64, us: i64, max_w: u32) -> Result<Vec<u8>, String> {
+        self.frame_at(session, kind, media, us, max_w, None).map(|(_, b)| b)
     }
 
     pub fn frame_jpeg(&self, session: &Session, media: i64, us: i64, max_w: u32) -> Result<Vec<u8>, String> {
@@ -154,6 +213,8 @@ pub struct FrameRequest {
     pub media: i64,
     pub us: i64,
     pub width: u32,
+    /// Playback rate for playback requests (decode-ahead), `None` for stills.
+    pub rate: Option<f64>,
 }
 
 pub fn parse_frame_uri(path: &str, query: Option<&str>) -> Option<FrameRequest> {
@@ -168,12 +229,10 @@ pub fn parse_frame_uri(path: &str, query: Option<&str>) -> Option<FrameRequest> 
     if parts.next().is_some() {
         return None;
     }
-    let width = query
-        .into_iter()
-        .flat_map(|q| q.split('&'))
-        .find_map(|kv| kv.strip_prefix("w=")?.parse().ok())
-        .unwrap_or(DEFAULT_WIDTH);
-    Some(FrameRequest { kind, media, us, width })
+    let param = |k: &str| query.into_iter().flat_map(|q| q.split('&')).find_map(|kv| kv.strip_prefix(k)?.strip_prefix('=').map(str::to_owned));
+    let width = param("w").and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_WIDTH);
+    let rate = param("play").and_then(|v| v.parse::<f64>().ok()).filter(|r| r.is_finite() && *r != 0.0);
+    Some(FrameRequest { kind, media, us, width, rate })
 }
 
 /// How the viewer should show a clip.
@@ -227,9 +286,11 @@ mod tests {
 
     #[test]
     fn frame_uris() {
-        assert_eq!(parse_frame_uri("/frame/3/1500000", Some("w=640")), Some(FrameRequest { kind: FrameKind::Jpeg, media: 3, us: 1_500_000, width: 640 }));
-        assert_eq!(parse_frame_uri("frame/3/0", None), Some(FrameRequest { kind: FrameKind::Jpeg, media: 3, us: 0, width: DEFAULT_WIDTH }));
+        assert_eq!(parse_frame_uri("/frame/3/1500000", Some("w=640")), Some(FrameRequest { kind: FrameKind::Jpeg, media: 3, us: 1_500_000, width: 640, rate: None }));
+        assert_eq!(parse_frame_uri("frame/3/0", None), Some(FrameRequest { kind: FrameKind::Jpeg, media: 3, us: 0, width: DEFAULT_WIDTH, rate: None }));
         assert_eq!(parse_frame_uri("/raw/3/0", None).map(|r| r.kind), Some(FrameKind::Raw));
+        assert_eq!(parse_frame_uri("/raw/3/0", Some("w=640&play=-2")).and_then(|r| r.rate), Some(-2.0));
+        assert_eq!(parse_frame_uri("/raw/3/0", Some("play=0")).and_then(|r| r.rate), None);
         assert_eq!(parse_frame_uri("/frame/3/0", Some("t=1&w=320")).map(|r| r.width), Some(320));
         assert_eq!(parse_frame_uri("/frame/x/0", None), None);
         assert_eq!(parse_frame_uri("/frame/3/0/extra", None), None);
@@ -273,6 +334,20 @@ mod tests {
         assert_eq!(raw.len(), RAW_HEADER + w * h * 3 / 2);
         let pts = i64::from_le_bytes(raw[16..24].try_into().unwrap());
         assert!((pts - 1_000_000).abs() <= 21_000, "pts {pts}");
+
+        // Decode-ahead: a playback request is answered from the prefetched frame.
+        let frame_us = info.video.as_ref().unwrap().fps.frame_duration_us() as i64;
+        let (p0, _) = cache.frame_at(&s, FrameKind::Raw, media, 1_200_000, 640, Some(1.0)).unwrap();
+        cache.prefetch(&s, FrameKind::Raw, media, p0, 640, 1.0);
+        let t = std::time::Instant::now();
+        let (p1, b1) = cache.frame_at(&s, FrameKind::Raw, media, p0 + frame_us, 640, Some(1.0)).unwrap();
+        assert!(t.elapsed().as_micros() < 2_000, "prefetched frame is immediate ({:?})", t.elapsed());
+        assert_eq!(p1, p0 + frame_us);
+        assert_eq!(i64::from_le_bytes(b1[16..24].try_into().unwrap()), p1);
+        // A still request far from the prefetched frame decodes the right one.
+        cache.prefetch(&s, FrameKind::Raw, media, p1, 640, 1.0);
+        let (p2, _) = cache.frame_at(&s, FrameKind::Raw, media, 500_000, 640, None).unwrap();
+        assert!((p2 - 500_000).abs() <= frame_us / 2 + 1);
         drop(cache);
         s.close().unwrap();
         std::fs::remove_dir_all(&tmp).unwrap();

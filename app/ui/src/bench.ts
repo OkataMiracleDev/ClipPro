@@ -95,14 +95,19 @@ async function run(clips: BenchClip[]): Promise<Row[]> {
       return blob.size;
     },
     "raw I420 webgl": async (media, us, w) => upload(await (await fetch(rawUrl(media, us, w))).arrayBuffer()),
-    "shared I420 webgl": async (media, us, w) => {
+    "shared I420 webgl": async (media, us, w) => shared(media, us, w, null),
+    "shared + decode-ahead": async (media, us, w) => shared(media, us, w, 1),
+  };
+
+  async function shared(media: number, us: number, w: number, rate: number | null) {
+    {
       const tag = ++tagSeq;
       const got = new Promise<number>((r) => waiting.set(tag, r));
-      const res = await commands.previewShared(media, us, w, tag);
+      const res = await commands.previewShared(media, us, w, tag, rate);
       if (res.status === "error") throw new Error(res.error);
       return got;
-    },
-  };
+    }
+  }
 
   const rows: Row[] = [];
   for (const raw of clips) {
