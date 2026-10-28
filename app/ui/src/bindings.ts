@@ -49,6 +49,13 @@ export const commands = {
 	settingsGet: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_get")),
 	watchFoldersGet: () => typedError<WatchFolderDto[], string>(__TAURI_INVOKE("watch_folders_get")),
 	snapshotsList: () => typedError<Snapshot[], string>(__TAURI_INVOKE("snapshots_list")),
+	overridesList: () => typedError<OverrideDto[], string>(__TAURI_INVOKE("overrides_list")),
+	/**  Adds a manual override (force in/out, trim, manual segment); rescore afterwards. */
+	overrideAdd: (clip: number | null, kind: string, startUs: number | null, endUs: number | null) => typedError<number | null, string>(__TAURI_INVOKE("override_add", { clip, kind, startUs, endUs })),
+	overrideRemove: (id: number | null) => typedError<null, string>(__TAURI_INVOKE("override_remove", { id })),
+	annotationsList: () => typedError<AnnotationDto_Serialize[], string>(__TAURI_INVOKE("annotations_list")),
+	/**  Sets (or clears, when empty) the rating, colour label and note of a select. */
+	annotationSet: (a: AnnotationDto_Deserialize) => typedError<null, string>(__TAURI_INVOKE("annotation_set", { a })),
 	snapshotSave: (name: string, json: string) => typedError<null, string>(__TAURI_INVOKE("snapshot_save", { name, json })),
 	snapshotDelete: (id: number | null) => typedError<null, string>(__TAURI_INVOKE("snapshot_delete", { id })),
 	/**  Saves the tuning in effect, restored when the project is reopened. */
@@ -115,6 +122,28 @@ export type AnalysisEvent_Serialize = {
 	done: number | null,
 	total: number | null,
 	error: string | null,
+};
+
+export type AnnotationDto = AnnotationDto_Serialize | AnnotationDto_Deserialize;
+
+export type AnnotationDto_Deserialize = {
+	clip: number | null,
+	start_us: number | null,
+	end_us: number | null,
+	rating: number,
+	/**  A marker colour name (red, orange, yellow, green, cyan, blue, purple, magenta, white). */
+	label?: string | null,
+	note: string,
+};
+
+export type AnnotationDto_Serialize = {
+	clip: number | null,
+	start_us: number | null,
+	end_us: number | null,
+	rating: number,
+	/**  A marker colour name (red, orange, yellow, green, cyan, blue, purple, magenta, white). */
+	label: string | null,
+	note: string,
 };
 
 export type AppSettings = AppSettings_Serialize | AppSettings_Deserialize;
@@ -421,6 +450,15 @@ export type MediaSource_Serialize = {
 	start_us: number | null,
 	codec: string,
 	has_audio: boolean,
+};
+
+export type OverrideDto = {
+	id: number | null,
+	clip: number | null,
+	/**  force_in | force_out | trim | manual */
+	kind: string,
+	start_us: number | null,
+	end_us: number | null,
 };
 
 export type PresetInfo = {

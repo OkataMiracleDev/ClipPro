@@ -113,6 +113,23 @@ export interface Inspection {
   working: { w: number; h: number };
 }
 
+export interface OverrideInfo {
+  id: number;
+  clip: number;
+  kind: "force_in" | "force_out" | "trim" | "manual";
+  startUs: number;
+  endUs: number;
+}
+
+export interface Annotation {
+  clip: number;
+  startUs: number;
+  endUs: number;
+  rating: number;
+  label: string | null;
+  note: string;
+}
+
 export interface WatchFolder {
   path: string;
   subfolders: boolean;
@@ -173,6 +190,12 @@ export interface Backend {
   snapshotDelete(id: number): Promise<void>;
   tuningSave(json: string): Promise<void>;
   tuningLoad(): Promise<string | null>;
+  /** Manual overrides and annotations (P9.7). */
+  overridesList(): Promise<OverrideInfo[]>;
+  overrideAdd(clip: number, kind: OverrideInfo["kind"], startUs: number, endUs: number): Promise<number>;
+  overrideRemove(id: number): Promise<void>;
+  annotationsList(): Promise<Annotation[]>;
+  annotationSet(a: Annotation): Promise<void>;
   watchFoldersSet(folders: WatchFolder[]): Promise<void>;
   onMediaAdded(cb: (e: { added: number; names: string[] }) => void): Promise<() => void>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
@@ -337,6 +360,13 @@ const tauriBackend: Backend = {
   snapshotDelete: async (id) => void unwrap(await commands.snapshotDelete(id)),
   tuningSave: async (json) => void unwrap(await commands.tuningSave(json)),
   tuningLoad: async () => unwrap(await commands.tuningLoad()) ?? null,
+  overridesList: async () =>
+    unwrap(await commands.overridesList()).map((o) => ({ id: n(o.id), clip: n(o.clip), kind: o.kind as OverrideInfo["kind"], startUs: n(o.start_us), endUs: n(o.end_us) })),
+  overrideAdd: async (clip, kind, startUs, endUs) => n(unwrap(await commands.overrideAdd(clip, kind, startUs, endUs))),
+  overrideRemove: async (id) => void unwrap(await commands.overrideRemove(id)),
+  annotationsList: async () =>
+    unwrap(await commands.annotationsList()).map((a) => ({ clip: n(a.clip), startUs: n(a.start_us), endUs: n(a.end_us), rating: a.rating, label: a.label ?? null, note: a.note })),
+  annotationSet: async (a) => void unwrap(await commands.annotationSet({ clip: a.clip, start_us: a.startUs, end_us: a.endUs, rating: a.rating, label: a.label, note: a.note })),
   watchFoldersSet: async (folders) => void unwrap(await commands.watchFoldersSet(folders)),
   onMediaAdded: async (cb) => events.mediaAdded.listen((e) => cb(e.payload)),
   systemInfo: async () => {

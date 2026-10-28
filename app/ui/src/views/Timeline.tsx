@@ -8,6 +8,7 @@ import { IconButton } from "../components/ui";
 import { cssVar, scoreRamp, setupCanvas, useSize } from "../lib/canvas";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
+import { LABELS } from "./SelectEditor";
 
 const RULER = 18;
 const NAME = 16;
@@ -38,8 +39,10 @@ interface Block {
   selectIndex: number | null;
 }
 
+const LABEL_COLOURS: Record<string, string> = Object.fromEntries(LABELS.map((l) => [l.name, l.colour]));
+
 export function Timeline() {
-  const { clips, scored, selectsOnly, selectedClip, selectedSelect, playheadUs, setPlayhead, selectSelect } = useApp();
+  const { clips, scored, selectsOnly, selectedClip, selectedSelect, playheadUs, setPlayhead, selectSelect, overrides, annotations, marks } = useApp();
   const [wrap, size] = useSize<HTMLDivElement>();
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [pxPerSec, setPxPerSec] = useState<number | null>(null);
@@ -168,7 +171,44 @@ export function Timeline() {
           for (const s of sc.segments) {
             const sx0 = xOf(b, i, s.startUs);
             const sx1 = xOf(b, i, s.endUs);
+            // Forced and hand-edited selects are dashed (SPEC TML-1 segment styles).
+            ctx.setLineDash(s.kind === "auto" ? [] : [4, 3]);
             ctx.strokeRect(sx0 + 0.75, barTop + 0.75, Math.max(1, sx1 - sx0 - 1.5), BAR - 1.5);
+            const ann = annotations.find((a) => a.clip === b.clip && Math.min(a.endUs, s.endUs) - Math.max(a.startUs, s.startUs) > 0);
+            if (ann?.label) {
+              ctx.fillStyle = LABEL_COLOURS[ann.label] ?? accent;
+              ctx.beginPath();
+              ctx.arc(sx0 + 5, barTop + 5, 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+          ctx.setLineDash([]);
+          // Forced-out ranges: hatched.
+          ctx.strokeStyle = "rgba(255,69,58,0.75)";
+          ctx.lineWidth = 1;
+          for (const o of overrides) {
+            if (o.clip !== b.clip || o.kind !== "force_out") continue;
+            const ox0 = xOf(b, i, Math.max(o.startUs, b.src0));
+            const ox1 = xOf(b, i, Math.min(o.endUs, b.src1));
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(ox0, barTop, Math.max(1, ox1 - ox0), BAR);
+            ctx.clip();
+            for (let hx = ox0 - BAR; hx < ox1; hx += 5) {
+              ctx.beginPath();
+              ctx.moveTo(hx, barTop + BAR);
+              ctx.lineTo(hx + BAR, barTop);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+        }
+        // In/out marks for a manual select.
+        if (marks && marks.clip === b.clip) {
+          ctx.fillStyle = "#ffd60a";
+          for (const m of [marks.inUs, marks.outUs]) {
+            if (m === null || m < b.src0 || m > b.src1) continue;
+            ctx.fillRect(Math.round(xOf(b, i, m)), barTop, 2, BAR);
           }
         }
       }

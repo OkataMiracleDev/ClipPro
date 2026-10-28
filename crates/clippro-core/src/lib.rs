@@ -1,6 +1,7 @@
 //! Application core shared by the CLI and the desktop app: project sessions, import,
 //! analysis orchestration and scoring.
 
+pub mod annotate;
 pub mod import;
 pub mod inspect;
 pub mod report;

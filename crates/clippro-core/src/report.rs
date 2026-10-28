@@ -42,6 +42,10 @@ pub struct ReportRow {
     pub flags: Vec<String>,
     /// `data:image/webp;base64,…`, empty when the frame couldn't be decoded.
     pub thumb: String,
+    /// User annotations (P9.7).
+    pub rating: u8,
+    pub label: Option<String>,
+    pub note: String,
 }
 
 #[derive(Clone, Debug)]
@@ -90,6 +94,7 @@ impl Session {
     pub fn report_data(&self, settings: &Settings, sort: SortOrder, opts: &ReportOptions) -> Result<ReportData> {
         let sel = self.score(settings)?;
         let refs = sel.sorted(sort);
+        let annotations = self.annotations()?;
         let inputs = self.clip_inputs()?;
         // Clip id → (name, original path, probe, media id).
         let mut meta: HashMap<ClipId, (String, String, MediaInfo, i64)> = HashMap::new();
@@ -133,6 +138,9 @@ impl Session {
                 best,
                 flags,
                 thumb: String::new(),
+                rating: crate::annotate::best_match(&annotations, r.clip, r.segment.start_us, r.segment.end_us).map_or(0, |a| a.rating),
+                label: crate::annotate::best_match(&annotations, r.clip, r.segment.start_us, r.segment.end_us).and_then(|a| a.label.clone()),
+                note: crate::annotate::best_match(&annotations, r.clip, r.segment.start_us, r.segment.end_us).map(|a| a.note.clone()).unwrap_or_default(),
             });
         }
         for (clip, mut at) in thumbs_at {
@@ -266,6 +274,15 @@ document.querySelectorAll("table[data-sortable]").forEach(function(t){
 });
 "#;
 
+/// Stars plus a colour dot for a label.
+fn stars(rating: u8, label: Option<&str>) -> String {
+    let mut out = "★".repeat(rating.min(5) as usize);
+    if let Some(l) = label.and_then(clippro_interchange::MarkerColor::parse) {
+        let _ = write!(out, r#" <span style="color:{}" title="{}">●</span>"#, l.name(), l.name());
+    }
+    out
+}
+
 fn score_chip(v: f32) -> String {
     if !v.is_finite() {
         return "—".into();
@@ -297,12 +314,12 @@ fn summary(d: &ReportData) -> String {
 pub fn render_html(d: &ReportData) -> String {
     let mut h = head(&d.title, "");
     h.push_str(&summary(d));
-    h.push_str(r#"<h2>Selects</h2><div class="wrap"><table data-sortable><thead><tr><th>#</th><th>Frame</th><th>Clip</th><th>In</th><th>Out</th><th>Length</th><th>Score</th><th>Best</th><th>Flags</th></tr></thead><tbody>"#);
+    h.push_str(r#"<h2>Selects</h2><div class="wrap"><table data-sortable><thead><tr><th>#</th><th>Frame</th><th>Clip</th><th>In</th><th>Out</th><th>Length</th><th>Score</th><th>Best</th><th>Rating</th><th>Flags</th><th>Note</th></tr></thead><tbody>"#);
     for r in &d.rows {
         let img = if r.thumb.is_empty() { String::new() } else { format!(r#"<img class="th" alt="" src="{}">"#, r.thumb) };
         let _ = write!(
             h,
-            r#"<tr><td class="num">{}</td><td>{img}</td><td>{}<div class="path" title="{p}">{p}</div></td><td class="mono">{}</td><td class="mono">{}</td><td class="num" data-v="{:.3}">{}</td><td data-v="{:.4}">{}</td><td data-v="{:.4}">{}</td><td class="flags">{}</td></tr>"#,
+            r#"<tr><td class="num">{}</td><td>{img}</td><td>{}<div class="path" title="{p}">{p}</div></td><td class="mono">{}</td><td class="mono">{}</td><td class="num" data-v="{:.3}">{}</td><td data-v="{:.4}">{}</td><td data-v="{:.4}">{}</td><td data-v="{}">{}</td><td class="flags">{}</td><td class="flags">{}</td></tr>"#,
             r.index,
             esc(&r.clip),
             r.tc_in,
@@ -313,7 +330,10 @@ pub fn render_html(d: &ReportData) -> String {
             score_chip(r.mean),
             if r.best.is_finite() { r.best } else { -1.0 },
             score_chip(r.best),
+            r.rating,
+            stars(r.rating, r.label.as_deref()),
             esc(&r.flags.join(", ")),
+            esc(&r.note),
             p = esc(&r.path),
         );
     }
@@ -359,11 +379,12 @@ pub fn render_contact_sheet(d: &ReportData) -> String {
         let img = if r.thumb.is_empty() { r#"<div class="ph"></div>"#.to_string() } else { format!(r#"<img alt="" src="{}">"#, r.thumb) };
         let _ = write!(
             h,
-            r#"<div class="card">{img}<div class="t"><div class="n">{}. {}</div><div class="r"><span>{} – {}</span>{}</div></div></div>"#,
+            r#"<div class="card">{img}<div class="t"><div class="n">{}. {}</div><div class="r"><span>{} – {}</span><span>{} {}</span></div></div></div>"#,
             r.index,
             esc(&r.clip),
             r.tc_in,
             r.tc_out,
+            stars(r.rating, r.label.as_deref()),
             score_chip(r.mean),
         );
     }

@@ -10,6 +10,7 @@ import { FLAGS } from "../lib/domain";
 import { useInspection } from "../lib/inspect";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
+import { SelectEditor } from "./SelectEditor";
 
 const pct = (v: number) => (Number.isFinite(v) ? `${Math.round(v * 100)}` : "—");
 const mult = (v: number) => (Number.isFinite(v) ? `×${v.toFixed(2)}` : "—");
@@ -127,6 +128,10 @@ export function FramePanel() {
         <span className="font-mono tabular">{formatClock(data.timeUs)}</span>
       </div>
       <Verdict d={data} />
+      <section className="flex flex-col gap-2">
+        <h3 className="section-header">Select</h3>
+        <SelectEditor />
+      </section>
       <Chain d={data} />
       <section className="flex flex-col gap-2">
         <h3 className="section-header">Groups</h3>

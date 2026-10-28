@@ -404,6 +404,28 @@ impl Db {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// Annotation rows (kind `annotation`): (id, clip, start, end, data_json).
+    pub fn annotations(&self) -> Result<Vec<(i64, ClipId, i64, i64, String)>> {
+        let mut st = self.conn.prepare("SELECT id, clip_id, start_us, end_us, data_json FROM override WHERE kind = 'annotation' ORDER BY id")?;
+        let rows = st
+            .query_map([], |r| Ok((r.get(0)?, ClipId(r.get(1)?), r.get(2)?, r.get(3)?, r.get(4)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn put_annotation(&self, id: Option<i64>, clip: ClipId, start_us: i64, end_us: i64, data_json: &str) -> Result<i64> {
+        match id {
+            Some(id) => {
+                self.conn.execute("UPDATE override SET start_us = ?1, end_us = ?2, data_json = ?3 WHERE id = ?4 AND kind = 'annotation'", params![start_us, end_us, data_json, id])?;
+                Ok(id)
+            }
+            None => {
+                self.conn.execute("INSERT INTO override(clip_id, kind, start_us, end_us, data_json) VALUES (?1, 'annotation', ?2, ?3, ?4)", params![clip.0, start_us, end_us, data_json])?;
+                Ok(self.conn.last_insert_rowid())
+            }
+        }
+    }
+
     pub fn remove_override(&self, id: i64) -> Result<()> {
         self.conn.execute("DELETE FROM override WHERE id = ?1", params![id])?;
         Ok(())

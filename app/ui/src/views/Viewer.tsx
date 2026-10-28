@@ -123,6 +123,11 @@ export function Viewer() {
         toggleLoop();
         return;
       }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "i") {
+        e.preventDefault();
+        setRightTab(useApp.getState().rightTab === "frame" ? "tuning" : "frame");
+        return;
+      }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const { playheadUs: at, playing: p, rate: r } = useApp.getState();
       if (e.key === " ") {
@@ -150,7 +155,7 @@ export function Viewer() {
         toggleOverlay("peaking");
       } else if (e.key === "t" || e.key === "T") {
         toggleMeasureOverlay("tiles");
-      } else if (e.key === "m" || e.key === "M") {
+      } else if (e.key === "v" || e.key === "V") {
         toggleMeasureOverlay("motion");
       } else if (e.key === "Escape" && useApp.getState().compare) {
         useApp.getState().setCompare(null);
@@ -160,7 +165,17 @@ export function Viewer() {
         const st = useApp.getState();
         st.setSplit(st.split === null ? 0.5 : null);
       } else if (e.key === "i" || e.key === "I") {
-        setRightTab(useApp.getState().rightTab === "frame" ? "tuning" : "frame");
+        useApp.getState().setMark("in");
+      } else if (e.key === "o" || e.key === "O") {
+        useApp.getState().setMark("out");
+      } else if (e.key === "f" || e.key === "F") {
+        void useApp.getState().toggleForce();
+      } else if (e.key === "[") {
+        void useApp.getState().trimSelect("start");
+      } else if (e.key === "]") {
+        void useApp.getState().trimSelect("end");
+      } else if (e.key === "m" || e.key === "M") {
+        void useApp.getState().addManualSegment();
       } else if (e.key === "Home") {
         seek(0);
       } else if (e.key === "End") {
@@ -349,7 +364,7 @@ function SplitHandle({ split }: { split: number }) {
 
 const MEASURE_OVERLAYS: { value: MeasureOverlayKind; label: string; key: string }[] = [
   { value: "tiles", label: "Focus map", key: "T" },
-  { value: "motion", label: "Motion", key: "M" },
+  { value: "motion", label: "Motion", key: "V" },
 ];
 
 function OverlayBar({ value, onToggle, measure, onMeasure, scope }: { value: Overlay; onToggle: (o: Overlay) => void; measure: MeasureOverlayKind; onMeasure: (o: MeasureOverlayKind) => void; scope: boolean }) {

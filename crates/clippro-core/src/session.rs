@@ -486,7 +486,8 @@ impl Session {
                 "force_in" => OverrideKind::ForceIn,
                 "force_out" => OverrideKind::ForceOut,
                 "trim" => OverrideKind::Trim,
-                _ => OverrideKind::ManualSegment,
+                "manual" | "manual_segment" => OverrideKind::ManualSegment,
+                _ => continue, // annotations and future kinds don't change scoring
             };
             map.entry(o.clip_id).or_default().push(Override { kind, start_us: o.start_us, end_us: o.end_us });
         }
@@ -508,6 +509,7 @@ impl Session {
     /// the original media, even when a proxy was analysed.
     pub fn export_timeline(&self, settings: &Settings, sort: SortOrder, opts: &ExportOptions) -> Result<Timeline> {
         let sel = self.score(settings)?;
+        let annotations = self.annotations()?;
         let refs = sel.sorted(sort);
         let db = lock(&self.db);
         let mut media: Vec<MediaRef> = Vec::new();
@@ -543,6 +545,7 @@ impl Session {
                         .collect()
                 })
                 .unwrap_or_default();
+            let ann = crate::annotate::best_match(&annotations, r.clip, r.segment.start_us, r.segment.end_us);
             selects.push(SelectInput {
                 media: mi,
                 start_us: r.segment.start_us,
@@ -551,6 +554,9 @@ impl Session {
                 out_us: r.segment.out_us,
                 score: r.segment.mean,
                 flags,
+                rating: ann.map_or(0, |a| a.rating),
+                label: ann.and_then(|a| a.label.as_deref().and_then(clippro_interchange::MarkerColor::parse)),
+                note: ann.map(|a| a.note.clone()).unwrap_or_default(),
             });
         }
         Ok(clippro_interchange::build(media, &selects, opts))

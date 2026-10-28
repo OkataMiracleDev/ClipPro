@@ -175,7 +175,7 @@ export function App() {
                   onChange={setRightTab}
                   options={[
                     { value: "tuning", label: "Tuning" },
-                    { value: "frame", label: "Frame", title: "Frame inspector (I)" },
+                    { value: "frame", label: "Frame", title: "Frame inspector (Ctrl+I)" },
                   ]}
                 />
               </div>

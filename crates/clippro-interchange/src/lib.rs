@@ -9,7 +9,7 @@ pub mod report;
 pub mod validate;
 pub mod xml;
 
-pub use model::{build, ExportOptions, Layout, MediaRef, SelectInput, Timeline};
+pub use model::{build, ExportOptions, Layout, MarkerColor, MediaRef, SelectInput, Timeline};
 
 /// Export formats (SPEC EXP-1..8).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

@@ -43,6 +43,22 @@ pub enum MarkerColor {
 }
 
 impl MarkerColor {
+    pub const ALL: [MarkerColor; 9] = [
+        MarkerColor::Red,
+        MarkerColor::Orange,
+        MarkerColor::Yellow,
+        MarkerColor::Green,
+        MarkerColor::Cyan,
+        MarkerColor::Blue,
+        MarkerColor::Purple,
+        MarkerColor::Magenta,
+        MarkerColor::White,
+    ];
+
+    pub fn parse(s: &str) -> Option<MarkerColor> {
+        MarkerColor::ALL.into_iter().find(|c| c.name().eq_ignore_ascii_case(s.trim()))
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             MarkerColor::Red => "red",
@@ -178,7 +194,8 @@ pub struct ExportOptions {
     /// Gap between selects, seconds.
     pub gap_s: f64,
     pub with_audio: bool,
-    /// Marker name and comment templates; tokens: {clip} {index} {score} {flags} {duration} {tc_in} {tc_out}.
+    /// Marker name and comment templates; tokens: {clip} {index} {score} {flags} {duration} {tc_in}
+    /// {tc_out} {rating} {label} {note}. A colour label sets the marker colour.
     pub marker_name: String,
     pub marker_comment: String,
     pub markers: bool,
@@ -212,6 +229,10 @@ pub struct SelectInput {
     pub out_us: i64,
     pub score: f32,
     pub flags: Vec<String>,
+    /// User annotations (SPEC TUN-11): 0–5 stars, a colour label, a note.
+    pub rating: u8,
+    pub label: Option<MarkerColor>,
+    pub note: String,
 }
 
 pub fn score_color(score: f32) -> MarkerColor {
@@ -233,6 +254,9 @@ fn fill(tpl: &str, clip: &str, index: usize, s: &SelectInput, m: &MediaRef, from
         .replace("{duration}", &format!("{:.1}s", (s.end_us - s.start_us) as f64 / 1e6))
         .replace("{tc_in}", &tc(from))
         .replace("{tc_out}", &tc(to))
+        .replace("{rating}", &"★".repeat(s.rating.min(5) as usize))
+        .replace("{label}", s.label.map(MarkerColor::name).unwrap_or(""))
+        .replace("{note}", &s.note)
 }
 
 /// Builds a timeline from selects (already in the desired order).
@@ -263,7 +287,7 @@ pub fn build(media: Vec<MediaRef>, selects: &[SelectInput], opts: &ExportOptions
                 duration: core_len.max(1),
                 name: fill(&opts.marker_name, &m.name, i, s, m, src_in, src_out),
                 comment: fill(&opts.marker_comment, &m.name, i, s, m, src_in, src_out),
-                color: score_color(s.score),
+                color: s.label.unwrap_or_else(|| score_color(s.score)),
             }]
         } else {
             Vec::new()
@@ -364,9 +388,9 @@ pub(crate) mod tests {
 
     pub fn selects() -> Vec<SelectInput> {
         vec![
-            SelectInput { media: 0, start_us: 1_000_000, end_us: 4_000_000, in_us: 250_000, out_us: 4_750_000, score: 0.82, flags: vec![] },
-            SelectInput { media: 0, start_us: 6_000_000, end_us: 8_000_000, in_us: 5_250_000, out_us: 8_750_000, score: 0.61, flags: vec!["Shaky".into()] },
-            SelectInput { media: 1, start_us: 0, end_us: 5_000_000, in_us: 0, out_us: 5_750_000, score: 0.9, flags: vec![] },
+            SelectInput { media: 0, start_us: 1_000_000, end_us: 4_000_000, in_us: 250_000, out_us: 4_750_000, score: 0.82, flags: vec![], rating: 0, label: None, note: String::new() },
+            SelectInput { media: 0, start_us: 6_000_000, end_us: 8_000_000, in_us: 5_250_000, out_us: 8_750_000, score: 0.61, flags: vec!["Shaky".into()], rating: 4, label: Some(MarkerColor::Blue), note: "Great reaction".into() },
+            SelectInput { media: 1, start_us: 0, end_us: 5_000_000, in_us: 0, out_us: 5_750_000, score: 0.9, flags: vec![], rating: 0, label: None, note: String::new() },
         ]
     }
 
@@ -385,6 +409,18 @@ pub(crate) mod tests {
         assert_eq!(c.markers[0].color, MarkerColor::Green);
         assert_eq!(t.duration(), 113 + 25 + 88 + 25 + 144);
         assert_eq!(t.start_tc_frames, 90_000);
+    }
+
+    #[test]
+    fn annotation_tokens_and_label_colour() {
+        let opts = ExportOptions { marker_name: "{rating} {label}".into(), marker_comment: "{note}".into(), ..ExportOptions::default() };
+        let t = build(media(2), &selects(), &opts);
+        let clips: Vec<&ClipItem> = t.video[0].items.iter().filter_map(|i| if let Item::Clip(c) = i { Some(c) } else { None }).collect();
+        assert_eq!(clips[1].markers[0].name, "★★★★ blue");
+        assert_eq!(clips[1].markers[0].comment, "Great reaction");
+        assert_eq!(clips[1].markers[0].color, MarkerColor::Blue, "a colour label wins over the score colour");
+        assert_eq!(clips[0].markers[0].name.trim(), "");
+        assert_eq!(MarkerColor::parse(" Purple "), Some(MarkerColor::Purple));
     }
 
     #[test]

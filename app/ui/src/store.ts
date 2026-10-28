@@ -26,6 +26,10 @@ interface AppState {
   snapshots: { id: number; name: string; json: string; created: string }[];
   /** A/B compare of tunings: the other side, and which side is showing. */
   ab: { other: TuningDoc; showing: "a" | "b" } | null;
+  overrides: import("./api").OverrideInfo[];
+  annotations: import("./api").Annotation[];
+  /** In/out marks for a manual segment (I / O). */
+  marks: { clip: number; inUs: number | null; outUs: number | null } | null;
   scored: Scored | null;
   scoring: boolean;
   sort: SortOrder;
@@ -81,6 +85,16 @@ interface AppState {
   deleteSnapshot(id: number): Promise<void>;
   /** First press keeps the current tuning as A and carries on editing B; later presses swap. */
   toggleAB(): void;
+  refreshOverrides(): Promise<void>;
+  /** F: toggles a force-out on the select under the playhead, or force-in around it. */
+  toggleForce(): Promise<void>;
+  /** [ / ]: trims the select under the playhead so it starts / ends here. */
+  trimSelect(side: "start" | "end"): Promise<void>;
+  setMark(which: "in" | "out"): void;
+  /** M: adds a manual segment between the in and out marks. */
+  addManualSegment(): Promise<void>;
+  removeOverride(id: number): Promise<void>;
+  setAnnotation(a: import("./api").Annotation): Promise<void>;
   endAB(): void;
   updateSettings(fn: (s: Settings) => Settings): void;
   rescore(immediate?: boolean): void;
@@ -168,6 +182,9 @@ export const useApp = create<AppState>((set, get) => ({
   canRedo: false,
   snapshots: [],
   ab: null,
+  overrides: [],
+  annotations: [],
+  marks: null,
   modified: false,
   scored: null,
   scoring: false,
@@ -237,6 +254,8 @@ export const useApp = create<AppState>((set, get) => ({
       history.clear();
       set(undoFlags());
       void get().refreshSnapshots();
+      void get().refreshOverrides();
+      set({ marks: null });
       await get().refreshClips();
       get().rescore(true);
       await get().startAnalysis();
@@ -406,6 +425,96 @@ export const useApp = create<AppState>((set, get) => ({
 
   endAB() {
     set({ ab: null });
+  },
+
+  async refreshOverrides() {
+    if (!get().project) return set({ overrides: [], annotations: [] });
+    try {
+      const [overrides, annotations] = await Promise.all([api.overridesList(), api.annotationsList()]);
+      set({ overrides, annotations });
+    } catch {
+      /* keep what we have */
+    }
+  },
+
+  async toggleForce() {
+    const s = get();
+    if (s.selectedClip === null || !s.scored) return;
+    const clip = s.selectedClip;
+    const at = s.playheadUs;
+    const hit = s.overrides.find((o) => o.clip === clip && (o.kind === "force_in" || o.kind === "force_out") && at >= o.startUs && at < o.endUs);
+    try {
+      if (hit) await api.overrideRemove(hit.id);
+      else {
+        const seg = s.scored.clips.find((c) => c.clip === clip)?.segments.find((g) => at >= g.startUs && at < g.endUs);
+        if (seg) await api.overrideAdd(clip, "force_out", seg.startUs, seg.endUs);
+        else {
+          const m = s.marks?.clip === clip && s.marks.inUs !== null && s.marks.outUs !== null && s.marks.outUs > s.marks.inUs ? s.marks : null;
+          const dur = s.scored.clips.find((c) => c.clip === clip)?.durationUs ?? at + 2e6;
+          await api.overrideAdd(clip, "force_in", m ? m.inUs! : Math.max(0, at - 1e6), m ? m.outUs! : Math.min(dur, at + 1e6));
+        }
+      }
+      await get().refreshOverrides();
+      get().rescore(true);
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+    }
+  },
+
+  async trimSelect(side) {
+    const s = get();
+    if (s.selectedClip === null || !s.scored) return;
+    const clip = s.selectedClip;
+    const at = s.playheadUs;
+    const seg = s.scored.clips.find((c) => c.clip === clip)?.segments.find((g) => at >= g.startUs - 1 && at <= g.endUs + 1);
+    if (!seg) return get().toast("Put the playhead inside a select to trim it.", "error");
+    const [a, b] = side === "start" ? [at, seg.endUs] : [seg.startUs, at];
+    if (b - a < 100_000) return get().toast("That would leave less than 0.1 s.", "error");
+    try {
+      // A new trim replaces earlier trims of the same select.
+      for (const o of s.overrides.filter((o) => o.clip === clip && o.kind === "trim" && Math.min(o.endUs, seg.endUs) > Math.max(o.startUs, seg.startUs))) await api.overrideRemove(o.id);
+      await api.overrideAdd(clip, "trim", a, b);
+      await get().refreshOverrides();
+      get().rescore(true);
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+    }
+  },
+
+  setMark(which) {
+    const s = get();
+    if (s.selectedClip === null) return;
+    const cur = s.marks?.clip === s.selectedClip ? s.marks : { clip: s.selectedClip, inUs: null, outUs: null };
+    set({ marks: which === "in" ? { ...cur, inUs: s.playheadUs } : { ...cur, outUs: s.playheadUs } });
+  },
+
+  async addManualSegment() {
+    const s = get();
+    const m = s.marks;
+    if (!m || m.inUs === null || m.outUs === null || m.outUs <= m.inUs) return get().toast("Set an in point (I) and an out point (O) first.", "error");
+    try {
+      await api.overrideAdd(m.clip, "manual", m.inUs, m.outUs);
+      set({ marks: null });
+      await get().refreshOverrides();
+      get().rescore(true);
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+    }
+  },
+
+  async removeOverride(id) {
+    await api.overrideRemove(id);
+    await get().refreshOverrides();
+    get().rescore(true);
+  },
+
+  async setAnnotation(a) {
+    try {
+      await api.annotationSet(a);
+      await get().refreshOverrides();
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+    }
   },
 
   async savePreset(name, description, overwrite) {

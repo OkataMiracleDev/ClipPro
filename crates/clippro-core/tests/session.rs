@@ -242,3 +242,47 @@ fn camera_presets_pick_matching_clips() {
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// PLAN P9.7: overrides survive re-scoring; annotations follow their select into exports.
+#[test]
+fn overrides_and_annotations() {
+    let Some(dir) = corpus() else { return };
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-override-test");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let s = Session::create(&tmp.join("p.clippro"), "Overrides", SessionOptions { cache_path: None, ..opts(&tmp) }).unwrap();
+    s.import(&[dir.join("tripod_static.mp4"), dir.join("solid_black.mp4")]).unwrap();
+    s.queue_analysis().unwrap();
+    s.wait(|_| {});
+    let st = s.clip_statuses().unwrap();
+    let id = |n: &str| st.iter().find(|c| c.name == n).unwrap().clip;
+    let (tripod, black) = (id("tripod_static"), id("solid_black"));
+    let mut settings = Settings::from_preset(&builtin("Cleanup").unwrap()).unwrap();
+    let count = |s: &Session, set: &Settings, c| s.score(set).unwrap().clips.iter().find(|x| x.clip == c).map_or(0, |x| x.segments.len());
+    assert_eq!(count(&s, &settings, black), 0);
+
+    let o = s.add_override(black, "force_in", 1_000_000, 3_000_000).unwrap();
+    assert_eq!(count(&s, &settings, black), 1, "force-in adds a select");
+    settings.score_lo = 0.9; // re-score with very different settings
+    assert_eq!(count(&s, &settings, black), 1, "the override survives re-scoring");
+    assert!(s.add_override(black, "explode", 0, 1).is_err());
+    assert_eq!(s.list_overrides().unwrap().len(), 1);
+    s.remove_override(o).unwrap();
+    assert_eq!(count(&s, &settings, black), 0);
+
+    settings = Settings::from_preset(&builtin("Cleanup").unwrap()).unwrap();
+    let seg = s.score(&settings).unwrap().clips.iter().find(|x| x.clip == tripod).unwrap().segments[0].clone();
+    s.set_annotation(tripod, seg.start_us + 100_000, seg.end_us, 5, Some("purple".into()), "Hero shot").unwrap();
+    assert_eq!(s.annotations().unwrap().len(), 1);
+    assert_eq!(count(&s, &settings, tripod), 1, "annotations don't change scoring");
+    let opts = clippro_interchange::ExportOptions { marker_name: "{rating}|{label}|{note}".into(), ..Default::default() };
+    let out = tmp.join("sel.json");
+    s.export_to(&settings, SortOrder::Timeline, &opts, clippro_interchange::Format::Json, &out).unwrap();
+    let text = std::fs::read_to_string(&out).unwrap();
+    assert!(text.contains("★★★★★|purple|Hero shot"), "{text}");
+    // Clearing every field removes the annotation.
+    s.set_annotation(tripod, seg.start_us, seg.end_us, 0, None, "").unwrap();
+    assert!(s.annotations().unwrap().is_empty());
+    s.close().unwrap();
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

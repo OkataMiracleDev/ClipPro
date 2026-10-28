@@ -722,6 +722,72 @@ async fn submetrics_list() -> Result<Vec<SubMetricInfo>, String> {
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct OverrideDto {
+    pub id: f64,
+    pub clip: f64,
+    /// force_in | force_out | trim | manual
+    pub kind: String,
+    pub start_us: f64,
+    pub end_us: f64,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct AnnotationDto {
+    pub clip: f64,
+    pub start_us: f64,
+    pub end_us: f64,
+    pub rating: u8,
+    /// A marker colour name (red, orange, yellow, green, cyan, blue, purple, magenta, white).
+    pub label: Option<String>,
+    pub note: String,
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn overrides_list(state: State<'_, AppState>) -> Result<Vec<OverrideDto>, String> {
+    let s = state.session()?;
+    Ok(s.list_overrides()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|o| OverrideDto { id: o.id as f64, clip: o.clip.0 as f64, kind: o.kind, start_us: o.start_us as f64, end_us: o.end_us as f64 })
+        .collect())
+}
+
+/// Adds a manual override (force in/out, trim, manual segment); rescore afterwards.
+#[tauri::command]
+#[specta::specta]
+async fn override_add(state: State<'_, AppState>, clip: f64, kind: String, start_us: f64, end_us: f64) -> Result<f64, String> {
+    let s = state.session()?;
+    s.add_override(clippro_types::ClipId(clip as i64), &kind, start_us as i64, end_us as i64).map(|id| id as f64).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn override_remove(state: State<'_, AppState>, id: f64) -> Result<(), String> {
+    let s = state.session()?;
+    s.remove_override(id as i64).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn annotations_list(state: State<'_, AppState>) -> Result<Vec<AnnotationDto>, String> {
+    let s = state.session()?;
+    Ok(s.annotations()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|a| AnnotationDto { clip: a.clip.0 as f64, start_us: a.start_us as f64, end_us: a.end_us as f64, rating: a.rating, label: a.label, note: a.note })
+        .collect())
+}
+
+/// Sets (or clears, when empty) the rating, colour label and note of a select.
+#[tauri::command]
+#[specta::specta]
+async fn annotation_set(state: State<'_, AppState>, a: AnnotationDto) -> Result<(), String> {
+    let s = state.session()?;
+    s.set_annotation(clippro_types::ClipId(a.clip as i64), a.start_us as i64, a.end_us as i64, a.rating, a.label, &a.note).map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
 pub struct Snapshot {
     pub id: f64,
     pub name: String,
@@ -1113,6 +1179,11 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             settings_get,
             watch_folders_get,
             snapshots_list,
+            overrides_list,
+            override_add,
+            override_remove,
+            annotations_list,
+            annotation_set,
             snapshot_save,
             snapshot_delete,
             tuning_save,

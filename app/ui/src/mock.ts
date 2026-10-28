@@ -78,6 +78,9 @@ function makeDemo(): DemoClip[] {
 const demo = makeDemo();
 let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true };
 const settingsListeners = new Set<(s: AppSettings) => void>();
+const mockOverrides: import("./api").OverrideInfo[] = [];
+let mockOverrideId = 0;
+const mockAnnotations: import("./api").Annotation[] = [];
 const mockSnapshots: { id: number; name: string; json: string; created: string }[] = [];
 let mockSnapId = 0;
 let mockTuning: string | null = null;
@@ -315,6 +318,21 @@ export const mockBackend: Backend = {
     mockTuning = json;
   },
   tuningLoad: async () => mockTuning,
+  overridesList: async () => [...mockOverrides],
+  overrideAdd: async (clip, kind, startUs, endUs) => {
+    mockOverrides.push({ id: ++mockOverrideId, clip, kind, startUs, endUs });
+    return mockOverrideId;
+  },
+  overrideRemove: async (id) => {
+    const i = mockOverrides.findIndex((o) => o.id === id);
+    if (i >= 0) mockOverrides.splice(i, 1);
+  },
+  annotationsList: async () => [...mockAnnotations],
+  annotationSet: async (a) => {
+    const i = mockAnnotations.findIndex((x) => x.clip === a.clip && Math.min(x.endUs, a.endUs) - Math.max(x.startUs, a.startUs) > 0);
+    if (i >= 0) mockAnnotations.splice(i, 1);
+    if (a.rating || a.label || a.note.trim()) mockAnnotations.push(a);
+  },
   watchFoldersSet: async (f) => {
     mockWatch = f;
   },
