@@ -48,6 +48,12 @@ export const commands = {
 	systemInfo: () => typedError<SystemInfo, string>(__TAURI_INVOKE("system_info")),
 	settingsGet: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_get")),
 	watchFoldersGet: () => typedError<WatchFolderDto[], string>(__TAURI_INVOKE("watch_folders_get")),
+	snapshotsList: () => typedError<Snapshot[], string>(__TAURI_INVOKE("snapshots_list")),
+	snapshotSave: (name: string, json: string) => typedError<null, string>(__TAURI_INVOKE("snapshot_save", { name, json })),
+	snapshotDelete: (id: number | null) => typedError<null, string>(__TAURI_INVOKE("snapshot_delete", { id })),
+	/**  Saves the tuning in effect, restored when the project is reopened. */
+	tuningSave: (json: string) => typedError<null, string>(__TAURI_INVOKE("tuning_save", { json })),
+	tuningLoad: () => typedError<string | null, string>(__TAURI_INVOKE("tuning_load")),
 	/**  Replaces the project's watch folders and restarts watching. */
 	watchFoldersSet: (folders: WatchFolderDto[]) => typedError<null, string>(__TAURI_INVOKE("watch_folders_set", { folders })),
 	submetricsList: () => typedError<SubMetricInfo[], string>(__TAURI_INVOKE("submetrics_list")),
@@ -524,6 +530,14 @@ export type Settings_Serialize = {
 	switches: MasterSwitches,
 	/**  Shot types rewarded by the Shot-type match sub-metric. */
 	shot_types: string[],
+};
+
+export type Snapshot = {
+	id: number | null,
+	name: string,
+	/**  The UI's tuning document (preset name + settings), opaque to the backend. */
+	json: string,
+	created: string,
 };
 
 export type SortOrder = "timeline" | "score_desc" | "score_asc" | "duration_desc" | "duration_asc";

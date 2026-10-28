@@ -78,6 +78,9 @@ function makeDemo(): DemoClip[] {
 const demo = makeDemo();
 let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true };
 const settingsListeners = new Set<(s: AppSettings) => void>();
+const mockSnapshots: { id: number; name: string; json: string; created: string }[] = [];
+let mockSnapId = 0;
+let mockTuning: string | null = null;
 let mockWatch: { path: string; subfolders: boolean; extensions: string[] }[] = [{ path: "D:/Footage/Incoming", subfolders: true, extensions: ["mov", "mxf"] }];
 const listeners = new Set<(e: AnalysisEvent) => void>();
 
@@ -298,6 +301,20 @@ export const mockBackend: Backend = {
   systemInfo: async () => ({ hwDecode: true, version: "0.1.0" }),
   getSettings: async () => mockSettings,
   watchFoldersGet: async () => mockWatch,
+  snapshotsList: async () => [...mockSnapshots],
+  snapshotSave: async (name, json) => {
+    const i = mockSnapshots.findIndex((s) => s.name === name);
+    if (i >= 0) mockSnapshots.splice(i, 1);
+    mockSnapshots.push({ id: ++mockSnapId, name, json, created: new Date().toISOString() });
+  },
+  snapshotDelete: async (id) => {
+    const i = mockSnapshots.findIndex((s) => s.id === id);
+    if (i >= 0) mockSnapshots.splice(i, 1);
+  },
+  tuningSave: async (json) => {
+    mockTuning = json;
+  },
+  tuningLoad: async () => mockTuning,
   watchFoldersSet: async (f) => {
     mockWatch = f;
   },

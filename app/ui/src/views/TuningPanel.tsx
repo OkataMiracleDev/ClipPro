@@ -9,6 +9,7 @@ import { nextRun } from "../lib/flagRuns";
 import { useApp } from "../store";
 import { CameraFilterPanel } from "./CameraWheel";
 import { PresetChanges, PresetPicker } from "./PresetMenu";
+import { SnapshotsMenu, UndoRedo } from "./Snapshots";
 import { Weighting } from "./Weighting";
 import type { Tier } from "../bindings";
 
@@ -60,6 +61,10 @@ export function TuningPanel() {
           <PresetPicker />
         </div>
         <PresetChanges />
+      </div>
+      <div className="flex items-center justify-between border-b border-separator px-3 py-1">
+        <UndoRedo />
+        <SnapshotsMenu />
       </div>
 
       <Section title="Selects">

@@ -722,6 +722,60 @@ async fn submetrics_list() -> Result<Vec<SubMetricInfo>, String> {
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct Snapshot {
+    pub id: f64,
+    pub name: String,
+    /// The UI's tuning document (preset name + settings), opaque to the backend.
+    pub json: String,
+    pub created: String,
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn snapshots_list(state: State<'_, AppState>) -> Result<Vec<Snapshot>, String> {
+    let s = state.session()?;
+    let rows = lock(&s.db).snapshots().map_err(|e| e.to_string())?;
+    Ok(rows.into_iter().map(|(id, name, json, created)| Snapshot { id: id as f64, name, json, created }).collect())
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn snapshot_save(state: State<'_, AppState>, name: String, json: String) -> Result<(), String> {
+    let s = state.session()?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Give the snapshot a name.".into());
+    }
+    let r = lock(&s.db).save_snapshot(name, &json).map(|_| ()).map_err(|e| e.to_string());
+    r
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn snapshot_delete(state: State<'_, AppState>, id: f64) -> Result<(), String> {
+    let s = state.session()?;
+    let r = lock(&s.db).delete_snapshot(id as i64).map_err(|e| e.to_string());
+    r
+}
+
+/// Saves the tuning in effect, restored when the project is reopened.
+#[tauri::command]
+#[specta::specta]
+async fn tuning_save(state: State<'_, AppState>, json: String) -> Result<(), String> {
+    let s = state.session()?;
+    let r = lock(&s.db).set_current_tuning(&json).map_err(|e| e.to_string());
+    r
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn tuning_load(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let s = state.session()?;
+    let r = lock(&s.db).current_tuning().map_err(|e| e.to_string());
+    r
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
 pub struct WatchFolderDto {
     pub path: String,
     pub subfolders: bool,
@@ -1058,6 +1112,11 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             system_info,
             settings_get,
             watch_folders_get,
+            snapshots_list,
+            snapshot_save,
+            snapshot_delete,
+            tuning_save,
+            tuning_load,
             watch_folders_set,
             submetrics_list,
             preset_save,

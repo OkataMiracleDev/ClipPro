@@ -167,6 +167,12 @@ export interface Backend {
   onSettings(cb: (s: AppSettings) => void): Promise<() => void>;
   /** Watch folders of the open project (P9.5). */
   watchFoldersGet(): Promise<WatchFolder[]>;
+  /** Named tuning snapshots and the saved current tuning (P9.6); `json` is a TuningDoc. */
+  snapshotsList(): Promise<{ id: number; name: string; json: string; created: string }[]>;
+  snapshotSave(name: string, json: string): Promise<void>;
+  snapshotDelete(id: number): Promise<void>;
+  tuningSave(json: string): Promise<void>;
+  tuningLoad(): Promise<string | null>;
   watchFoldersSet(folders: WatchFolder[]): Promise<void>;
   onMediaAdded(cb: (e: { added: number; names: string[] }) => void): Promise<() => void>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
@@ -326,6 +332,11 @@ const tauriBackend: Backend = {
   openSettings: async () => void unwrap(await commands.openSettings()),
   onSettings: async (cb) => events.appSettings.listen((e) => cb(e.payload)),
   watchFoldersGet: async () => unwrap(await commands.watchFoldersGet()),
+  snapshotsList: async () => unwrap(await commands.snapshotsList()).map((s) => ({ ...s, id: n(s.id) })),
+  snapshotSave: async (name, json) => void unwrap(await commands.snapshotSave(name, json)),
+  snapshotDelete: async (id) => void unwrap(await commands.snapshotDelete(id)),
+  tuningSave: async (json) => void unwrap(await commands.tuningSave(json)),
+  tuningLoad: async () => unwrap(await commands.tuningLoad()) ?? null,
   watchFoldersSet: async (folders) => void unwrap(await commands.watchFoldersSet(folders)),
   onMediaAdded: async (cb) => events.mediaAdded.listen((e) => cb(e.payload)),
   systemInfo: async () => {

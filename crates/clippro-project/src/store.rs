@@ -444,6 +444,41 @@ impl Db {
         Ok(id)
     }
 
+    /// Named tuning snapshot (SPEC TUN-10); a snapshot with the same name is replaced.
+    pub fn save_snapshot(&self, name: &str, json: &str) -> Result<i64> {
+        self.conn.execute("DELETE FROM tuning_state WHERE kind = 'snapshot' AND name = ?1", params![name])?;
+        self.conn.execute("INSERT INTO tuning_state(kind, name, json, created_at) VALUES ('snapshot', ?1, ?2, ?3)", params![name, json, now()])?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// (id, name, json, created_at), oldest first.
+    pub fn snapshots(&self) -> Result<Vec<(i64, String, String, String)>> {
+        let mut st = self.conn.prepare("SELECT id, name, json, created_at FROM tuning_state WHERE kind = 'snapshot' ORDER BY id")?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get::<_, Option<String>>(1)?.unwrap_or_default(), r.get(2)?, r.get(3)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn delete_snapshot(&self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM tuning_state WHERE kind = 'snapshot' AND id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// The tuning in effect when the project was last used (restored on open).
+    pub fn set_current_tuning(&self, json: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM tuning_state WHERE kind = 'current'", [])?;
+        self.conn.execute("INSERT INTO tuning_state(kind, json, created_at) VALUES ('current', ?1, ?2)", params![json, now()])?;
+        Ok(())
+    }
+
+    pub fn current_tuning(&self) -> Result<Option<String>> {
+        let mut st = self.conn.prepare("SELECT json FROM tuning_state WHERE kind = 'current' ORDER BY id DESC LIMIT 1")?;
+        let mut rows = st.query([])?;
+        Ok(match rows.next()? {
+            Some(r) => Some(r.get(0)?),
+            None => None,
+        })
+    }
+
     pub fn history(&self) -> Result<Vec<(i64, String)>> {
         let mut st = self.conn.prepare("SELECT id, json FROM tuning_state WHERE kind = 'history' ORDER BY id")?;
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;

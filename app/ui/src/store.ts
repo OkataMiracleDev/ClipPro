@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { CubeLut } from "./lib/cube";
+import { History } from "./lib/history";
 import type { Overlay } from "./lib/glview";
 import type { MeasureOverlayKind } from "./views/MeasureOverlay";
 import { api, isTauri, type AnalysisEvent, type Clip, type PresetInfo, type ProjectInfo, type Scored, type Settings, type SortOrder } from "./api";
@@ -20,6 +21,11 @@ interface AppState {
   /** Settings as loaded from the preset (for the diff view). */
   baseSettings: Settings | null;
   modified: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  snapshots: { id: number; name: string; json: string; created: string }[];
+  /** A/B compare of tunings: the other side, and which side is showing. */
+  ab: { other: TuningDoc; showing: "a" | "b" } | null;
   scored: Scored | null;
   scoring: boolean;
   sort: SortOrder;
@@ -67,6 +73,15 @@ interface AppState {
   renamePreset(old: string, name: string): Promise<boolean>;
   importPreset(path: string): Promise<void>;
   revertPreset(): void;
+  undo(): void;
+  redo(): void;
+  refreshSnapshots(): Promise<void>;
+  saveSnapshot(name: string): Promise<void>;
+  applySnapshot(id: number): void;
+  deleteSnapshot(id: number): Promise<void>;
+  /** First press keeps the current tuning as A and carries on editing B; later presses swap. */
+  toggleAB(): void;
+  endAB(): void;
   updateSettings(fn: (s: Settings) => Settings): void;
   rescore(immediate?: boolean): void;
   setSort(s: SortOrder): void;
@@ -99,6 +114,44 @@ function applyTheme(theme: string) {
   else delete document.documentElement.dataset.theme;
 }
 
+/** What undo, snapshots and A/B save and restore. */
+export interface TuningDoc {
+  presetName: string;
+  settings: Settings;
+  baseSettings: Settings | null;
+}
+
+const history = new History<TuningDoc>(500, 400);
+const undoFlags = () => ({ canUndo: history.canUndo, canRedo: history.canRedo });
+
+function doc(s: { presetName: string; settings: Settings | null; baseSettings: Settings | null }): TuningDoc {
+  return structuredClone({ presetName: s.presetName, settings: s.settings!, baseSettings: s.baseSettings });
+}
+
+function sameSettings(a: Settings | null, b: Settings | null) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function applyDoc(set: (p: Partial<AppState>) => void, d: TuningDoc) {
+  set({
+    presetName: d.presetName,
+    settings: structuredClone(d.settings),
+    baseSettings: d.baseSettings ? structuredClone(d.baseSettings) : null,
+    modified: !sameSettings(d.settings, d.baseSettings),
+    ...undoFlags(),
+  });
+}
+
+let tuningTimer: ReturnType<typeof setTimeout> | null = null;
+/** Persists the tuning in effect to the project (debounced). */
+function saveTuningSoon(get: () => AppState) {
+  if (tuningTimer) clearTimeout(tuningTimer);
+  tuningTimer = setTimeout(() => {
+    const s = get();
+    if (s.project && s.settings) void api.tuningSave(JSON.stringify(doc(s))).catch(() => {});
+  }, 800);
+}
+
 let scoreSeq = 0;
 let scoreTimer: ReturnType<typeof setTimeout> | null = null;
 let toastId = 0;
@@ -111,6 +164,10 @@ export const useApp = create<AppState>((set, get) => ({
   settings: null,
   presetName: "All-Rounder",
   baseSettings: null,
+  canUndo: false,
+  canRedo: false,
+  snapshots: [],
+  ab: null,
   modified: false,
   scored: null,
   scoring: false,
@@ -168,8 +225,18 @@ export const useApp = create<AppState>((set, get) => ({
   async openProject(path) {
     try {
       const project = await api.projectOpen(path);
-      set({ project, selectedClip: null, selectedSelect: null, playing: false });
+      set({ project, selectedClip: null, selectedSelect: null, playing: false, ab: null });
       if (project.recovered) get().toast("ClipPro didn't close cleanly last time. The project was restored to its last saved state.");
+      // Restore the project's last tuning (P9.6); fall back to the current preset.
+      try {
+        const saved = await api.tuningLoad();
+        if (saved) applyDoc(set, JSON.parse(saved) as TuningDoc);
+      } catch {
+        /* keep the current tuning */
+      }
+      history.clear();
+      set(undoFlags());
+      void get().refreshSnapshots();
       await get().refreshClips();
       get().rescore(true);
       await get().startAnalysis();
@@ -256,8 +323,89 @@ export const useApp = create<AppState>((set, get) => ({
 
   async setPreset(name) {
     const settings = await api.presetSettings(name);
-    set({ settings, baseSettings: structuredClone(settings), presetName: name, modified: false });
+    if (get().settings) {
+      history.record(doc(get()));
+      history.seal();
+    }
+    set({ settings, baseSettings: structuredClone(settings), presetName: name, modified: false, ...undoFlags() });
     get().rescore(true);
+    saveTuningSoon(get);
+  },
+
+  undo() {
+    const s = get();
+    if (!s.settings) return;
+    const prev = history.undo(doc(s));
+    if (prev) {
+      applyDoc(set, prev);
+      get().rescore(true);
+      saveTuningSoon(get);
+    }
+  },
+
+  redo() {
+    const s = get();
+    if (!s.settings) return;
+    const next = history.redo(doc(s));
+    if (next) {
+      applyDoc(set, next);
+      get().rescore(true);
+      saveTuningSoon(get);
+    }
+  },
+
+  async refreshSnapshots() {
+    if (!get().project) return set({ snapshots: [] });
+    try {
+      set({ snapshots: await api.snapshotsList() });
+    } catch {
+      set({ snapshots: [] });
+    }
+  },
+
+  async saveSnapshot(name) {
+    const s = get();
+    if (!s.settings) return;
+    try {
+      await api.snapshotSave(name, JSON.stringify(doc(s)));
+      await get().refreshSnapshots();
+      get().toast(`Saved snapshot “${name.trim()}”`);
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+    }
+  },
+
+  applySnapshot(id) {
+    const snap = get().snapshots.find((x) => x.id === id);
+    if (!snap || !get().settings) return;
+    history.record(doc(get()));
+    history.seal();
+    applyDoc(set, JSON.parse(snap.json) as TuningDoc);
+    get().rescore(true);
+    saveTuningSoon(get);
+  },
+
+  async deleteSnapshot(id) {
+    await api.snapshotDelete(id);
+    await get().refreshSnapshots();
+  },
+
+  toggleAB() {
+    const s = get();
+    if (!s.settings) return;
+    if (!s.ab) {
+      set({ ab: { other: doc(s), showing: "b" } });
+      return;
+    }
+    const other = s.ab.other;
+    const here = doc(s);
+    applyDoc(set, other);
+    set({ ab: { other: here, showing: s.ab.showing === "a" ? "b" : "a" } });
+    get().rescore(true);
+  },
+
+  endAB() {
+    set({ ab: null });
   },
 
   async savePreset(name, description, overwrite) {
@@ -311,15 +459,20 @@ export const useApp = create<AppState>((set, get) => ({
   revertPreset() {
     const { baseSettings } = get();
     if (!baseSettings) return;
-    set({ settings: structuredClone(baseSettings), modified: false });
+    history.record(doc(get()));
+    history.seal();
+    set({ settings: structuredClone(baseSettings), modified: false, ...undoFlags() });
+    saveTuningSoon(get);
     get().rescore(true);
   },
 
   updateSettings(fn) {
     const s = get().settings;
     if (!s) return;
-    set({ settings: fn(structuredClone(s)), modified: true });
+    history.record(doc(get()));
+    set({ settings: fn(structuredClone(s)), modified: true, ...undoFlags() });
     get().rescore();
+    saveTuningSoon(get);
   },
 
   rescore(immediate = false) {
