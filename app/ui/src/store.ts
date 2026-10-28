@@ -27,6 +27,9 @@ interface AppState {
   /** A/B compare of tunings: the other side, and which side is showing. */
   ab: { other: TuningDoc; showing: "a" | "b" } | null;
   overrides: import("./api").OverrideInfo[];
+  bins: import("./api").Bin[];
+  /** What the clip list shows (sidebar selection). */
+  library: { kind: "all" } | { kind: "bin"; id: number } | { kind: "smart"; id: number };
   annotations: import("./api").Annotation[];
   /** In/out marks for a manual segment (I / O). */
   marks: { clip: number; inUs: number | null; outUs: number | null } | null;
@@ -86,6 +89,15 @@ interface AppState {
   /** First press keeps the current tuning as A and carries on editing B; later presses swap. */
   toggleAB(): void;
   refreshOverrides(): Promise<void>;
+  refreshBins(): Promise<void>;
+  setLibrary(l: AppState["library"]): void;
+  addBin(name: string, kind: "manual" | "smart", query?: import("./lib/smart").SmartQuery): Promise<void>;
+  updateBin(id: number, name: string, query?: import("./lib/smart").SmartQuery): Promise<void>;
+  deleteBin(id: number): Promise<void>;
+  moveToBin(clips: number[], bin: number | null): Promise<void>;
+  /** Project templates (P9.8): the open project's tuning and watch folders. */
+  saveTemplate(name: string): Promise<void>;
+  newProjectFromTemplate(path: string, name: string, template: { name: string; json: string }): Promise<void>;
   /** F: toggles a force-out on the select under the playhead, or force-in around it. */
   toggleForce(): Promise<void>;
   /** [ / ]: trims the select under the playhead so it starts / ends here. */
@@ -183,6 +195,8 @@ export const useApp = create<AppState>((set, get) => ({
   snapshots: [],
   ab: null,
   overrides: [],
+  bins: [],
+  library: { kind: "all" },
   annotations: [],
   marks: null,
   modified: false,
@@ -255,7 +269,8 @@ export const useApp = create<AppState>((set, get) => ({
       set(undoFlags());
       void get().refreshSnapshots();
       void get().refreshOverrides();
-      set({ marks: null });
+      void get().refreshBins();
+      set({ marks: null, library: { kind: "all" } });
       await get().refreshClips();
       get().rescore(true);
       await get().startAnalysis();
@@ -425,6 +440,77 @@ export const useApp = create<AppState>((set, get) => ({
 
   endAB() {
     set({ ab: null });
+  },
+
+  async refreshBins() {
+    if (!get().project) return set({ bins: [] });
+    try {
+      set({ bins: await api.binsList() });
+    } catch {
+      /* keep */
+    }
+  },
+
+  setLibrary: (library) => set({ library, ...(library.kind !== "all" ? { selectsOnly: false } : {}) }),
+
+  async addBin(name, kind, query) {
+    try {
+      const id = await api.binAdd(name, kind, query ? JSON.stringify(query) : null);
+      await get().refreshBins();
+      set({ library: { kind: kind === "smart" ? "smart" : "bin", id } });
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+    }
+  },
+
+  async updateBin(id, name, query) {
+    await api.binUpdate(id, name, query ? JSON.stringify(query) : null);
+    await get().refreshBins();
+  },
+
+  async deleteBin(id) {
+    await api.binDelete(id);
+    const l = get().library;
+    if (l.kind !== "all" && l.id === id) set({ library: { kind: "all" } });
+    await get().refreshBins();
+    await get().refreshClips();
+  },
+
+  async saveTemplate(name) {
+    const s = get();
+    if (!s.settings || !s.project) return;
+    try {
+      const watchFolders = await api.watchFoldersGet();
+      await api.templateSave({ name: name.trim(), json: JSON.stringify({ tuning: doc(s), watchFolders }) });
+      get().toast(`Saved template “${name.trim()}”`);
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+    }
+  },
+
+  async newProjectFromTemplate(path, name, template) {
+    await get().newProject(path, name);
+    if (!get().project) return;
+    try {
+      const t = JSON.parse(template.json) as { tuning?: TuningDoc; watchFolders?: import("./api").WatchFolder[] };
+      if (t.tuning) {
+        applyDoc(set, t.tuning);
+        history.clear();
+        set(undoFlags());
+        saveTuningSoon(get);
+      }
+      if (t.watchFolders?.length) await api.watchFoldersSet(t.watchFolders);
+      get().toast(`New project from “${template.name}”`);
+    } catch (e) {
+      get().toast(`The template couldn't be applied: ${e}`, "error");
+    }
+  },
+
+  async moveToBin(clips, bin) {
+    await api.clipsSetBin(clips, bin);
+    await get().refreshClips();
+    const name = bin === null ? "the project" : get().bins.find((b) => b.id === bin)?.name;
+    get().toast(`Moved ${clips.length === 1 ? "1 clip" : `${clips.length} clips`} to ${name}`);
   },
 
   async refreshOverrides() {

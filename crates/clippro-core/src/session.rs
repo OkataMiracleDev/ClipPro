@@ -73,6 +73,11 @@ pub struct ClipStatus {
     pub progress: f64,
     pub error: Option<String>,
     pub profile: ColourProfile,
+    pub bin: Option<i64>,
+    /// Camera make/model from metadata, and the recording date (ISO), for collections.
+    pub camera: Option<String>,
+    pub created: Option<String>,
+    pub codec: String,
 }
 
 struct Probed {
@@ -434,7 +439,14 @@ impl Session {
                 }
             }
             let profile: ColourProfile = serde_json::from_str(&format!("\"{}\"", m.profile)).unwrap_or_default();
-            out.push(ClipStatus { clip: c.id, media: m.id, name: c.name, path: m.path, state, progress, error, profile });
+            let info: Option<MediaInfo> = serde_json::from_str(&m.probe_json).ok();
+            let camera = info.as_ref().and_then(|i| {
+                let s = [i.camera_make.as_deref(), i.camera_model.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" ");
+                (!s.trim().is_empty()).then_some(s)
+            });
+            let created = info.as_ref().and_then(|i| i.creation_time.clone());
+            let codec = info.as_ref().and_then(|i| i.video.as_ref().map(|v| v.codec.clone())).unwrap_or_default();
+            out.push(ClipStatus { clip: c.id, media: m.id, name: c.name, path: m.path, state, progress, error, profile, bin: c.bin_id, camera, created, codec });
         }
         Ok(out)
     }

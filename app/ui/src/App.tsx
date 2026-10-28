@@ -1,8 +1,8 @@
 import * as RTooltip from "@radix-ui/react-tooltip";
 import { FilePlus2, FolderOpen, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { isTauri } from "./api";
-import { Button, cx, EmptyState, Segmented } from "./components/ui";
+import { api, isTauri } from "./api";
+import { Button, cx, EmptyState, Popover, PopoverClose, Segmented } from "./components/ui";
 import { pickFolder, pickMedia, pickNewProject, pickProjectToOpen } from "./lib/dialogs";
 import { useApp } from "./store";
 import { ClipList, Sidebar } from "./views/ClipList";
@@ -37,7 +37,12 @@ function Toasts() {
 }
 
 function Welcome() {
-  const { newProject, openProject } = useApp();
+  const { newProject, openProject, appSettings, newProjectFromTemplate } = useApp();
+  const [templates, setTemplates] = useState<{ name: string; json: string }[]>([]);
+  useEffect(() => {
+    api.templatesList().then(setTemplates, () => setTemplates([]));
+  }, []);
+  const recent = appSettings?.recent_projects ?? [];
   return (
     <EmptyState icon={<FilePlus2 size={30} />} title="Create a project for your footage, or open an existing one.">
       <div className="flex gap-2">
@@ -58,7 +63,52 @@ function Welcome() {
         >
           <FolderOpen size={14} /> Open…
         </Button>
+        {templates.length > 0 && (
+          <Popover
+            trigger={
+              <span>
+                <Button>From template…</Button>
+              </span>
+            }
+          >
+            <div className="w-56 py-1">
+              {templates.map((t) => (
+                <div key={t.name} className="group flex items-center rounded-md hover:bg-accent hover:text-accent-fg">
+                  <PopoverClose asChild>
+                    <button
+                      className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-[13px]"
+                      onClick={async () => {
+                        const p = await pickNewProject();
+                        if (p) await newProjectFromTemplate(p, p.split(/[\\/]/).pop()!.replace(/\.clippro$/i, ""), t);
+                      }}
+                    >
+                      {t.name}
+                    </button>
+                  </PopoverClose>
+                  <button
+                    aria-label={`Delete template ${t.name}`}
+                    className="px-2 opacity-0 group-hover:opacity-70 hover:opacity-100"
+                    onClick={() => void api.templateDelete(t.name).then(() => setTemplates(templates.filter((x) => x.name !== t.name)))}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Popover>
+        )}
       </div>
+      {recent.length > 0 && (
+        <div className="mt-6 flex w-80 flex-col gap-0.5 text-left">
+          <div className="section-header px-2 pb-1">Recent</div>
+          {recent.map((p) => (
+            <button key={p} onClick={() => void openProject(p)} className="flex flex-col rounded-md px-2 py-1 hover:bg-control-hover" title={p}>
+              <span className="truncate text-[13px] text-text">{p.split(/[\\/]/).pop()!.replace(/\.clippro$/i, "")}</span>
+              <span className="truncate text-[11px] text-text-3">{p}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </EmptyState>
   );
 }

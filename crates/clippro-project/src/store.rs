@@ -54,6 +54,16 @@ pub struct ClipRow {
     pub rating: i64,
     pub color_label: Option<String>,
     pub note: Option<String>,
+    pub bin_id: Option<i64>,
+}
+
+/// A bin (folder of clips) or smart collection (`kind = smart`, with a saved query).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BinRow {
+    pub id: i64,
+    pub name: String,
+    pub kind: String,
+    pub query_json: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -232,7 +242,7 @@ impl Db {
     }
 
     pub fn clips(&self) -> Result<Vec<ClipRow>> {
-        let mut st = self.conn.prepare("SELECT id, media_id, name, sort_index, rating, color_label, note FROM clip ORDER BY sort_index, id")?;
+        let mut st = self.conn.prepare("SELECT id, media_id, name, sort_index, rating, color_label, note, bin_id FROM clip ORDER BY sort_index, id")?;
         let rows = st
             .query_map([], |r| {
                 Ok(ClipRow {
@@ -243,6 +253,7 @@ impl Db {
                     rating: r.get(4)?,
                     color_label: r.get(5)?,
                     note: r.get(6)?,
+                    bin_id: r.get(7)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -402,6 +413,34 @@ impl Db {
             params![clip.0, kind, start_us, end_us],
         )?;
         Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn bins(&self) -> Result<Vec<BinRow>> {
+        let mut st = self.conn.prepare("SELECT id, name, kind, query_json FROM bin ORDER BY kind, name COLLATE NOCASE")?;
+        let rows = st.query_map([], |r| Ok(BinRow { id: r.get(0)?, name: r.get(1)?, kind: r.get(2)?, query_json: r.get(3)? }))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn add_bin(&self, name: &str, kind: &str, query_json: Option<&str>) -> Result<i64> {
+        self.conn.execute("INSERT INTO bin(name, kind, query_json) VALUES (?1, ?2, ?3)", params![name, kind, query_json])?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn update_bin(&self, id: i64, name: &str, query_json: Option<&str>) -> Result<()> {
+        self.conn.execute("UPDATE bin SET name = ?1, query_json = ?2 WHERE id = ?3", params![name, query_json, id])?;
+        Ok(())
+    }
+
+    /// Deletes a bin; its clips go back to the project root.
+    pub fn delete_bin(&self, id: i64) -> Result<()> {
+        self.conn.execute("UPDATE clip SET bin_id = NULL WHERE bin_id = ?1", params![id])?;
+        self.conn.execute("DELETE FROM bin WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn set_clip_bin(&self, clip: ClipId, bin: Option<i64>) -> Result<()> {
+        self.conn.execute("UPDATE clip SET bin_id = ?1 WHERE id = ?2", params![bin, clip.0])?;
+        Ok(())
     }
 
     /// Annotation rows (kind `annotation`): (id, clip, start, end, data_json).
@@ -649,6 +688,17 @@ mod tests {
         assert_eq!(db.run(run.id).unwrap().unwrap().state, RunState::Done);
         db.reset_run(run.id).unwrap();
         assert!(db.measurements(run.id).unwrap().is_none());
+        // Bins: clips move in and out; deleting a bin keeps its clips.
+        let b = db.add_bin("Interviews", "manual", None).unwrap();
+        let sm = db.add_bin("Good", "smart", Some(r#"{"match":"all","rules":[]}"#)).unwrap();
+        db.set_clip_bin(c1, Some(b)).unwrap();
+        assert_eq!(db.clips().unwrap().iter().find(|c| c.id == c1).unwrap().bin_id, Some(b));
+        db.update_bin(b, "People", None).unwrap();
+        assert_eq!(db.bins().unwrap().iter().map(|x| x.name.as_str()).collect::<Vec<_>>(), ["People", "Good"]);
+        db.delete_bin(b).unwrap();
+        assert_eq!(db.clips().unwrap().iter().find(|c| c.id == c1).unwrap().bin_id, None);
+        assert_eq!(db.bins().unwrap().len(), 1);
+        db.delete_bin(sm).unwrap();
         let o = db.add_override(c1, "force_in", 1_000_000, 2_000_000).unwrap();
         assert_eq!(db.overrides().unwrap().len(), 1);
         db.remove_override(o).unwrap();

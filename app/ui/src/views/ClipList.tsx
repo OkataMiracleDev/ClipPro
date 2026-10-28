@@ -5,28 +5,49 @@ import { AlertCircle, CircleDashed, Film, ListChecks } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Clip } from "../api";
 import { pickProxy } from "../lib/dialogs";
+import { BinsSection, useLibraryClips } from "./Bins";
 import { WatchFolders } from "./WatchFolders";
 import { cx, scoreColor, Spinner } from "../components/ui";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
 
 export function Sidebar() {
-  const { clips, scored, selectsOnly, toggleSelectsOnly } = useApp();
+  const { clips, scored, selectsOnly, toggleSelectsOnly, library, setLibrary } = useApp();
+  const all = library.kind === "all";
   const item = (active: boolean) =>
     cx("flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px]", active ? "bg-accent-soft text-text" : "text-text-2 hover:bg-control-hover");
   return (
     <nav className="flex shrink-0 flex-col gap-4 px-2 py-3" aria-label="Library">
       <div>
         <div className="section-header mb-1 px-2">Library</div>
-        <button className={item(!selectsOnly)} onClick={() => selectsOnly && toggleSelectsOnly()}>
+        <button
+          className={item(all && !selectsOnly)}
+          onClick={() => {
+            setLibrary({ kind: "all" });
+            if (selectsOnly) toggleSelectsOnly();
+          }}
+          onDragOver={(e) => e.dataTransfer.types.includes("application/x-clippro-clips") && e.preventDefault()}
+          onDrop={(e) => {
+            const ids = JSON.parse(e.dataTransfer.getData("application/x-clippro-clips") || "[]") as number[];
+            if (ids.length) void useApp.getState().moveToBin(ids, null);
+          }}
+          title="Drop clips here to take them out of their bin"
+        >
           <Film size={14} /> <span className="flex-1">All clips</span>
           <span className="font-mono text-[11px] text-text-3 tabular">{clips.length}</span>
         </button>
-        <button className={item(selectsOnly)} onClick={() => !selectsOnly && toggleSelectsOnly()}>
+        <button
+          className={item(all && selectsOnly)}
+          onClick={() => {
+            setLibrary({ kind: "all" });
+            if (!selectsOnly) toggleSelectsOnly();
+          }}
+        >
           <ListChecks size={14} /> <span className="flex-1">Selects</span>
           <span className="font-mono text-[11px] text-text-3 tabular">{scored?.summary.count ?? 0}</span>
         </button>
       </div>
+      <BinsSection item={item} />
       <WatchFolders />
     </nav>
   );
@@ -64,6 +85,25 @@ function ClipMenu({ c, children }: { c: Clip; children: React.ReactNode }) {
             Retry with CPU decoding
           </CM.Item>
           <CM.Separator className="my-1 h-px bg-separator" />
+          <CM.Sub>
+            <CM.SubTrigger className={item}>Move to bin ›</CM.SubTrigger>
+            <CM.Portal>
+              <CM.SubContent className="z-50 min-w-40 rounded-lg bg-raised p-1 shadow-(--shadow-float) ring-1 ring-separator-strong">
+                <CM.Item className={item} disabled={c.bin === null} onSelect={() => void useApp.getState().moveToBin([c.clip], null)}>
+                  No bin
+                </CM.Item>
+                {useApp
+                  .getState()
+                  .bins.filter((b) => b.kind === "manual")
+                  .map((b) => (
+                    <CM.Item key={b.id} className={item} disabled={c.bin === b.id} onSelect={() => void useApp.getState().moveToBin([c.clip], b.id)}>
+                      {b.name}
+                    </CM.Item>
+                  ))}
+              </CM.SubContent>
+            </CM.Portal>
+          </CM.Sub>
+          <CM.Separator className="my-1 h-px bg-separator" />
           <CM.Item className={item} onSelect={() => void api.reveal(c.path).catch((e) => toast(`${e}`, "error"))}>
             Reveal in Explorer
           </CM.Item>
@@ -85,7 +125,8 @@ function ClipMenu({ c, children }: { c: Clip; children: React.ReactNode }) {
 }
 
 export function ClipList() {
-  const { clips, scored, selectedClip, selectClip } = useApp();
+  const { scored, selectedClip, selectClip } = useApp();
+  const clips = useLibraryClips();
   const stats = useMemo(() => {
     const m = new Map<number, { selects: number; best: number; duration: number }>();
     for (const c of scored?.clips ?? []) {
@@ -136,6 +177,11 @@ export function ClipList() {
                 aria-selected={active}
                 onClick={() => selectClip(c.clip)}
                 onContextMenu={() => selectClip(c.clip)}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("application/x-clippro-clips", JSON.stringify([c.clip]));
+                  e.dataTransfer.effectAllowed = "move";
+                }}
                 title={c.error ?? c.path}
                 style={{ top: (first + k) * ROW_H, height: ROW_H - 2 }}
                 className={cx("absolute inset-x-0 flex cursor-default items-center gap-2 rounded-md px-2", active ? "bg-accent text-accent-fg" : "hover:bg-control-hover")}

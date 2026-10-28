@@ -102,6 +102,11 @@ pub struct ClipRow {
     pub error: Option<String>,
     /// Log/colour profile used for preview and log-aware exposure.
     pub profile: clippro_types::ColourProfile,
+    pub bin: Option<f64>,
+    pub camera: Option<String>,
+    /// Recording date (ISO 8601) from metadata.
+    pub created: Option<String>,
+    pub codec: String,
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
@@ -158,7 +163,11 @@ fn options(state: &AppState) -> SessionOptions {
 /// Remembers the open project for "reopen at start-up".
 fn remember_project(state: &AppState, path: &std::path::Path) {
     let mut st = lock(&state.settings);
-    st.last_project = Some(path.to_string_lossy().into_owned());
+    let p = path.to_string_lossy().into_owned();
+    st.last_project = Some(p.clone());
+    st.recent_projects.retain(|x| !x.eq_ignore_ascii_case(&p));
+    st.recent_projects.insert(0, p);
+    st.recent_projects.truncate(10);
     if let Some(p) = lock(&state.settings_path).as_ref() {
         let _ = st.save(p);
     }
@@ -322,6 +331,10 @@ async fn clips_list(state: State<'_, AppState>) -> Result<Vec<ClipRow>, String> 
                 progress: c.progress,
                 error: c.error,
                 profile: c.profile,
+                bin: c.bin.map(|b| b as f64),
+                camera: c.camera,
+                created: c.created,
+                codec: c.codec,
             })
             .collect())
     })
@@ -719,6 +732,113 @@ async fn submetrics_list() -> Result<Vec<SubMetricInfo>, String> {
         .iter()
         .map(|m| SubMetricInfo { key: m.key().into(), label: m.label().into(), group: format!("{:?}", m.group()).to_lowercase(), target: m.is_target() })
         .collect())
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct BinDto {
+    pub id: f64,
+    pub name: String,
+    /// manual | smart
+    pub kind: String,
+    /// Smart collections: the UI's query document.
+    pub query: Option<String>,
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn bins_list(state: State<'_, AppState>) -> Result<Vec<BinDto>, String> {
+    let s = state.session()?;
+    let rows = lock(&s.db).bins().map_err(|e| e.to_string())?;
+    Ok(rows.into_iter().map(|b| BinDto { id: b.id as f64, name: b.name, kind: b.kind, query: b.query_json }).collect())
+}
+
+/// Adds a bin (`kind` manual) or smart collection (`kind` smart, with `query`).
+#[tauri::command]
+#[specta::specta]
+async fn bin_add(state: State<'_, AppState>, name: String, kind: String, query: Option<String>) -> Result<f64, String> {
+    let s = state.session()?;
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("Give it a name.".into());
+    }
+    if kind != "manual" && kind != "smart" {
+        return Err("Unknown bin kind".into());
+    }
+    let r = lock(&s.db).add_bin(&name, &kind, query.as_deref()).map(|id| id as f64).map_err(|e| e.to_string());
+    r
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn bin_update(state: State<'_, AppState>, id: f64, name: String, query: Option<String>) -> Result<(), String> {
+    let s = state.session()?;
+    let r = lock(&s.db).update_bin(id as i64, name.trim(), query.as_deref()).map_err(|e| e.to_string());
+    r
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn bin_delete(state: State<'_, AppState>, id: f64) -> Result<(), String> {
+    let s = state.session()?;
+    let r = lock(&s.db).delete_bin(id as i64).map_err(|e| e.to_string());
+    r
+}
+
+/// Moves clips into a bin (`bin` null = back to the project root).
+#[tauri::command]
+#[specta::specta]
+async fn clips_set_bin(state: State<'_, AppState>, clips: Vec<f64>, bin: Option<f64>) -> Result<(), String> {
+    let s = state.session()?;
+    let db = lock(&s.db);
+    for c in clips {
+        db.set_clip_bin(clippro_types::ClipId(c as i64), bin.map(|b| b as i64)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct ProjectTemplate {
+    pub name: String,
+    /// The UI's template document (tuning, watch folders, export defaults).
+    pub json: String,
+}
+
+fn templates_dir(state: &AppState) -> Option<PathBuf> {
+    lock(&state.presets_dir).as_ref().and_then(|p| p.parent().map(|d| d.join("templates")))
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn templates_list(state: State<'_, AppState>) -> Result<Vec<ProjectTemplate>, String> {
+    let Some(dir) = templates_dir(&state) else { return Ok(Vec::new()) };
+    let Ok(rd) = std::fs::read_dir(&dir) else { return Ok(Vec::new()) };
+    let mut out: Vec<ProjectTemplate> = rd
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+        .filter_map(|e| std::fs::read_to_string(e.path()).ok())
+        .filter_map(|t| serde_json::from_str::<ProjectTemplate>(&t).ok())
+        .collect();
+    out.sort_by_key(|t| t.name.to_lowercase());
+    Ok(out)
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn template_save(state: State<'_, AppState>, template: ProjectTemplate) -> Result<(), String> {
+    let dir = templates_dir(&state).ok_or("No config folder")?;
+    if template.name.trim().is_empty() {
+        return Err("Give the template a name.".into());
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(&template).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(format!("{}.json", presets::slug(&template.name))), text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn template_delete(state: State<'_, AppState>, name: String) -> Result<(), String> {
+    let dir = templates_dir(&state).ok_or("No config folder")?;
+    std::fs::remove_file(dir.join(format!("{}.json", presets::slug(&name)))).map_err(|e| e.to_string())
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
@@ -1180,6 +1300,14 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             watch_folders_get,
             snapshots_list,
             overrides_list,
+            bins_list,
+            bin_add,
+            bin_update,
+            bin_delete,
+            clips_set_bin,
+            templates_list,
+            template_save,
+            template_delete,
             override_add,
             override_remove,
             annotations_list,

@@ -21,8 +21,9 @@ export function UndoRedo() {
 }
 
 export function SnapshotsMenu() {
-  const { snapshots, saveSnapshot, applySnapshot, deleteSnapshot, ab, toggleAB, endAB } = useApp();
+  const { snapshots, saveSnapshot, applySnapshot, deleteSnapshot, ab, toggleAB, endAB, saveTemplate } = useApp();
   const [name, setName] = useState("");
+  const [tpl, setTpl] = useState("");
   return (
     <div className="flex items-center gap-1">
       <button
@@ -81,6 +82,26 @@ export function SnapshotsMenu() {
               </div>
             ))
           )}
+          <div className="my-1 h-px bg-separator" />
+          <div className="section-header px-1">Project template</div>
+          <form
+            className="flex gap-1 px-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (tpl.trim()) void saveTemplate(tpl).then(() => setTpl(""));
+            }}
+          >
+            <input
+              value={tpl}
+              onChange={(e) => setTpl(e.target.value)}
+              placeholder="Template name…"
+              title="Saves this tuning and the watch folders as a starting point for new projects"
+              className="h-6 min-w-0 flex-1 rounded border border-separator-strong bg-control px-1.5 text-[12px]"
+            />
+            <button type="submit" disabled={!tpl.trim()} className="rounded px-2 text-[11px] ring-1 ring-separator-strong disabled:opacity-40">
+              Save
+            </button>
+          </form>
         </div>
       </Popover>
     </div>

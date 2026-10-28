@@ -19,6 +19,8 @@ pub struct AppSettings {
     /// Open the last project at start-up.
     pub reopen_last: bool,
     pub last_project: Option<String>,
+    /// Most recent first, at most 10.
+    pub recent_projects: Vec<String>,
     /// Analysis workers; 0 = automatic (by CPU count).
     pub workers: u32,
     /// Decode on the GPU (D3D11VA) when the codec allows.
@@ -38,6 +40,7 @@ impl Default for AppSettings {
             window_controls: "mac".into(),
             reopen_last: true,
             last_project: None,
+            recent_projects: Vec::new(),
             workers: 0,
             gpu_decode: true,
             use_cache: true,
@@ -74,6 +77,7 @@ impl AppSettings {
             self.sample_rate = d.sample_rate;
         }
         self.workers = self.workers.min(64);
+        self.recent_projects.truncate(10);
         self
     }
 

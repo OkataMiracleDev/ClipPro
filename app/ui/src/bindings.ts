@@ -50,6 +50,16 @@ export const commands = {
 	watchFoldersGet: () => typedError<WatchFolderDto[], string>(__TAURI_INVOKE("watch_folders_get")),
 	snapshotsList: () => typedError<Snapshot[], string>(__TAURI_INVOKE("snapshots_list")),
 	overridesList: () => typedError<OverrideDto[], string>(__TAURI_INVOKE("overrides_list")),
+	binsList: () => typedError<BinDto_Serialize[], string>(__TAURI_INVOKE("bins_list")),
+	/**  Adds a bin (`kind` manual) or smart collection (`kind` smart, with `query`). */
+	binAdd: (name: string, kind: string, query: string | null) => typedError<number | null, string>(__TAURI_INVOKE("bin_add", { name, kind, query })),
+	binUpdate: (id: number | null, name: string, query: string | null) => typedError<null, string>(__TAURI_INVOKE("bin_update", { id, name, query })),
+	binDelete: (id: number | null) => typedError<null, string>(__TAURI_INVOKE("bin_delete", { id })),
+	/**  Moves clips into a bin (`bin` null = back to the project root). */
+	clipsSetBin: (clips: (number | null)[], bin: number | null) => typedError<null, string>(__TAURI_INVOKE("clips_set_bin", { clips, bin })),
+	templatesList: () => typedError<ProjectTemplate[], string>(__TAURI_INVOKE("templates_list")),
+	templateSave: (template: ProjectTemplate) => typedError<null, string>(__TAURI_INVOKE("template_save", { template })),
+	templateDelete: (name: string) => typedError<null, string>(__TAURI_INVOKE("template_delete", { name })),
 	/**  Adds a manual override (force in/out, trim, manual segment); rescore afterwards. */
 	overrideAdd: (clip: number | null, kind: string, startUs: number | null, endUs: number | null) => typedError<number | null, string>(__TAURI_INVOKE("override_add", { clip, kind, startUs, endUs })),
 	overrideRemove: (id: number | null) => typedError<null, string>(__TAURI_INVOKE("override_remove", { id })),
@@ -156,6 +166,8 @@ export type AppSettings_Deserialize = {
 	/**  Open the last project at start-up. */
 	reopen_last?: boolean,
 	last_project?: string | null,
+	/**  Most recent first, at most 10. */
+	recent_projects?: string[],
 	/**  Analysis workers; 0 = automatic (by CPU count). */
 	workers?: number,
 	/**  Decode on the GPU (D3D11VA) when the codec allows. */
@@ -176,6 +188,8 @@ export type AppSettings_Serialize = {
 	/**  Open the last project at start-up. */
 	reopen_last: boolean,
 	last_project: string | null,
+	/**  Most recent first, at most 10. */
+	recent_projects: string[],
 	/**  Analysis workers; 0 = automatic (by CPU count). */
 	workers: number,
 	/**  Decode on the GPU (D3D11VA) when the codec allows. */
@@ -195,6 +209,26 @@ export type BenchClip = {
 	height: number,
 	duration_us: number | null,
 	fps: number | null,
+};
+
+export type BinDto = BinDto_Serialize | BinDto_Deserialize;
+
+export type BinDto_Deserialize = {
+	id: number | null,
+	name: string,
+	/**  manual | smart */
+	kind: string,
+	/**  Smart collections: the UI's query document. */
+	query?: string | null,
+};
+
+export type BinDto_Serialize = {
+	id: number | null,
+	name: string,
+	/**  manual | smart */
+	kind: string,
+	/**  Smart collections: the UI's query document. */
+	query: string | null,
 };
 
 export type CameraFilter = {
@@ -229,6 +263,11 @@ export type ClipRow_Deserialize = {
 	error?: string | null,
 	/**  Log/colour profile used for preview and log-aware exposure. */
 	profile: ColourProfile,
+	bin?: number | null,
+	camera?: string | null,
+	/**  Recording date (ISO 8601) from metadata. */
+	created?: string | null,
+	codec: string,
 };
 
 export type ClipRow_Serialize = {
@@ -242,6 +281,11 @@ export type ClipRow_Serialize = {
 	error: string | null,
 	/**  Log/colour profile used for preview and log-aware exposure. */
 	profile: ColourProfile,
+	bin: number | null,
+	camera: string | null,
+	/**  Recording date (ISO 8601) from metadata. */
+	created: string | null,
+	codec: string,
 };
 
 export type ClipScore = {
@@ -483,6 +527,12 @@ export type ProjectInfo = {
 	name: string,
 	/**  The previous session didn't close cleanly; the last saved state was restored. */
 	recovered: boolean,
+};
+
+export type ProjectTemplate = {
+	name: string,
+	/**  The UI's template document (tuning, watch folders, export defaults). */
+	json: string,
 };
 
 export type ScoreResult = {

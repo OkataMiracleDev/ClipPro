@@ -67,7 +67,7 @@ function makeDemo(): DemoClip[] {
       }
     }
     return {
-      clip: { clip: i + 1, media: i + 1, name, path: `D:/Footage/${name}.mov`, state: "done", progress: 1, error: null, profile: name.startsWith("DRONE") ? "d_log" : name.startsWith("A001") ? "s_log3" : "rec709" },
+      clip: { clip: i + 1, media: i + 1, name, path: `D:/Footage/${name}.mov`, state: "done", progress: 1, error: null, profile: name.startsWith("DRONE") ? "d_log" : name.startsWith("A001") ? "s_log3" : "rec709", bin: null, camera: name.startsWith("DRONE") ? "DJI Mavic 3" : name.startsWith("A") ? "Sony FX6" : name.startsWith("B") ? "Canon C70" : null, created: `2026-10-${String(10 + (i % 5)).padStart(2, "0")}T09:00:00Z`, codec: name.startsWith("DRONE") ? "hevc" : "prores" },
       durationUs: dur,
       bar,
       flags,
@@ -76,8 +76,14 @@ function makeDemo(): DemoClip[] {
 }
 
 const demo = makeDemo();
-let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true };
+let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, recent_projects: ["D:/Projects/Coast Doc.clippro", "D:/Projects/Sarah Interview.clippro", "E:/Weddings/Okafor.clippro"], workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true };
 const settingsListeners = new Set<(s: AppSettings) => void>();
+const mockBins: { id: number; name: string; kind: string; query: string | null }[] = [
+  { id: 1, name: "Interviews", kind: "manual", query: null },
+  { id: 2, name: "Strong drone", kind: "smart", query: JSON.stringify({ match: "all", rules: [{ field: "camera", op: "contains", value: "DJI" }, { field: "score", op: ">=", value: 60 }] }) },
+];
+let mockBinId = 2;
+const mockTemplates: { name: string; json: string }[] = [];
 const mockOverrides: import("./api").OverrideInfo[] = [];
 let mockOverrideId = 0;
 const mockAnnotations: import("./api").Annotation[] = [];
@@ -318,6 +324,33 @@ export const mockBackend: Backend = {
     mockTuning = json;
   },
   tuningLoad: async () => mockTuning,
+  binsList: async () => [...mockBins],
+  binAdd: async (name, kind, query) => {
+    mockBins.push({ id: ++mockBinId, name, kind, query });
+    return mockBinId;
+  },
+  binUpdate: async (id, name, query) => {
+    const b = mockBins.find((x) => x.id === id);
+    if (b) Object.assign(b, { name, query });
+  },
+  binDelete: async (id) => {
+    const i = mockBins.findIndex((x) => x.id === id);
+    if (i >= 0) mockBins.splice(i, 1);
+    demo.forEach((d) => d.clip.bin === id && (d.clip = { ...d.clip, bin: null }));
+  },
+  clipsSetBin: async (clips, bin) => {
+    demo.forEach((d) => clips.includes(d.clip.clip) && (d.clip = { ...d.clip, bin }));
+  },
+  templatesList: async () => [...mockTemplates],
+  templateSave: async (t) => {
+    const i = mockTemplates.findIndex((x) => x.name === t.name);
+    if (i >= 0) mockTemplates.splice(i, 1);
+    mockTemplates.push(t);
+  },
+  templateDelete: async (name) => {
+    const i = mockTemplates.findIndex((x) => x.name === name);
+    if (i >= 0) mockTemplates.splice(i, 1);
+  },
   overridesList: async () => [...mockOverrides],
   overrideAdd: async (clip, kind, startUs, endUs) => {
     mockOverrides.push({ id: ++mockOverrideId, clip, kind, startUs, endUs });

@@ -46,6 +46,10 @@ export interface Clip {
   progress: number;
   error: string | null;
   profile: ColourProfile;
+  bin: number | null;
+  camera: string | null;
+  created: string | null;
+  codec: string;
 }
 
 export interface Segment {
@@ -111,6 +115,13 @@ export interface Inspection {
   mvs: { cols: number; rows: number; values: Int16Array };
   hist: number[];
   working: { w: number; h: number };
+}
+
+export interface Bin {
+  id: number;
+  name: string;
+  kind: string;
+  query: string | null;
 }
 
 export interface OverrideInfo {
@@ -190,6 +201,16 @@ export interface Backend {
   snapshotDelete(id: number): Promise<void>;
   tuningSave(json: string): Promise<void>;
   tuningLoad(): Promise<string | null>;
+  /** Bins and smart collections (P9.8); `query` is a SmartQuery document. */
+  binsList(): Promise<Bin[]>;
+  binAdd(name: string, kind: "manual" | "smart", query: string | null): Promise<number>;
+  binUpdate(id: number, name: string, query: string | null): Promise<void>;
+  binDelete(id: number): Promise<void>;
+  clipsSetBin(clips: number[], bin: number | null): Promise<void>;
+  /** Project templates: tuning and watch folders to start a project from. */
+  templatesList(): Promise<{ name: string; json: string }[]>;
+  templateSave(t: { name: string; json: string }): Promise<void>;
+  templateDelete(name: string): Promise<void>;
   /** Manual overrides and annotations (P9.7). */
   overridesList(): Promise<OverrideInfo[]>;
   overrideAdd(clip: number, kind: OverrideInfo["kind"], startUs: number, endUs: number): Promise<number>;
@@ -271,6 +292,10 @@ const adaptClip = (c: RawClip): Clip => ({
   progress: n(c.progress),
   error: c.error ?? null,
   profile: c.profile,
+  bin: c.bin === null || c.bin === undefined ? null : n(c.bin),
+  camera: c.camera ?? null,
+  created: c.created ?? null,
+  codec: c.codec,
 });
 
 function adaptSource(r: RawMediaSource, toUrl: (path: string) => string): MediaSource {
@@ -360,6 +385,14 @@ const tauriBackend: Backend = {
   snapshotDelete: async (id) => void unwrap(await commands.snapshotDelete(id)),
   tuningSave: async (json) => void unwrap(await commands.tuningSave(json)),
   tuningLoad: async () => unwrap(await commands.tuningLoad()) ?? null,
+  binsList: async () => unwrap(await commands.binsList()).map((b) => ({ id: n(b.id), name: b.name, kind: b.kind, query: b.query ?? null })),
+  binAdd: async (name, kind, query) => n(unwrap(await commands.binAdd(name, kind, query))),
+  binUpdate: async (id, name, query) => void unwrap(await commands.binUpdate(id, name, query)),
+  binDelete: async (id) => void unwrap(await commands.binDelete(id)),
+  clipsSetBin: async (clips, bin) => void unwrap(await commands.clipsSetBin(clips, bin)),
+  templatesList: async () => unwrap(await commands.templatesList()),
+  templateSave: async (t) => void unwrap(await commands.templateSave(t)),
+  templateDelete: async (name) => void unwrap(await commands.templateDelete(name)),
   overridesList: async () =>
     unwrap(await commands.overridesList()).map((o) => ({ id: n(o.id), clip: n(o.clip), kind: o.kind as OverrideInfo["kind"], startUs: n(o.start_us), endUs: n(o.end_us) })),
   overrideAdd: async (clip, kind, startUs, endUs) => n(unwrap(await commands.overrideAdd(clip, kind, startUs, endUs))),
