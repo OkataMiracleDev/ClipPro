@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { CubeLut } from "./lib/cube";
 import { History } from "./lib/history";
+import { setBindings } from "./lib/keys";
 import type { Overlay } from "./lib/glview";
 import type { MeasureOverlayKind } from "./views/MeasureOverlay";
 import { api, isTauri, type AnalysisEvent, type Clip, type PresetInfo, type ProjectInfo, type Scored, type Settings, type SortOrder } from "./api";
@@ -708,6 +709,7 @@ export const useApp = create<AppState>((set, get) => ({
   applySettings: (appSettings) => {
     set({ appSettings });
     applyTheme(appSettings.theme);
+    setBindings(appSettings.keybindings);
   },
   setUserLut: (userLut) => set({ userLut }),
   setSplit: (split) => set({ split }),

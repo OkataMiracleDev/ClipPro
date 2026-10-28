@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ExportSheet } from "./ExportSheet";
 import { api, isTauri, type SortOrder } from "../api";
 import { cx, IconButton, Popover, PopoverClose, Spinner } from "../components/ui";
+import { actionFor } from "../lib/keys";
 import { useApp } from "../store";
 import { pickMedia, pickProjectToOpen } from "../lib/dialogs";
 
@@ -92,10 +93,11 @@ export function TitleBar() {
   const [exportOpen, setExportOpen] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === "e" && project) {
+      const a = actionFor(e);
+      if (a === "export" && project) {
         e.preventDefault();
         setExportOpen(true);
-      } else if (e.ctrlKey && e.key === ",") {
+      } else if (a === "settings") {
         e.preventDefault();
         void api.openSettings();
       }

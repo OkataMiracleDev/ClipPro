@@ -31,6 +31,10 @@ pub struct AppSettings {
     pub sample_rate: String,
     /// Measure motion from frame pairs (more accurate shake and blur).
     pub pair_sampling: bool,
+    /// Rebound shortcuts: action id → key combo (only those that differ from the defaults).
+    pub keybindings: std::collections::BTreeMap<String, String>,
+    /// Score colours: oklch red→green, or blue→orange for colour-blind viewers.
+    pub colour_blind_scores: bool,
 }
 
 impl Default for AppSettings {
@@ -46,6 +50,8 @@ impl Default for AppSettings {
             use_cache: true,
             sample_rate: "standard".into(),
             pair_sampling: true,
+            keybindings: Default::default(),
+            colour_blind_scores: false,
         }
     }
 }

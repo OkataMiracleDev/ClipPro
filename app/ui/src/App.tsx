@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, isTauri } from "./api";
 import { Button, cx, EmptyState, Popover, PopoverClose, Segmented } from "./components/ui";
 import { pickFolder, pickMedia, pickNewProject, pickProjectToOpen } from "./lib/dialogs";
+import { actionFor, isTyping } from "./lib/keys";
 import { useApp } from "./store";
 import { ClipList, Sidebar } from "./views/ClipList";
 import { ScoreChart } from "./views/ScoreChart";
@@ -171,11 +172,10 @@ export function App() {
   // Undo/redo for tuning (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y), except while typing in a field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (!e.ctrlKey || e.altKey || (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)))) return;
-      const k = e.key.toLowerCase();
-      if (k === "z" && !e.shiftKey) useApp.getState().undo();
-      else if ((k === "z" && e.shiftKey) || k === "y") useApp.getState().redo();
+      if (isTyping(e.target)) return;
+      const a = actionFor(e);
+      if (a === "undo") useApp.getState().undo();
+      else if (a === "redo" || (e.ctrlKey && e.key.toLowerCase() === "y")) useApp.getState().redo();
       else return;
       e.preventDefault();
     };

@@ -76,7 +76,7 @@ function makeDemo(): DemoClip[] {
 }
 
 const demo = makeDemo();
-let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, recent_projects: ["D:/Projects/Coast Doc.clippro", "D:/Projects/Sarah Interview.clippro", "E:/Weddings/Okafor.clippro"], workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true };
+let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, recent_projects: ["D:/Projects/Coast Doc.clippro", "D:/Projects/Sarah Interview.clippro", "E:/Weddings/Okafor.clippro"], workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true, keybindings: {}, colour_blind_scores: false };
 const settingsListeners = new Set<(s: AppSettings) => void>();
 const mockBins: { id: number; name: string; kind: string; query: string | null }[] = [
   { id: 1, name: "Interviews", kind: "manual", query: null },

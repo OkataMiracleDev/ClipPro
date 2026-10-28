@@ -14,6 +14,7 @@ import { GlView, type Overlay, type ProfileColour } from "../lib/glview";
 import { useInspection } from "../lib/inspect";
 import { parseHeader, HEADER_BYTES } from "../lib/glview";
 import { rgbaToLuma, scopeBus, waveform } from "../lib/scope";
+import { actionFor, isTyping } from "../lib/keys";
 import { shuttle, type ShuttleKey } from "../lib/shuttle";
 import { WaveformScope } from "./WaveformScope";
 import { MeasureOverlay, type MeasureOverlayKind } from "./MeasureOverlay";
@@ -72,7 +73,6 @@ function playRange(clip: number, at: number, durationUs: number, frameUs: number
   return seg ? { start: seg.startUs, end: Math.min(seg.endUs, whole.end), loop } : whole;
 }
 
-const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
 
 export function Viewer() {
   const { clips, scored, selectedClip, playheadUs, playing, setPlaying, setPlayhead, overlay, toggleOverlay, measureOverlay, toggleMeasureOverlay, setRightTab, rate, setRate, loop, toggleLoop } = useApp();
@@ -118,70 +118,108 @@ export function Viewer() {
     if (!clip) return;
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "l") {
-        e.preventDefault();
-        toggleLoop();
-        return;
-      }
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "i") {
-        e.preventDefault();
-        setRightTab(useApp.getState().rightTab === "frame" ? "tuning" : "frame");
-        return;
-      }
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const { playheadUs: at, playing: p, rate: r } = useApp.getState();
-      if (e.key === " ") {
-        e.preventDefault();
-        if (!p && at >= durationUs - frameUs) seek(0);
-        setRate(1);
-        setPlaying(!p);
-      } else if (["j", "k", "l"].includes(e.key.toLowerCase())) {
-        const key = e.key.toLowerCase() as ShuttleKey;
+      const action = actionFor(e);
+      if (!action) return;
+      const st = useApp.getState();
+      const { playheadUs: at, playing: p, rate: r } = st;
+      const shuttleBy = (key: ShuttleKey) => {
         if (key === "l" && !p && at >= durationUs - frameUs) seek(0);
         if (key === "j" && !p && at <= 0) return;
         const next = shuttle(key, p, r);
         setRate(next.rate);
         setPlaying(next.playing);
-      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        e.preventDefault();
+      };
+      const step = (us: number) => {
         setPlaying(false);
-        const step = e.shiftKey ? 1e6 : frameUs;
-        seek(at + (e.key === "ArrowLeft" ? -step : step));
-      } else if (e.key === "z" || e.key === "Z") {
-        toggleOverlay("zebras");
-      } else if (e.key === "c" || e.key === "C") {
-        toggleOverlay("false_colour");
-      } else if (e.key === "p" || e.key === "P") {
-        toggleOverlay("peaking");
-      } else if (e.key === "t" || e.key === "T") {
-        toggleMeasureOverlay("tiles");
-      } else if (e.key === "v" || e.key === "V") {
-        toggleMeasureOverlay("motion");
-      } else if (e.key === "Escape" && useApp.getState().compare) {
-        useApp.getState().setCompare(null);
-      } else if (e.key === "w" || e.key === "W") {
-        useApp.getState().toggleScope();
-      } else if (e.key === "b" || e.key === "B") {
-        const st = useApp.getState();
-        st.setSplit(st.split === null ? 0.5 : null);
-      } else if (e.key === "i" || e.key === "I") {
-        useApp.getState().setMark("in");
-      } else if (e.key === "o" || e.key === "O") {
-        useApp.getState().setMark("out");
-      } else if (e.key === "f" || e.key === "F") {
-        void useApp.getState().toggleForce();
-      } else if (e.key === "[") {
-        void useApp.getState().trimSelect("start");
-      } else if (e.key === "]") {
-        void useApp.getState().trimSelect("end");
-      } else if (e.key === "m" || e.key === "M") {
-        void useApp.getState().addManualSegment();
-      } else if (e.key === "Home") {
-        seek(0);
-      } else if (e.key === "End") {
-        setPlaying(false);
-        seek(durationUs);
+        seek(at + us);
+      };
+      switch (action) {
+        case "play_pause":
+          if (!p && at >= durationUs - frameUs) seek(0);
+          setRate(1);
+          setPlaying(!p);
+          break;
+        case "shuttle_back":
+          shuttleBy("j");
+          break;
+        case "shuttle_stop":
+          shuttleBy("k");
+          break;
+        case "shuttle_forward":
+          shuttleBy("l");
+          break;
+        case "prev_frame":
+          step(-frameUs);
+          break;
+        case "next_frame":
+          step(frameUs);
+          break;
+        case "back_second":
+          step(-1e6);
+          break;
+        case "forward_second":
+          step(1e6);
+          break;
+        case "go_start":
+          seek(0);
+          break;
+        case "go_end":
+          setPlaying(false);
+          seek(durationUs);
+          break;
+        case "loop":
+          toggleLoop();
+          break;
+        case "inspector":
+          setRightTab(st.rightTab === "frame" ? "tuning" : "frame");
+          break;
+        case "zebras":
+          toggleOverlay("zebras");
+          break;
+        case "false_colour":
+          toggleOverlay("false_colour");
+          break;
+        case "peaking":
+          toggleOverlay("peaking");
+          break;
+        case "focus_map":
+          toggleMeasureOverlay("tiles");
+          break;
+        case "motion":
+          toggleMeasureOverlay("motion");
+          break;
+        case "waveform":
+          st.toggleScope();
+          break;
+        case "split":
+          st.setSplit(st.split === null ? 0.5 : null);
+          break;
+        case "close_compare":
+          if (!st.compare) return;
+          st.setCompare(null);
+          break;
+        case "mark_in":
+          st.setMark("in");
+          break;
+        case "mark_out":
+          st.setMark("out");
+          break;
+        case "force":
+          void st.toggleForce();
+          break;
+        case "trim_start":
+          void st.trimSelect("start");
+          break;
+        case "trim_end":
+          void st.trimSelect("end");
+          break;
+        case "manual_select":
+          void st.addManualSegment();
+          break;
+        default:
+          return; // global actions (undo, export…) are handled elsewhere
       }
+      e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

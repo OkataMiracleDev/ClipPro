@@ -178,6 +178,10 @@ export type AppSettings_Deserialize = {
 	sample_rate?: string,
 	/**  Measure motion from frame pairs (more accurate shake and blur). */
 	pair_sampling?: boolean,
+	/**  Rebound shortcuts: action id → key combo (only those that differ from the defaults). */
+	keybindings?: { [key in string]: string },
+	/**  Score colours: oklch red→green, or blue→orange for colour-blind viewers. */
+	colour_blind_scores?: boolean,
 };
 
 export type AppSettings_Serialize = {
@@ -200,6 +204,10 @@ export type AppSettings_Serialize = {
 	sample_rate: string,
 	/**  Measure motion from frame pairs (more accurate shake and blur). */
 	pair_sampling: boolean,
+	/**  Rebound shortcuts: action id → key combo (only those that differ from the defaults). */
+	keybindings: { [key in string]: string },
+	/**  Score colours: oklch red→green, or blue→orange for colour-blind viewers. */
+	colour_blind_scores: boolean,
 };
 
 export type BenchClip = {
