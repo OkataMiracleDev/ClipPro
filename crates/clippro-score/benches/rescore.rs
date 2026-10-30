@@ -37,6 +37,7 @@ fn project() -> Vec<ClipInput> {
                 profile: ColourProfile::Rec709,
                 extra: BTreeMap::new(),
                 extra_flags: None,
+                snaps: None,
             }
         })
         .collect()

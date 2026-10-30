@@ -219,7 +219,9 @@ pub struct Decoder {
 unsafe impl Send for Decoder {}
 
 impl Decoder {
-    pub fn open(par: *const ff::AVCodecParameters, threads: i32, setup: impl FnOnce(*mut ff::AVCodecContext)) -> Result<Decoder> {
+    /// # Safety
+    /// `par` must point to valid codec parameters that outlive this call.
+    pub unsafe fn open(par: *const ff::AVCodecParameters, threads: i32, setup: impl FnOnce(*mut ff::AVCodecContext)) -> Result<Decoder> {
         unsafe {
             let codec = ff::avcodec_find_decoder((*par).codec_id);
             if codec.is_null() {
@@ -264,7 +266,9 @@ impl Drop for Decoder {
     }
 }
 
-pub fn cstr(p: *const libc::c_char) -> String {
+/// # Safety
+/// `p` must be null or point to a NUL-terminated string that stays valid during the call.
+pub unsafe fn cstr(p: *const libc::c_char) -> String {
     if p.is_null() {
         return String::new();
     }
@@ -276,7 +280,10 @@ pub fn codec_name(id: ff::AVCodecID) -> String {
 }
 
 /// All entries of an `AVDictionary`.
-pub fn dict_entries(d: *const ff::AVDictionary) -> Vec<(String, String)> {
+///
+/// # Safety
+/// `d` must be null or point to a valid dictionary that isn't modified during the call.
+pub unsafe fn dict_entries(d: *const ff::AVDictionary) -> Vec<(String, String)> {
     let mut out = Vec::new();
     if d.is_null() {
         return out;

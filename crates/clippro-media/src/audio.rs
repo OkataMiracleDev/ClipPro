@@ -56,7 +56,8 @@ pub fn decode_audio_with(path: &Path, o: &AudioOptions, mut f: impl FnMut(&[Vec<
     }
     let tb = st.time_base;
     let start_ts = if st.start_time != ff::AV_NOPTS_VALUE { st.start_time } else { 0 };
-    let mut dec = Decoder::open(st.codecpar, 1, |_| {})?;
+    // SAFETY: the stream's parameters live as long as `input`.
+    let mut dec = unsafe { Decoder::open(st.codecpar, 1, |_| {}) }?;
     let ch = unsafe { (*dec.ctx).ch_layout.nb_channels.max(1) } as usize;
     let mut stats = AudioStats { channels: ch, start_us: ts_to_us(start_ts, tb) - video_start_us, ..Default::default() };
     if let Some(from) = o.from_us.filter(|&t| t > 0) {

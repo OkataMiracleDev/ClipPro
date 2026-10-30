@@ -586,7 +586,7 @@ mod tests {
         let mut rng = SplitMix(seed);
         let comps: Vec<(f32, f32, f32, f32)> = (0..24)
             .map(|_| {
-                (rng.f32() * 0.6 + 0.02, rng.f32() * 0.6 + 0.02, rng.f32() * 6.28, rng.f32() * 0.05)
+                (rng.f32() * 0.6 + 0.02, rng.f32() * 0.6 + 0.02, rng.f32() * std::f32::consts::TAU, rng.f32() * 0.05)
             })
             .collect();
         Image::from_fn(w, h, |x, y| {
@@ -696,9 +696,9 @@ mod tests {
 
     #[test]
     fn banding_detected_only_for_bands() {
-        let band = Image::from_fn(320, 180, |_, y| 0.5 + 0.05 * (y as f32 * 6.0 * 6.283 / 180.0).sin());
+        let band = Image::from_fn(320, 180, |_, y| 0.5 + 0.05 * (y as f32 * 6.0 * std::f32::consts::TAU / 180.0).sin());
         assert!(row_band(&band) > 0.3, "{}", row_band(&band));
-        let band2 = Image::from_fn(320, 180, |_, y| 0.5 + 0.05 * (y as f32 * 6.0 * 6.283 / 180.0 + 0.5).sin());
+        let band2 = Image::from_fn(320, 180, |_, y| 0.5 + 0.05 * (y as f32 * 6.0 * std::f32::consts::TAU / 180.0 + 0.5).sin());
         assert!(row_band_temporal(&band, &band2, 0.0) > 0.3, "{}", row_band_temporal(&band, &band2, 0.0));
         assert_eq!(row_band_temporal(&band, &band, 0.0), 0.0);
         // A vertically shifted textured frame is not banding once motion is compensated.

@@ -484,7 +484,7 @@ mod tests {
     fn texture(w: usize, h: usize, seed: u64) -> Image {
         let mut rng = SplitMix(seed);
         let comps: Vec<(f32, f32, f32, f32)> = (0..30)
-            .map(|_| (rng.f32() * 0.5 + 0.01, rng.f32() * 0.5 + 0.01, rng.f32() * 6.28, rng.f32() * 0.04))
+            .map(|_| (rng.f32() * 0.5 + 0.01, rng.f32() * 0.5 + 0.01, rng.f32() * std::f32::consts::TAU, rng.f32() * 0.04))
             .collect();
         Image::from_fn(w, h, |x, y| {
             let mut v = 0.5;

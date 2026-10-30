@@ -67,7 +67,8 @@ pub struct MediaInfo {
 const RAW_EXTENSIONS: &[&str] = &["braw", "r3d", "ari", "arx", "crm", "nev", "dng"];
 
 fn known(p: *const libc::c_char) -> String {
-    let s = cstr(p);
+    // SAFETY: callers pass FFmpeg's static name strings (or null).
+    let s = unsafe { cstr(p) };
     if s.is_empty() {
         "unknown".into()
     } else {
@@ -110,12 +111,14 @@ pub fn probe(path: &Path) -> Result<MediaInfo> {
         duration_us: input.duration_us().max(0),
         ..Default::default()
     };
-    let mut tags = dict_entries(unsafe { (*input.ctx).metadata });
+    // SAFETY: the input context and its metadata live as long as `input`.
+    let mut tags = unsafe { dict_entries((*input.ctx).metadata) };
     let vidx = input.best_stream(ff::AVMediaType::AVMEDIA_TYPE_VIDEO);
     for (i, &sp) in input.streams().iter().enumerate() {
         let st = unsafe { &*sp };
         let par = unsafe { &*st.codecpar };
-        let stags = dict_entries(st.metadata);
+        // SAFETY: stream metadata lives as long as `input`.
+        let stags = unsafe { dict_entries(st.metadata) };
         for (k, v) in &stags {
             tags.push((format!("stream{i}.{k}"), v.clone()));
         }
@@ -136,7 +139,8 @@ pub fn probe(path: &Path) -> Result<MediaInfo> {
                     index: i,
                     codec: codec_name(par.codec_id),
                     channels: par.ch_layout.nb_channels.max(0) as u32,
-                    layout: cstr(layout.as_ptr()),
+                    // SAFETY: `layout` is a NUL-terminated buffer filled by FFmpeg.
+                    layout: unsafe { cstr(layout.as_ptr()) },
                     sample_rate: par.sample_rate.max(0) as u32,
                     language: first_tag(&stags, &["language"]).unwrap_or("").to_string(),
                 });
@@ -192,7 +196,7 @@ fn video_info(i: usize, st: &ff::AVStream, par: &ff::AVCodecParameters) -> Video
     let fps_f = if avg > 0.0 { avg } else if rfr > 0.0 { rfr } else { 25.0 };
     let fps = FrameRate::from_f64(fps_f);
     let vfr = avg > 0.0 && rfr > 0.0 && (avg - rfr).abs() / rfr > 0.01;
-    let profile = cstr(unsafe { ff::avcodec_profile_name(par.codec_id, par.profile) });
+    let profile = unsafe { cstr(ff::avcodec_profile_name(par.codec_id, par.profile)) };
     let cdesc = unsafe { ff::avcodec_descriptor_get(par.codec_id) };
     let intra_only = !cdesc.is_null() && unsafe { (*cdesc).props } & ff::AV_CODEC_PROP_INTRA_ONLY as i32 != 0;
     let rotation = display_rotation(par);
@@ -200,7 +204,7 @@ fn video_info(i: usize, st: &ff::AVStream, par: &ff::AVCodecParameters) -> Video
         index: i,
         codec: codec_name(par.codec_id),
         profile,
-        pix_fmt: cstr(unsafe { ff::av_get_pix_fmt_name(fmt) }),
+        pix_fmt: unsafe { cstr(ff::av_get_pix_fmt_name(fmt)) },
         bit_depth: depth,
         chroma,
         width: par.width.max(0) as u32,

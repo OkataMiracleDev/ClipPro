@@ -560,6 +560,8 @@ fn shake_offsets(dur: f32, vel_rms: f32, seed: u64) -> Vec<(f32, f32, f32)> {
         rng ^= rng << 17;
         (rng >> 40) as f32 / (1u64 << 24) as f32
     };
+    // 6.283 (not TAU) keeps the generated corpus byte-identical to earlier runs.
+    #[allow(clippy::approx_constant)]
     let comps: Vec<(f32, f32, f32, f32)> = (0..6).map(|_| (2.0 + 6.0 * rnd(), rnd() * 6.283, rnd() * 6.283, rnd() * 6.283)).collect();
     let raw: Vec<(f32, f32, f32)> = (0..n)
         .map(|k| {

@@ -236,7 +236,8 @@ impl VideoDecoder {
         // Intra decoders slice-thread one frame at a time, so they can use every core without
         // piling up frames; others keep the per-worker share.
         let threads = if !hw_device.is_null() { 1 } else if intra_only { 0 } else { opts.threads };
-        let dec = Decoder::open(par, threads, |ctx| unsafe {
+        // SAFETY: `par` belongs to the open input, which outlives the call.
+        let dec = unsafe { Decoder::open(par, threads, |ctx| unsafe {
             if !hwdev.is_null() {
                 (*ctx).hw_device_ctx = ff::av_buffer_ref(hwdev);
                 (*ctx).get_format = Some(pick_d3d11);
@@ -246,7 +247,7 @@ impl VideoDecoder {
             if intra_only {
                 (*ctx).thread_type = ff::FF_THREAD_SLICE as i32;
             }
-        })?;
+        }) }?;
         let fps = info.fps();
         Ok(VideoDecoder {
             input,
@@ -732,7 +733,8 @@ pub fn view(f: &Frame, pts_us: i64) -> Result<FrameView<'_>> {
     let d = unsafe { &*d };
     let (w, h) = (r.width.max(0) as usize, r.height.max(0) as usize);
     let full_range = r.color_range == ff::AVColorRange::AVCOL_RANGE_JPEG
-        || crate::ffi::cstr(d.name).starts_with("yuvj");
+        // SAFETY: descriptor names are static strings.
+        || unsafe { crate::ffi::cstr(d.name) }.starts_with("yuvj");
     let plane = |ci: usize, pw: usize, ph: usize, chroma: bool| -> Result<PlaneRef<'_>> {
         let c = d.comp[ci];
         let depth = c.depth as u8;
