@@ -130,6 +130,9 @@ export interface ClipAi {
   speakers: number;
   facesDone: boolean;
   clipDone: boolean;
+  /** Outdoor and night probabilities (AI-4); null before shot analysis. */
+  outdoor: number | null;
+  night: number | null;
 }
 
 export interface Person {
@@ -766,6 +769,8 @@ const tauriBackend: Backend = {
       speakers: c.speakers,
       facesDone: c.faces_done,
       clipDone: c.clip_done,
+      outdoor: c.outdoor ?? null,
+      night: c.night ?? null,
     })),
   peopleList: async () =>
     unwrap(await commands.peopleList()).map((p) => ({

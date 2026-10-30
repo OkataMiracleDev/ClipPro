@@ -64,6 +64,9 @@ pub struct ClipAiRow {
     pub speakers: u32,
     pub faces_done: bool,
     pub clip_done: bool,
+    /// Outdoor and night probabilities (AI-4).
+    pub outdoor: Option<f32>,
+    pub night: Option<f32>,
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
@@ -334,6 +337,8 @@ pub async fn ai_clip_info(state: State<'_, AppState>) -> Result<Vec<ClipAiRow>, 
                 speakers: c.speakers as u32,
                 faces_done: c.faces_done,
                 clip_done: c.clip_done,
+                outdoor: c.outdoor,
+                night: c.night,
             })
             .collect())
     })

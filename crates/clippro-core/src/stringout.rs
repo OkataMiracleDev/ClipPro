@@ -16,6 +16,12 @@ pub enum GroupBy {
     Reel,
     Rating,
     Label,
+    /// AI: the people seen in the select.
+    Person,
+    /// AI: the select's shot type.
+    Shot,
+    /// AI: take groups (several takes of the same shot or line), best take first inside each.
+    Take,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -59,6 +65,18 @@ pub fn group_key(by: GroupBy, s: &SelectInput, clip_name: &str, info: &MediaInfo
             }
             None => missing("No label"),
         },
+        GroupBy::Person => match s.people.is_empty() {
+            true => missing("No one"),
+            false => (s.people.join(", "), s.people.join(", ").to_lowercase()),
+        },
+        GroupBy::Shot => match s.shot.is_empty() {
+            true => missing("Unknown shot"),
+            false => (s.shot.clone(), s.shot.to_lowercase()),
+        },
+        GroupBy::Take => match s.take {
+            Some((g, _)) => (format!("Take group {}", g + 1), format!("{g:06}")),
+            None => missing("Single takes"),
+        },
     }
 }
 
@@ -78,6 +96,12 @@ pub fn group_selects(selects: Vec<(SelectInput, String, MediaInfo)>, by: GroupBy
     match order {
         GroupOrder::Key => groups.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0))),
         GroupOrder::BestFirst => groups.sort_by(|a, b| b.2.total_cmp(&a.2)),
+    }
+    // Takes play best first inside their group.
+    if by == GroupBy::Take {
+        for g in &mut groups {
+            g.3.sort_by_key(|s| s.take.map_or(u32::MAX, |t| t.1));
+        }
     }
     groups.into_iter().map(|g| (g.0, g.3)).collect()
 }
@@ -105,7 +129,7 @@ mod tests {
     use super::*;
 
     fn sel(score: f32, rating: u8, label: Option<MarkerColor>) -> SelectInput {
-        SelectInput { media: 0, start_us: 0, end_us: 1_000_000, in_us: 0, out_us: 1_000_000, score, flags: vec![], rating, label, note: String::new(), transcript: String::new(), people: vec![], shot: String::new() }
+        SelectInput { media: 0, start_us: 0, end_us: 1_000_000, in_us: 0, out_us: 1_000_000, score, flags: vec![], rating, label, note: String::new(), transcript: String::new(), people: vec![], shot: String::new(), take: None }
     }
 
     fn info(camera: Option<&str>, date: Option<&str>) -> MediaInfo {
@@ -114,6 +138,20 @@ mod tests {
 
     fn titles(g: &[(String, Vec<SelectInput>)]) -> Vec<(&str, usize)> {
         g.iter().map(|(t, s)| (t.as_str(), s.len())).collect()
+    }
+
+    #[test]
+    fn groups_by_ai_fields() {
+        let ai = |people: &[&str], shot: &str, take: Option<(u32, u32)>, score: f32| {
+            let s = SelectInput { people: people.iter().map(|p| p.to_string()).collect(), shot: shot.into(), take, ..sel(score, 0, None) };
+            (s, "C".to_string(), info(None, None))
+        };
+        let rows = || vec![ai(&["Sarah"], "Close-up", Some((1, 2)), 0.6), ai(&[], "Wide", None, 0.7), ai(&["Sarah"], "Close-up", Some((1, 1)), 0.9), ai(&["Sarah", "Tom"], "", Some((0, 1)), 0.8)];
+        assert_eq!(titles(&group_selects(rows(), GroupBy::Person, GroupOrder::Key)), [("Sarah", 2), ("Sarah, Tom", 1), ("No one", 1)]);
+        assert_eq!(titles(&group_selects(rows(), GroupBy::Shot, GroupOrder::Key)), [("Close-up", 2), ("Wide", 1), ("Unknown shot", 1)]);
+        let takes = group_selects(rows(), GroupBy::Take, GroupOrder::Key);
+        assert_eq!(titles(&takes), [("Take group 1", 1), ("Take group 2", 2), ("Single takes", 1)]);
+        assert_eq!(takes[1].1.iter().map(|s| s.take.unwrap().1).collect::<Vec<_>>(), [1, 2], "best take first");
     }
 
     #[test]

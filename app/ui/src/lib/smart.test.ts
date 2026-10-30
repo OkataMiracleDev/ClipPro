@@ -60,7 +60,7 @@ describe("smart collections", () => {
 
 describe("AI smart rules", () => {
   const clips = [clip(1), clip(2), clip(3)];
-  const info = (c: number, people: number[], shot: ClipAi["shot"], facesDone = true): ClipAi => ({ clip: c, people, shot, transcript: false, language: null, speakers: 0, facesDone, clipDone: shot !== null });
+  const info = (c: number, people: number[], shot: ClipAi["shot"], facesDone = true): ClipAi => ({ clip: c, people, shot, transcript: false, language: null, speakers: 0, facesDone, clipDone: shot !== null, outdoor: shot === "wide" ? 0.9 : shot ? 0.2 : null, night: shot ? 0.1 : null });
   const ai = new Map([
     [1, info(1, [7], "close_up")],
     [2, info(2, [], "wide")],
@@ -77,5 +77,8 @@ describe("AI smart rules", () => {
     expect(describeRule({ field: "person", op: "is", value: 7, name: "Sarah" })).toBe("Sarah appears");
     expect(describeRule({ field: "shot", op: "is", value: "close_up" })).toBe("Shot is close-up");
     expect(pick({ match: "all", rules: [{ field: "speakers", op: ">=", value: 1 }] })).toEqual([]);
+    expect(pick({ match: "all", rules: [{ field: "setting", op: "is", value: "outdoor" }] })).toEqual([2]);
+    expect(pick({ match: "all", rules: [{ field: "setting", op: "is", value: "indoor" }] })).toEqual([1]);
+    expect(pick({ match: "all", rules: [{ field: "setting", op: "is", value: "day" }] })).toEqual([1, 2]);
   });
 });

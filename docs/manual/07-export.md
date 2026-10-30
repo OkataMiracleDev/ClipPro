@@ -32,7 +32,7 @@ Each select can carry a marker. Its name and comment are templates; these tokens
 
 `{clip}` `{index}` `{score}` `{flags}` `{duration}` `{tc_in}` `{tc_out}` `{rating}` `{label}` `{note}`
 
-With local AI on (see Local AI), three more: `{transcript}` (what is said during the select), `{people}` (who is on screen) and `{shot}` (the shot type). The comment defaults to `{flags}`.
+With local AI on (see Local AI), four more: `{transcript}` (what is said during the select), `{people}` (who is on screen), `{shot_type}` (also `{shot}`) and `{take}` ("Take 2" when the select is one of several takes). The comment defaults to `{flags}`.
 
 The marker colour follows the score (green, yellow, red) unless you gave the select a colour label.
 

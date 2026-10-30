@@ -470,6 +470,9 @@ export type ClipAiRow_Deserialize = {
 	speakers: number,
 	faces_done: boolean,
 	clip_done: boolean,
+	/**  Outdoor and night probabilities (AI-4). */
+	outdoor?: number | null,
+	night?: number | null,
 };
 
 export type ClipAiRow_Serialize = {
@@ -482,6 +485,9 @@ export type ClipAiRow_Serialize = {
 	speakers: number,
 	faces_done: boolean,
 	clip_done: boolean,
+	/**  Outdoor and night probabilities (AI-4). */
+	outdoor: number | null,
+	night: number | null,
 };
 
 export type ClipId = number | null;

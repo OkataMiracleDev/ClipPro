@@ -37,7 +37,7 @@ const RENDER_CODECS = [
   { value: "h264", label: "H.264" },
 ];
 
-type GroupBy = "clip" | "camera" | "date" | "reel" | "rating" | "label";
+type GroupBy = "clip" | "camera" | "date" | "reel" | "rating" | "label" | "person" | "shot" | "take";
 
 const GROUPS: { value: GroupBy; label: string }[] = [
   { value: "clip", label: "Clip" },
@@ -46,6 +46,12 @@ const GROUPS: { value: GroupBy; label: string }[] = [
   { value: "reel", label: "Reel" },
   { value: "rating", label: "Rating" },
   { value: "label", label: "Colour label" },
+];
+/** Groupings that need the AI modules (shown when local AI is on). */
+const AI_GROUPS: { value: GroupBy; label: string }[] = [
+  { value: "person", label: "Person" },
+  { value: "shot", label: "Shot type" },
+  { value: "take", label: "Take group" },
 ];
 
 /** Reports have no markers, handles or audio. */
@@ -159,7 +165,7 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
               <span className="text-[12px] text-text-2">Group by</span>
               <span className="flex items-center gap-2">
                 <select aria-label="Group by" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)} className="h-6 rounded border border-separator-strong bg-control px-1.5 text-[12px]">
-                  {GROUPS.map((g) => (
+                  {(aiOn ? [...GROUPS, ...AI_GROUPS] : GROUPS).map((g) => (
                     <option key={g.value} value={g.value}>
                       {g.label}
                     </option>
@@ -282,7 +288,7 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
             />
             <span className="text-[11px] text-text-3">
               Tokens: {"{clip} {index} {score} {flags} {duration} {tc_in} {tc_out} {rating} {label} {note}"}
-              {aiOn && " {transcript} {people} {shot}"}
+              {aiOn && " {transcript} {people} {shot_type} {take}"}
             </span>
           </div>
         )}

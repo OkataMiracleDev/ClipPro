@@ -654,6 +654,8 @@ export const mockBackend: Backend = {
       speakers: d.clip.clip === 6 ? 2 : d.clip.clip === 7 ? 1 : 0,
       facesDone: true,
       clipDone: true,
+      outdoor: d.clip.name.startsWith("INTERVIEW") ? 0.1 : 0.85,
+      night: d.clip.name.includes("DUSK") ? 0.8 : 0.1,
     })),
   peopleList: async () => mockPeople.map((p) => ({ ...p })),
   personRename: async (id, name) => {

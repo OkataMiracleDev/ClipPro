@@ -11,7 +11,8 @@ export type Rule =
   | { field: "codec" | "label"; op: "is"; value: string }
   | { field: "date"; op: "after" | "before"; value: string }
   | { field: "person"; op: "is" | "not"; value: number; name: string }
-  | { field: "shot"; op: "is" | "not"; value: ShotType };
+  | { field: "shot"; op: "is" | "not"; value: ShotType }
+  | { field: "setting"; op: "is"; value: "indoor" | "outdoor" | "day" | "night" };
 
 export const SHOT_TYPES: { value: ShotType; label: string }[] = [
   { value: "wide", label: "Wide" },
@@ -90,6 +91,11 @@ export function matchRule(r: Rule, f: ClipFacts): boolean {
       const has = f.ai.people.includes(r.value);
       return r.op === "is" ? has : !has;
     }
+    case "setting": {
+      const p = r.value === "indoor" || r.value === "outdoor" ? f.ai?.outdoor : f.ai?.night;
+      if (p === null || p === undefined) return false;
+      return r.value === "outdoor" || r.value === "night" ? p >= 0.5 : p < 0.5;
+    }
     case "shot": {
       if (!f.ai?.shot) return false;
       return r.op === "is" ? f.ai.shot === r.value : f.ai.shot !== r.value;
@@ -128,6 +134,8 @@ export function describeRule(r: Rule): string {
       return `Recorded ${r.op} ${r.value}`;
     case "person":
       return `${r.name || "Person"} ${r.op === "is" ? "appears" : "doesn't appear"}`;
+    case "setting":
+      return `${r.value[0]!.toUpperCase()}${r.value.slice(1)}`;
     case "shot":
       return `Shot ${r.op === "is" ? "is" : "isn't"} ${SHOT_TYPES.find((s) => s.value === r.value)?.label.toLowerCase() ?? r.value}`;
   }

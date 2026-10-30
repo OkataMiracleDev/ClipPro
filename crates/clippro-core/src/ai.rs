@@ -132,6 +132,12 @@ impl AiData {
         (n > 0).then(|| (ShotType::ALL[k], counts[k] as f32 / n as f32))
     }
 
+    /// (outdoor, night) probabilities averaged over [a, b) (AI-4).
+    pub fn setting_in(&self, a: i64, b: i64) -> Option<(f32, f32)> {
+        let v: Vec<(f32, f32)> = self.vision.iter().filter(|s| s.t_us >= a && s.t_us < b).filter_map(|s| s.scene.as_ref().map(|c| (c.outdoor, c.night))).collect();
+        (!v.is_empty()).then(|| (v.iter().map(|x| x.0).sum::<f32>() / v.len() as f32, v.iter().map(|x| x.1).sum::<f32>() / v.len() as f32))
+    }
+
     /// Mean CLIP embedding over [a, b), unit length.
     pub fn embedding_in(&self, a: i64, b: i64) -> Option<Vec<f32>> {
         if self.embeddings.is_empty() {
@@ -227,6 +233,9 @@ pub struct ClipAi {
     pub speakers: usize,
     pub faces_done: bool,
     pub clip_done: bool,
+    /// Outdoor and night probabilities over the clip.
+    pub outdoor: Option<f32>,
+    pub night: Option<f32>,
 }
 
 fn word_set(t: &str) -> Vec<String> {
@@ -577,6 +586,8 @@ impl Session {
                 speakers: d.speakers.iter().map(|t| t.speaker).collect::<std::collections::HashSet<_>>().len(),
                 faces_done: d.vision.iter().any(|s| s.faces.is_some()),
                 clip_done: !d.embeddings.is_empty(),
+                outdoor: d.setting_in(0, end).map(|s| s.0),
+                night: d.setting_in(0, end).map(|s| s.1),
             });
         }
         Ok(out)

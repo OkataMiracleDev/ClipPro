@@ -49,6 +49,7 @@ const FIELDS: { value: Rule["field"]; label: string }[] = [
   { value: "person", label: "Person" },
   { value: "shot", label: "Shot type" },
   { value: "speakers", label: "Speakers" },
+  { value: "setting", label: "Setting" },
 ];
 
 function defaultRule(field: Rule["field"]): Rule {
@@ -80,6 +81,8 @@ function defaultRule(field: Rule["field"]): Rule {
       return { field, op: "is", value: "close_up" };
     case "speakers":
       return { field, op: ">=", value: 2 };
+    case "setting":
+      return { field, op: "is", value: "outdoor" };
   }
 }
 
@@ -142,6 +145,15 @@ function RuleRow({ r, onChange, onRemove }: { r: Rule; onChange: (r: Rule) => vo
         </>
       )}
       {r.field === "person" && <PersonPicker r={r} onChange={onChange} />}
+      {r.field === "setting" && (
+        <select aria-label="Setting" className={cx(ctl, "min-w-0 flex-1")} value={r.value} onChange={(e) => onChange({ ...r, value: e.target.value as "indoor" | "outdoor" | "day" | "night" })}>
+          {(["indoor", "outdoor", "day", "night"] as const).map((v) => (
+            <option key={v} value={v}>
+              {v[0]!.toUpperCase() + v.slice(1)}
+            </option>
+          ))}
+        </select>
+      )}
       {r.field === "shot" && (
         <>
           <select aria-label="Condition" className={ctl} value={r.op} onChange={(e) => onChange({ ...r, op: e.target.value as "is" | "not" })}>

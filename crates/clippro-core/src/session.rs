@@ -683,6 +683,12 @@ impl Session {
         let mut meta = Vec::new();
         let people: HashMap<i64, String> = self.people().map(|v| v.into_iter().map(|p| (p.id, p.name)).collect()).unwrap_or_default();
         let clip_media: HashMap<ClipId, MediaId> = self.clip_statuses()?.into_iter().map(|c| (c.clip, c.media)).collect();
+        // Take groups only mean something once there are AI results to compare takes with.
+        let takes: HashMap<(ClipId, i64), (u32, u32)> = if clip_media.values().any(|m| self.ai_data(*m).is_ok_and(|d| !d.is_empty())) {
+            self.take_ranking(&sel)?.into_iter().map(|t| ((t.0, t.1), (t.2 as u32, t.3 as u32))).collect()
+        } else {
+            HashMap::new()
+        };
         for r in &refs {
             let Some(&mi) = index.get(&r.clip) else { continue };
             meta.push((r.clip, infos[mi].clone()));
@@ -718,6 +724,7 @@ impl Session {
                 transcript: ai.as_ref().and_then(|d| d.transcript.as_ref()).map(|t| t.words_in(r.segment.start_us, r.segment.end_us).map(|w| w.text.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default(),
                 people: ai.as_ref().map(|d| d.people_in(r.segment.start_us, r.segment.end_us).iter().filter_map(|p| people.get(p).cloned()).collect()).unwrap_or_default(),
                 shot: ai.as_ref().and_then(|d| d.shot_in(r.segment.start_us, r.segment.end_us)).map(|s| s.0.label().to_string()).unwrap_or_default(),
+                take: takes.get(&(r.clip, r.segment.start_us)).copied(),
             });
         }
         Ok((media, selects, meta))

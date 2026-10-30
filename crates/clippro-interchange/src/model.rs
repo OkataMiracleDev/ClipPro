@@ -198,7 +198,8 @@ pub struct ExportOptions {
     pub gap_s: f64,
     pub with_audio: bool,
     /// Marker name and comment templates; tokens: {clip} {index} {score} {flags} {duration} {tc_in}
-    /// {tc_out} {rating} {label} {note}, and with the AI modules {transcript} {people} {shot}.
+    /// {tc_out} {rating} {label} {note}, and with the AI modules {transcript} {people} {shot}
+    /// (or {shot_type}) {take}.
     /// A colour label sets the marker colour.
     pub marker_name: String,
     pub marker_comment: String,
@@ -243,6 +244,8 @@ pub struct SelectInput {
     pub people: Vec<String>,
     /// Shot type label, e.g. "Close-up" (AI).
     pub shot: String,
+    /// Take group and rank (1 = best), when the select is one of several takes.
+    pub take: Option<(u32, u32)>,
 }
 
 pub fn score_color(score: f32) -> MarkerColor {
@@ -269,7 +272,9 @@ fn fill(tpl: &str, clip: &str, index: usize, s: &SelectInput, m: &MediaRef, from
         .replace("{note}", &s.note)
         .replace("{transcript}", &s.transcript)
         .replace("{people}", &s.people.join(", "))
+        .replace("{shot_type}", &s.shot)
         .replace("{shot}", &s.shot)
+        .replace("{take}", &s.take.map(|(_, r)| format!("Take {r}")).unwrap_or_default())
 }
 
 /// Builds a timeline from selects (already in the desired order).
@@ -437,9 +442,9 @@ pub(crate) mod tests {
 
     pub fn selects() -> Vec<SelectInput> {
         vec![
-            SelectInput { media: 0, start_us: 1_000_000, end_us: 4_000_000, in_us: 250_000, out_us: 4_750_000, score: 0.82, flags: vec![], rating: 0, label: None, note: String::new(), transcript: String::new(), people: vec![], shot: String::new() },
-            SelectInput { media: 0, start_us: 6_000_000, end_us: 8_000_000, in_us: 5_250_000, out_us: 8_750_000, score: 0.61, flags: vec!["Shaky".into()], rating: 4, label: Some(MarkerColor::Blue), note: "Great reaction".into(), transcript: "So it began".into(), people: vec!["Sarah".into()], shot: "Close-up".into() },
-            SelectInput { media: 1, start_us: 0, end_us: 5_000_000, in_us: 0, out_us: 5_750_000, score: 0.9, flags: vec![], rating: 0, label: None, note: String::new(), transcript: String::new(), people: vec![], shot: String::new() },
+            SelectInput { media: 0, start_us: 1_000_000, end_us: 4_000_000, in_us: 250_000, out_us: 4_750_000, score: 0.82, flags: vec![], rating: 0, label: None, note: String::new(), transcript: String::new(), people: vec![], shot: String::new(), take: None },
+            SelectInput { media: 0, start_us: 6_000_000, end_us: 8_000_000, in_us: 5_250_000, out_us: 8_750_000, score: 0.61, flags: vec!["Shaky".into()], rating: 4, label: Some(MarkerColor::Blue), note: "Great reaction".into(), transcript: "So it began".into(), people: vec!["Sarah".into()], shot: "Close-up".into(), take: Some((0, 2)) },
+            SelectInput { media: 1, start_us: 0, end_us: 5_000_000, in_us: 0, out_us: 5_750_000, score: 0.9, flags: vec![], rating: 0, label: None, note: String::new(), transcript: String::new(), people: vec![], shot: String::new(), take: None },
         ]
     }
 
