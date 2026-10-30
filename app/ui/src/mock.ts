@@ -67,7 +67,7 @@ function makeDemo(): DemoClip[] {
       }
     }
     return {
-      clip: { clip: i + 1, media: i + 1, name, path: `D:/Footage/${name}.mov`, state: "done", progress: 1, error: null, profile: name.startsWith("DRONE") ? "d_log" : name.startsWith("A001") ? "s_log3" : "rec709", bin: null, camera: name.startsWith("DRONE") ? "DJI Mavic 3" : name.startsWith("A") ? "Sony FX6" : name.startsWith("B") ? "Canon C70" : null, created: `2026-10-${String(10 + (i % 5)).padStart(2, "0")}T09:00:00Z`, codec: name.startsWith("DRONE") ? "hevc" : "prores" },
+      clip: { clip: i + 1, media: i + 1, name, path: `D:/Footage/${name}.mov`, state: "done", progress: 1, error: null, profile: name.startsWith("DRONE") ? "d_log" : name.startsWith("A001") ? "s_log3" : "rec709", bin: null, camera: name.startsWith("DRONE") ? "DJI Mavic 3" : name.startsWith("A") ? "Sony FX6" : name.startsWith("B") ? "Canon C70" : null, created: `2026-10-${String(10 + (i % 5)).padStart(2, "0")}T09:00:00Z`, codec: name.startsWith("DRONE") ? "hevc" : "prores", missing: false },
       durationUs: dur,
       bar,
       flags,
@@ -311,6 +311,9 @@ export const mockBackend: Backend = {
   getSettings: async () => mockSettings,
   cacheInfo: async () => ({ path: "C:/Users/you/AppData/Local/ClipPro/cache/measure-cache.sqlite", entries: 312, bytes: 211_000_000 }),
   cacheClear: async () => 312,
+  projectSaveAs: async (path) => ({ path, name: path.split(/[\\/]/).pop()!.replace(/\.clippro$/i, ""), recovered: false }),
+  mediaRelink: async () => {},
+  mediaRelinkFolder: async () => 0,
   settingsExport: async () => {},
   settingsImport: async () => mockSettings,
   watchFoldersGet: async () => mockWatch,

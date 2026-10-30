@@ -74,6 +74,14 @@ export async function pickLut(): Promise<string | null> {
   return typeof r === "string" ? r : null;
 }
 
+export async function pickSaveAs(name: string): Promise<string | null> {
+  if (!isTauri) return `D:/Projects/${name} copy.clippro`;
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const r = await save({ title: "Save project as", defaultPath: `${name} copy.clippro`, filters: [{ name: "ClipPro project", extensions: ["clippro"] }] });
+  if (!r) return null;
+  return r.toLowerCase().endsWith(".clippro") ? r : `${r}.clippro`;
+}
+
 export async function pickNewProject(): Promise<string | null> {
   if (!isTauri) return "Untitled.clippro";
   const { save } = await import("@tauri-apps/plugin-dialog");

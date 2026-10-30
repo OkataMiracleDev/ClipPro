@@ -107,6 +107,7 @@ pub struct ClipRow {
     /// Recording date (ISO 8601) from metadata.
     pub created: Option<String>,
     pub codec: String,
+    pub missing: bool,
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
@@ -335,6 +336,7 @@ async fn clips_list(state: State<'_, AppState>) -> Result<Vec<ClipRow>, String> 
                 camera: c.camera,
                 created: c.created,
                 codec: c.codec,
+                missing: c.missing,
             })
             .collect())
     })
@@ -999,6 +1001,47 @@ async fn watch_folders_set(state: State<'_, AppState>, folders: Vec<WatchFolderD
     Ok(())
 }
 
+/// Save As (PRJ-1): writes a consistent copy and continues in it.
+#[tauri::command]
+#[specta::specta]
+async fn project_save_as(state: State<'_, AppState>, path: String) -> Result<ProjectInfo, String> {
+    let s = state.session()?;
+    let dest = PathBuf::from(&path);
+    if lock(&state.path).as_deref() == Some(dest.as_path()) {
+        return Err("That's the project's current file.".into());
+    }
+    let d2 = dest.clone();
+    blocking(move || {
+        let r = lock(&s.db).save_as(&d2).map_err(|e| e.to_string());
+        r
+    })
+    .await?;
+    let o = options(&state);
+    let d3 = dest.clone();
+    let (s, _) = blocking(move || Session::open(&d3, o).map_err(|e| e.to_string())).await?;
+    let name = lock(&s.db).name().map_err(|e| e.to_string())?;
+    replace_session(&state, Arc::new(s), dest);
+    Ok(ProjectInfo { path, name, recovered: false })
+}
+
+/// Points a clip's media at a moved file (content must match).
+#[tauri::command]
+#[specta::specta]
+async fn media_relink(state: State<'_, AppState>, media: f64, path: String) -> Result<(), String> {
+    let s = state.session()?;
+    state.preview.clear();
+    blocking(move || s.relink(clippro_types::MediaId(media as i64), std::path::Path::new(&path)).map_err(|e| e.to_string())).await
+}
+
+/// Relinks every missing media file found under `folder`; returns how many were found.
+#[tauri::command]
+#[specta::specta]
+async fn media_relink_folder(state: State<'_, AppState>, folder: String) -> Result<u32, String> {
+    let s = state.session()?;
+    state.preview.clear();
+    blocking(move || s.relink_missing(&[PathBuf::from(folder)]).map(|v| v.len() as u32).map_err(|e| e.to_string())).await
+}
+
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
 pub struct CacheInfo {
     pub path: String,
@@ -1368,6 +1411,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             system_info,
             settings_get,
             cache_info,
+            project_save_as,
+            media_relink,
+            media_relink_folder,
             cache_clear,
             settings_export,
             settings_import,

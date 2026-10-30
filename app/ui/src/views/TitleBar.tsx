@@ -5,7 +5,7 @@ import { api, isTauri, type SortOrder } from "../api";
 import { cx, IconButton, Popover, PopoverClose, Spinner } from "../components/ui";
 import { actionFor } from "../lib/keys";
 import { useApp } from "../store";
-import { pickMedia, pickProjectToOpen } from "../lib/dialogs";
+import { pickMedia, pickProjectToOpen, pickSaveAs } from "../lib/dialogs";
 
 async function win() {
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -97,6 +97,11 @@ export function TitleBar() {
       if (a === "export" && project) {
         e.preventDefault();
         setExportOpen(true);
+      } else if (a === "save_as" && project) {
+        e.preventDefault();
+        void pickSaveAs(project.name).then((p) => {
+          if (p) void useApp.getState().saveProjectAs(p);
+        });
       } else if (a === "settings") {
         e.preventDefault();
         void api.openSettings();

@@ -50,6 +50,7 @@ export interface Clip {
   camera: string | null;
   created: string | null;
   codec: string;
+  missing: boolean;
 }
 
 export interface Segment {
@@ -192,6 +193,9 @@ export interface Backend {
   getSettings(): Promise<AppSettings>;
   /** Global measurement cache (Settings → Cache). */
   cacheInfo(): Promise<{ path: string; entries: number; bytes: number }>;
+  projectSaveAs(path: string): Promise<ProjectInfo>;
+  mediaRelink(media: number, path: string): Promise<void>;
+  mediaRelinkFolder(folder: string): Promise<number>;
   cacheClear(): Promise<number>;
   settingsExport(path: string): Promise<void>;
   settingsImport(path: string): Promise<AppSettings>;
@@ -301,6 +305,7 @@ const adaptClip = (c: RawClip): Clip => ({
   camera: c.camera ?? null,
   created: c.created ?? null,
   codec: c.codec,
+  missing: c.missing,
 });
 
 function adaptSource(r: RawMediaSource, toUrl: (path: string) => string): MediaSource {
@@ -384,6 +389,9 @@ const tauriBackend: Backend = {
     return { path: r.path, entries: n(r.entries), bytes: n(r.bytes) };
   },
   cacheClear: async () => n(unwrap(await commands.cacheClear())),
+  projectSaveAs: async (path) => unwrap(await commands.projectSaveAs(path)),
+  mediaRelink: async (media, path) => void unwrap(await commands.mediaRelink(media, path)),
+  mediaRelinkFolder: async (folder) => unwrap(await commands.mediaRelinkFolder(folder)),
   settingsExport: async (path) => void unwrap(await commands.settingsExport(path)),
   settingsImport: async (path) => unwrap(await commands.settingsImport(path)),
   submetrics: async () => unwrap(await commands.submetricsList()),

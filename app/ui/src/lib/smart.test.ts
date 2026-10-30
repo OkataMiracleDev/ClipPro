@@ -15,6 +15,7 @@ const clip = (id: number, over: Partial<Clip> = {}): Clip => ({
   camera: null,
   created: null,
   codec: "h264",
+  missing: false,
   ...over,
 });
 const score = (id: number, best: number, dur: number, flags: number[] = []): ClipScore => ({

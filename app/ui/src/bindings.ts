@@ -49,6 +49,12 @@ export const commands = {
 	settingsGet: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_get")),
 	/**  The global measurement cache (Settings → Cache). */
 	cacheInfo: () => typedError<CacheInfo, string>(__TAURI_INVOKE("cache_info")),
+	/**  Save As (PRJ-1): writes a consistent copy and continues in it. */
+	projectSaveAs: (path: string) => typedError<ProjectInfo, string>(__TAURI_INVOKE("project_save_as", { path })),
+	/**  Points a clip's media at a moved file (content must match). */
+	mediaRelink: (media: number | null, path: string) => typedError<null, string>(__TAURI_INVOKE("media_relink", { media, path })),
+	/**  Relinks every missing media file found under `folder`; returns how many were found. */
+	mediaRelinkFolder: (folder: string) => typedError<number, string>(__TAURI_INVOKE("media_relink_folder", { folder })),
 	/**  Empties the global measurement cache; projects keep their own measurements. */
 	cacheClear: () => typedError<number | null, string>(__TAURI_INVOKE("cache_clear")),
 	/**  Writes the app settings to a JSON file (Settings → General → Export). */
@@ -293,6 +299,7 @@ export type ClipRow_Deserialize = {
 	/**  Recording date (ISO 8601) from metadata. */
 	created?: string | null,
 	codec: string,
+	missing: boolean,
 };
 
 export type ClipRow_Serialize = {
@@ -311,6 +318,7 @@ export type ClipRow_Serialize = {
 	/**  Recording date (ISO 8601) from metadata. */
 	created: string | null,
 	codec: string,
+	missing: boolean,
 };
 
 export type ClipScore = {

@@ -96,6 +96,9 @@ interface AppState {
   updateBin(id: number, name: string, query?: import("./lib/smart").SmartQuery): Promise<void>;
   deleteBin(id: number): Promise<void>;
   moveToBin(clips: number[], bin: number | null): Promise<void>;
+  saveProjectAs(path: string): Promise<void>;
+  relinkClip(media: number, path: string): Promise<void>;
+  relinkFolder(folder: string): Promise<void>;
   /** Project templates (P9.8): the open project's tuning and watch folders. */
   saveTemplate(name: string): Promise<void>;
   newProjectFromTemplate(path: string, name: string, template: { name: string; json: string }): Promise<void>;
@@ -507,6 +510,36 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
+  async saveProjectAs(path) {
+    try {
+      const project = await api.projectSaveAs(path);
+      set({ project });
+      get().toast(`Saved as ${project.name}`);
+    } catch (e) {
+      get().toast(`Couldn't save: ${e instanceof Error ? e.message : e}`, "error");
+    }
+  },
+
+  async relinkClip(media, path) {
+    try {
+      await api.mediaRelink(media, path);
+      await get().refreshClips();
+      get().toast("Relinked");
+    } catch (e) {
+      get().toast(`Couldn't relink: ${e instanceof Error ? e.message : e}`, "error");
+    }
+  },
+
+  async relinkFolder(folder) {
+    try {
+      const n = await api.mediaRelinkFolder(folder);
+      await get().refreshClips();
+      get().toast(n ? `Found ${n} missing file${n === 1 ? "" : "s"}` : "No missing files were found there", n ? "info" : "error");
+    } catch (e) {
+      get().toast(String(e instanceof Error ? e.message : e), "error");
+    }
+  },
+
   async moveToBin(clips, bin) {
     await api.clipsSetBin(clips, bin);
     await get().refreshClips();
@@ -695,7 +728,12 @@ export const useApp = create<AppState>((set, get) => ({
     get().rescore(true);
   },
   toggleSelectsOnly: () => set((s) => ({ selectsOnly: !s.selectsOnly })),
-  selectClip: (clip) => set((s) => ({ selectedClip: clip, selectedSelect: null, playing: s.playing && s.selectedClip === clip })),
+  selectClip: (clip) => {
+    set((s) => ({ selectedClip: clip, selectedSelect: null, playing: s.playing && s.selectedClip === clip }));
+    // Opening a clip that is still waiting moves it to the front of the analysis queue (ANA-10).
+    const c = get().clips.find((x) => x.clip === clip);
+    if (c && (c.state === "queued" || c.state === "paused")) void api.bumpClip(c.clip).catch(() => {});
+  },
   selectSelect: (i) => {
     const sel = i === null ? null : get().scored?.selects[i];
     set({ selectedSelect: i, ...(sel ? { selectedClip: sel.clip, playheadUs: sel.segment.startUs } : {}) });

@@ -4,7 +4,7 @@ import * as CM from "@radix-ui/react-context-menu";
 import { AlertCircle, CircleDashed, Film, ListChecks } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Clip } from "../api";
-import { pickProxy } from "../lib/dialogs";
+import { pickFolder, pickMedia, pickProxy } from "../lib/dialogs";
 import { BinsSection, useLibraryClips } from "./Bins";
 import { WatchFolders } from "./WatchFolders";
 import { cx, scoreColor, Spinner } from "../components/ui";
@@ -118,6 +118,31 @@ function ClipMenu({ c, children }: { c: Clip; children: React.ReactNode }) {
           >
             Link proxy…
           </CM.Item>
+          {c.missing && (
+            <>
+              <CM.Separator className="my-1 h-px bg-separator" />
+              <CM.Item
+                className={item}
+                onSelect={() =>
+                  void pickMedia().then((ps) => {
+                    if (ps[0]) void useApp.getState().relinkClip(c.media, ps[0]);
+                  })
+                }
+              >
+                Relink this clip…
+              </CM.Item>
+              <CM.Item
+                className={item}
+                onSelect={() =>
+                  void pickFolder().then((f) => {
+                    if (f) void useApp.getState().relinkFolder(f);
+                  })
+                }
+              >
+                Find missing files in a folder…
+              </CM.Item>
+            </>
+          )}
         </CM.Content>
       </CM.Portal>
     </CM.Root>
@@ -193,6 +218,7 @@ export function ClipList() {
                     <StateIcon c={c} />
                   </span>
                   <span className={cx("block truncate font-mono text-[10.5px] tabular", active ? "opacity-80" : "text-text-3")}>
+                    {c.missing ? "Missing — right-click to relink · " : ""}
                     {st ? formatClock(st.duration) : c.state === "failed" ? (c.error ?? "Failed") : "Not analysed yet"}
                     {st ? ` · ${st.selects} select${st.selects === 1 ? "" : "s"}` : ""}
                     {hasBest ? ` · best ${Math.round(st!.best * 100)}` : ""}

@@ -31,6 +31,7 @@ export type ActionId =
   | "undo"
   | "redo"
   | "export"
+  | "save_as"
   | "settings";
 
 export const ACTIONS: { id: ActionId; label: string; group: string; key: string }[] = [
@@ -63,6 +64,7 @@ export const ACTIONS: { id: ActionId; label: string; group: string; key: string 
   { id: "undo", label: "Undo", group: "General", key: "Ctrl+Z" },
   { id: "redo", label: "Redo", group: "General", key: "Ctrl+Shift+Z" },
   { id: "export", label: "Export…", group: "General", key: "Ctrl+E" },
+  { id: "save_as", label: "Save project as…", group: "General", key: "Ctrl+Shift+S" },
   { id: "settings", label: "Settings", group: "General", key: "Ctrl+," },
 ];
 

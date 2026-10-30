@@ -78,6 +78,8 @@ pub struct ClipStatus {
     pub camera: Option<String>,
     pub created: Option<String>,
     pub codec: String,
+    /// The media file isn't at its recorded path (relink needed).
+    pub missing: bool,
 }
 
 struct Probed {
@@ -446,7 +448,8 @@ impl Session {
             });
             let created = info.as_ref().and_then(|i| i.creation_time.clone());
             let codec = info.as_ref().and_then(|i| i.video.as_ref().map(|v| v.codec.clone())).unwrap_or_default();
-            out.push(ClipStatus { clip: c.id, media: m.id, name: c.name, path: m.path, state, progress, error, profile, bin: c.bin_id, camera, created, codec });
+            let missing = !Path::new(&m.path).exists();
+            out.push(ClipStatus { clip: c.id, media: m.id, name: c.name, path: m.path, state, progress, error, profile, bin: c.bin_id, camera, created, codec, missing });
         }
         Ok(out)
     }
