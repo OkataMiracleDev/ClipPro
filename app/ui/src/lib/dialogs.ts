@@ -90,6 +90,14 @@ export async function pickNewProject(): Promise<string | null> {
   return r.toLowerCase().endsWith(".clippro") ? r : `${r}.clippro`;
 }
 
+export async function pickDiagnosticsPath(): Promise<string | null> {
+  if (!isTauri) return "D:/clippro-diagnostics.txt";
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const r = await save({ title: "Save diagnostics report", defaultPath: "clippro-diagnostics.txt", filters: [{ name: "Text", extensions: ["txt"] }] });
+  if (!r) return null;
+  return r.toLowerCase().endsWith(".txt") ? r : `${r}.txt`;
+}
+
 export async function pickTimeline(): Promise<string | null> {
   if (!isTauri) return "D:/Edits/Sarah Interview v3.xml";
   const { open } = await import("@tauri-apps/plugin-dialog");

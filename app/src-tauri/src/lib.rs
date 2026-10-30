@@ -12,6 +12,7 @@ use tauri::{Manager, State};
 use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
 pub mod audio_out;
+pub mod diag;
 pub mod presets;
 pub mod preview;
 pub mod settings;
@@ -286,6 +287,7 @@ fn restart_watch(state: &AppState) {
 }
 
 fn replace_session(state: &AppState, s: Arc<Session>, path: PathBuf) {
+    diag::log("INFO", &format!("project opened: {}", path.display()));
     *lock(&state.review) = None;
     remember_project(state, &path);
     state.preview.clear();
@@ -880,6 +882,7 @@ fn offload_start(app: tauri::AppHandle, state: State<'_, AppState>, source: Stri
         *lock(&app_state.offload) = None;
         match result {
             Ok(rep) => {
+                diag::log(if rep.ok() { "INFO" } else { "WARN" }, &format!("offload: {} files, {} copied, {} skipped, {} failed", rep.files, rep.copied, rep.skipped, rep.failed.len()));
                 let mut imported = 0;
                 if let (Some(s), Some(d)) = (session, job.destinations.first()) {
                     if let Ok(r) = s.import(&[job.dest_root(d)]) {
@@ -904,9 +907,11 @@ fn offload_start(app: tauri::AppHandle, state: State<'_, AppState>, source: Stri
                 let _ = OffloadProgress { done: rep.bytes as f64, total: rep.bytes as f64, files, index: files, summary: Some(summary), ..blank("finished") }.emit(&app);
             }
             Err(OffloadError::Cancelled) => {
+                diag::log("INFO", "offload cancelled");
                 let _ = blank("cancelled").emit(&app);
             }
             Err(e) => {
+                diag::log("WARN", &format!("offload failed: {e}"));
                 let _ = OffloadProgress { message: Some(e.to_string()), ..blank("failed") }.emit(&app);
             }
         }
@@ -933,6 +938,10 @@ fn start_job(state: &AppState) -> Result<Arc<std::sync::atomic::AtomicBool>, Str
 }
 
 fn finish_job(app: &tauri::AppHandle, job: &str, result: Result<Vec<String>, String>, count: u32) {
+    match &result {
+        Ok(v) => diag::log("INFO", &format!("{job} job finished: {} output(s)", v.len())),
+        Err(e) => diag::log("WARN", &format!("{job} job ended: {e}")),
+    }
     *lock(&app.state::<AppState>().job) = None;
     let base = JobProgress { job: job.into(), kind: String::new(), index: count, count, fraction: 1.0, name: None, message: None, outputs: Vec::new() };
     let e = match result {
@@ -1029,6 +1038,50 @@ fn job_cancel(state: State<'_, AppState>) {
     if let Some(c) = lock(&state.job).as_ref() {
         c.store(true, std::sync::atomic::Ordering::Relaxed);
     }
+}
+
+/// The last `lines` lines of the log (P14.5 log viewer).
+#[tauri::command]
+#[specta::specta]
+fn diagnostics_log(lines: u32) -> Vec<String> {
+    diag::dir().map(|d| diag::tail(&d, lines.clamp(1, 20_000) as usize)).unwrap_or_default()
+}
+
+/// Writes the diagnostics report (system, settings without paths, recent log and crashes).
+#[tauri::command]
+#[specta::specta]
+async fn diagnostics_save(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    let settings = serde_json::to_string_pretty(&*lock(&state.settings)).unwrap_or_default();
+    let dir = diag::dir().ok_or("Logging isn't running.")?;
+    blocking(move || {
+        let encoders = ["prores_ks", "dnxhd", "h264_nvenc", "h264_amf", "h264_qsv", "h264_mf", "libopenh264"]
+            .iter()
+            .filter(|e| clippro_ingest::ffmpeg::encoder_works(e))
+            .copied()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let system = [
+            ("Version", env!("CARGO_PKG_VERSION").to_string()),
+            ("OS", format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)),
+            ("CPU threads", std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).to_string()),
+            ("GPU decode (D3D11VA)", clippro_media::video::hw_decode_available().to_string()),
+            ("ffmpeg.exe", clippro_ingest::ffmpeg::ffmpeg_exe().map(|_| "found".to_string()).unwrap_or_else(|| "missing".into())),
+            ("Working encoders", if encoders.is_empty() { "none".into() } else { encoders }),
+        ];
+        std::fs::write(&path, diag::report(&dir, &system, &settings)).map_err(|e| format!("{path}: {e}"))
+    })
+    .await
+}
+
+/// Opens the log folder in Explorer.
+#[tauri::command]
+#[specta::specta]
+fn diagnostics_open_folder() -> Result<(), String> {
+    let dir = diag::dir().ok_or("Logging isn't running.")?;
+    #[cfg(windows)]
+    std::process::Command::new("explorer.exe").arg(&dir).spawn().map_err(|e| e.to_string())?;
+    let _ = dir;
+    Ok(())
 }
 
 /// HTML report, or the contact sheet printed to PDF in a hidden WebView2 window (P7.6).
@@ -2057,6 +2110,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             proxies_make,
             render_selects,
             job_cancel,
+            diagnostics_log,
+            diagnostics_save,
+            diagnostics_open_folder,
             media_source,
             preview_shared,
             inspect_sample,
@@ -2151,7 +2207,10 @@ fn pump_events(app: tauri::AppHandle) {
             let ev = match e {
                 E::Progress { job, done, total } => AnalysisEvent { kind: "progress".into(), job: Some(job as f64), done: Some(done as u32), total: Some(total as u32), error: None },
                 E::Finished { job } => AnalysisEvent { kind: "finished".into(), job: Some(job as f64), done: None, total: None, error: None },
-                E::Failed { job, error } => AnalysisEvent { kind: "failed".into(), job: Some(job as f64), done: None, total: None, error: Some(error) },
+                E::Failed { job, error } => {
+                    diag::log("WARN", &format!("analysis job {job} failed: {error}"));
+                    AnalysisEvent { kind: "failed".into(), job: Some(job as f64), done: None, total: None, error: Some(error) }
+                }
                 E::Paused => AnalysisEvent { kind: "paused".into(), job: None, done: None, total: None, error: None },
                 E::Resumed => AnalysisEvent { kind: "resumed".into(), job: None, done: None, total: None, error: None },
             };
@@ -2191,6 +2250,9 @@ pub fn run(bench: Option<Bench>) {
             // Self-test runs (bench, pdf-check) leave the user's settings alone.
             if let Ok(dir) = app.path().app_config_dir() {
                 *lock(&app.state::<AppState>().presets_dir) = Some(dir.join("presets"));
+            }
+            if let (true, Ok(dir)) = (bench.is_none(), app.path().app_log_dir()) {
+                diag::init(dir);
             }
             if let (true, Ok(dir)) = (bench.is_none(), app.path().app_config_dir()) {
                 let p = settings::settings_path(dir);

@@ -358,6 +358,10 @@ export interface Backend {
   proxiesMake(clips: number[], codec: string, maxHeight: number, outDir: string | null): Promise<void>;
   renderSelects(settings: Settings, sort: SortOrder, request: RenderRequest): Promise<void>;
   jobCancel(): Promise<void>;
+  /** Diagnostics (P14.5): log tail, report file, log folder. */
+  diagnosticsLog(lines: number): Promise<string[]>;
+  diagnosticsSave(path: string): Promise<void>;
+  diagnosticsOpenFolder(): Promise<void>;
   onJob(cb: (e: JobProgress) => void): Promise<() => void>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
   frameUrl(media: number, us: number, width: number): string;
@@ -638,6 +642,9 @@ const tauriBackend: Backend = {
   proxiesMake: async (clips, codec, maxHeight, outDir) => void unwrap(await commands.proxiesMake(clips, codec, maxHeight, outDir)),
   renderSelects: async (settings, sort, request) => void unwrap(await commands.renderSelects(settings, sort, request)),
   jobCancel: async () => void (await commands.jobCancel()),
+  diagnosticsLog: async (lines) => await commands.diagnosticsLog(lines),
+  diagnosticsSave: async (path) => void unwrap(await commands.diagnosticsSave(path)),
+  diagnosticsOpenFolder: async () => void unwrap(await commands.diagnosticsOpenFolder()),
   onJob: async (cb) =>
     events.jobProgress.listen((e) => {
       const p = e.payload;

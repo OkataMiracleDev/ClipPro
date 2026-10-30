@@ -9,6 +9,7 @@ import { cx, IconButton } from "../components/ui";
 import { Markdown } from "../lib/markdown";
 import { PAGES, search } from "../lib/manual";
 import { useTour } from "./Tour";
+import { Diagnostics } from "./Diagnostics";
 
 interface HelpState {
   open: boolean;
@@ -29,6 +30,7 @@ export const useHelp = create<HelpState>((set) => ({
 export function Help() {
   const { open, file, anchor, show, close } = useHelp();
   const [query, setQuery] = useState("");
+  const [diag, setDiag] = useState(() => new URLSearchParams(location.search).has("diag"));
   const body = useRef<HTMLDivElement>(null);
   const page = PAGES.find((p) => p.file === file) ?? PAGES[0];
   const hits = useMemo(() => search(query), [query]);
@@ -115,6 +117,9 @@ export function Help() {
             >
               Take the tour again
             </button>
+            <button className="rounded-md px-2 py-1.5 text-left text-[12px] text-text-2 hover:bg-control-hover" onClick={() => setDiag(true)}>
+              Diagnostics and log…
+            </button>
           </nav>
           <div ref={body} className="min-w-0 flex-1 overflow-y-auto px-8 py-6">
             <article className="manual">
@@ -128,6 +133,7 @@ export function Help() {
           </RDialog.Close>
         </RDialog.Content>
       </RDialog.Portal>
+      <Diagnostics open={diag} onOpenChange={setDiag} />
     </RDialog.Root>
   );
 }

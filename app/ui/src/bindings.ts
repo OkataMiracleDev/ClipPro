@@ -44,6 +44,12 @@ export const commands = {
 	/**  Renders the current selects to files in the background (`JobProgress`, job "render"). */
 	renderSelects: (settings: Settings_Deserialize, sort: SortOrder, request: RenderRequest) => typedError<null, string>(__TAURI_INVOKE("render_selects", { settings, sort, request })),
 	jobCancel: () => __TAURI_INVOKE<void>("job_cancel"),
+	/**  The last `lines` lines of the log (P14.5 log viewer). */
+	diagnosticsLog: (lines: number) => __TAURI_INVOKE<string[]>("diagnostics_log", { lines }),
+	/**  Writes the diagnostics report (system, settings without paths, recent log and crashes). */
+	diagnosticsSave: (path: string) => typedError<null, string>(__TAURI_INVOKE("diagnostics_save", { path })),
+	/**  Opens the log folder in Explorer. */
+	diagnosticsOpenFolder: () => typedError<null, string>(__TAURI_INVOKE("diagnostics_open_folder")),
 	/**
 	 *  How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
 	 *  when it can play natively.

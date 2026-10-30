@@ -558,6 +558,15 @@ export const mockBackend: Backend = {
   ],
   proxiesMake: async (clips) => mockJob("proxy", clips.length),
   renderSelects: async (settings, _sort, request) => mockJob("render", Math.min(12, scoreAll(settings).selects.length), request.out_dir),
+  diagnosticsLog: async () => [
+    "2026-10-30 09:00:01Z INFO  ClipPro 0.1.0 started on windows (8 threads)",
+    "2026-10-30 09:00:03Z INFO  project opened: <path>",
+    "2026-10-30 09:04:40Z WARN  analysis job 12 failed: no video stream",
+    "2026-10-30 09:12:09Z INFO  offload: 24 files, 23 copied, 0 skipped, 1 failed",
+    "2026-10-30 09:20:15Z INFO  render job finished: 12 output(s)",
+  ],
+  diagnosticsSave: async () => {},
+  diagnosticsOpenFolder: async () => {},
   jobCancel: async () => {
     mockJobCancel = true;
   },
