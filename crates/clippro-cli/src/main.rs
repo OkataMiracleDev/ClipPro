@@ -1,4 +1,5 @@
-//! `clippro-cli` (SPEC §20): headless analysis, scoring and media inspection.
+//! `clippro-cli` (SPEC §20): headless analysis, scoring, export, offload, proxies, rendered
+//! selects, benchmarks and a self-test.
 //! Exit codes: 0 success, 1 usage error, 2 media error, 3 partial (some clips failed), 4 internal.
 
 use clap::{Parser, Subcommand};
@@ -15,8 +16,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod extra;
+
 #[derive(Parser)]
-#[command(name = "clippro-cli", version, about = "ClipPro headless analysis and scoring")]
+#[command(name = "clippro-cli", version, about = "ClipPro headless analysis, scoring and export")]
 struct Cli {
     /// Machine-readable JSON output.
     #[arg(long, global = true)]
@@ -81,9 +84,20 @@ enum Cmd {
         sets: Vec<String>,
         #[arg(long, default_value = "timeline")]
         sort: String,
-        /// selects | with-rejects (whole clips, rejects on V2)
+        /// selects | with-rejects (whole clips, rejects on V2) | stringout
         #[arg(long, default_value = "selects")]
         layout: String,
+        /// Stringouts: clip | camera | date | reel | rating | label.
+        #[arg(long, default_value = "clip")]
+        group_by: String,
+        /// Stringouts: key | best (the group with the best select first).
+        #[arg(long, default_value = "key")]
+        group_order: String,
+        /// Stringouts: none | gap | slug, and its length.
+        #[arg(long, default_value = "slug")]
+        separator: String,
+        #[arg(long, default_value = "2s")]
+        separator_length: String,
         /// Export only the core of each select, without handles.
         #[arg(long)]
         no_handles: bool,
@@ -100,6 +114,72 @@ enum Cmd {
     },
     /// List built-in presets.
     Presets,
+    /// Copy a card or folder to one or more destinations, verify every copy, and write ASC MHL.
+    Offload {
+        src: PathBuf,
+        #[arg(long = "dest", required = true)]
+        dests: Vec<PathBuf>,
+        /// xxh64 | xxh3 | xxh128 | md5 | sha1
+        #[arg(long, default_value = "xxh64")]
+        hash: String,
+    },
+    /// Make and link a proxy for every clip in a project.
+    Proxy {
+        project: PathBuf,
+        /// prores-proxy | prores-lt | dnxhr-lb | h264
+        #[arg(long, default_value = "prores-proxy")]
+        codec: String,
+        /// Maximum height.
+        #[arg(long, default_value_t = 1080)]
+        height: u32,
+        /// Default: a Proxy folder beside each clip.
+        #[arg(long)]
+        out_dir: Option<PathBuf>,
+    },
+    /// Render every select to its own file.
+    Render {
+        project: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long, default_value = "All-Rounder")]
+        preset: String,
+        #[arg(long, default_value = "timeline")]
+        sort: String,
+        /// Stream copy when the in point is a keyframe.
+        #[arg(long)]
+        copy: bool,
+        /// With --copy: start at the keyframe before the in point if needed.
+        #[arg(long)]
+        nearest_keyframe: bool,
+        /// prores422 | prores-hq | dnxhr-hq | h264 (used whenever not copying)
+        #[arg(long, default_value = "prores422")]
+        codec: String,
+        /// Tokens: {clip} {index} {tc_in} {tc_out} {score} {rating} {label}
+        #[arg(long, default_value = "{clip}_{index}_{tc_in}")]
+        template: String,
+        #[arg(long)]
+        no_handles: bool,
+    },
+    /// Measure analysis speed (realtime factor) on some clips, without the cache.
+    Bench {
+        paths: Vec<PathBuf>,
+        #[arg(long, default_value = "standard")]
+        rate: String,
+        #[arg(long)]
+        cpu_only: bool,
+        /// Scratch folder for the temporary project (default: the system temp folder).
+        #[arg(long)]
+        dir: Option<PathBuf>,
+    },
+    /// Generate test clips, analyse, score and export them, and report pass/fail.
+    Selftest {
+        /// Working folder (default: a temporary one).
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Keep the generated files.
+        #[arg(long)]
+        keep: bool,
+    },
 }
 
 #[derive(Debug)]
@@ -140,9 +220,17 @@ fn run(cli: &Cli) -> Result<u8, Failure> {
             analyze(paths, project, rate, groups, *workers, *cpu_only, *no_pair, *no_cache, cli.json)
         }
         Cmd::Score { project, preset, sets, sort } => score(project, preset, sets, sort, cli.json),
-        Cmd::Export { project, format, out, preset, sets, sort, layout, no_handles, gap, no_markers, no_audio, name } => {
-            export(project, format, out, preset, sets, sort, layout, *no_handles, gap, *no_markers, *no_audio, name, cli.json)
+        Cmd::Export { project, format, out, preset, sets, sort, layout, group_by, group_order, separator, separator_length, no_handles, gap, no_markers, no_audio, name } => {
+            let so = Stringout { group_by, group_order, separator, length: separator_length };
+            export(project, format, out, preset, sets, sort, layout, &so, *no_handles, gap, *no_markers, *no_audio, name, cli.json)
         }
+        Cmd::Offload { src, dests, hash } => extra::offload(src, dests, hash, cli.json),
+        Cmd::Proxy { project, codec, height, out_dir } => extra::proxy(project, codec, *height, out_dir.as_deref(), cli.json),
+        Cmd::Render { project, out, preset, sort, copy, nearest_keyframe, codec, template, no_handles } => {
+            extra::render(project, out, preset, sort, *copy, *nearest_keyframe, codec, template, *no_handles, cli.json)
+        }
+        Cmd::Bench { paths, rate, cpu_only, dir } => extra::bench(paths, rate, *cpu_only, dir.as_deref(), cli.json),
+        Cmd::Selftest { dir, keep } => extra::selftest(dir.as_deref(), *keep, cli.json),
         Cmd::Presets => {
             let names: Vec<String> = clippro_score::builtins().into_iter().map(|p| p.preset.name).collect();
             if cli.json {
@@ -395,6 +483,13 @@ fn sort_order(sort: &str) -> Result<SortOrder, Failure> {
     })
 }
 
+struct Stringout<'a> {
+    group_by: &'a str,
+    group_order: &'a str,
+    separator: &'a str,
+    length: &'a str,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn export(
     project: &Path,
@@ -404,6 +499,7 @@ fn export(
     sets: &[String],
     sort: &str,
     layout: &str,
+    stringout: &Stringout,
     no_handles: bool,
     gap: &str,
     no_markers: bool,
@@ -423,10 +519,30 @@ fn export(
     for kv in sets {
         apply_set(&mut settings, kv)?;
     }
+    let is_stringout = layout == "stringout";
     let layout = match layout {
-        "selects" => clippro_interchange::Layout::SelectsOnly,
+        "selects" | "stringout" => clippro_interchange::Layout::SelectsOnly,
         "with-rejects" => clippro_interchange::Layout::SelectsOverRejects,
         other => return Err(fail(1, format!("unknown layout '{other}'"))),
+    };
+    let stringout = if is_stringout {
+        use clippro_core::stringout::{GroupBy, GroupOrder};
+        let by: GroupBy = serde_json::from_value(json!(stringout.group_by)).map_err(|_| fail(1, format!("unknown --group-by '{}'", stringout.group_by)))?;
+        let order = match stringout.group_order {
+            "key" => GroupOrder::Key,
+            "best" => GroupOrder::BestFirst,
+            o => return Err(fail(1, format!("unknown --group-order '{o}'"))),
+        };
+        let secs = parse_duration(stringout.length).map_err(|e| fail(1, format!("--separator-length: {e}")))?.unwrap_or(0.0);
+        let sep = match stringout.separator {
+            "none" => clippro_interchange::Separator::None,
+            "gap" => clippro_interchange::Separator::Gap { seconds: secs },
+            "slug" => clippro_interchange::Separator::Slug { seconds: secs },
+            o => return Err(fail(1, format!("unknown --separator '{o}'"))),
+        };
+        Some((by, order, sep))
+    } else {
+        None
     };
     let gap_s = parse_duration(gap).map_err(|e| fail(1, format!("--gap: {e}")))?.unwrap_or(0.0);
     let opts = clippro_interchange::ExportOptions {
@@ -442,7 +558,12 @@ fn export(
     so.cache_path = None;
     let (s, _) = Session::open(project, so).map_err(|e| fail(4, e.to_string()))?;
     let n = match (fmt, report) {
-        (Some(fmt), _) => s.export_to(&settings, sort_order(sort)?, &opts, fmt, out),
+        (Some(fmt), _) => match stringout {
+            Some((by, order, sep)) => s
+                .stringout_timeline(&settings, sort_order(sort)?, &opts, by, order, sep)
+                .and_then(|tl| s.write_timeline(&tl, fmt, out, &serde_json::to_string(&opts).unwrap_or_default())),
+            None => s.export_to(&settings, sort_order(sort)?, &opts, fmt, out),
+        },
         (None, Some(kind)) => {
             let title = if name.is_empty() { project.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default() } else { name.to_string() };
             let ro = clippro_core::report::ReportOptions { title, generated: clippro_core::report::utc_now_string(), ..Default::default() };

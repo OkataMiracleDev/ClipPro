@@ -14,7 +14,9 @@ anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 clippro-analysis = { version = "0.1.0", path = "../clippro-analysis" }
 clippro-core = { version = "0.1.0", path = "../clippro-core" }
+clippro-ingest = { version = "0.1.0", path = "../clippro-ingest" }
 clippro-interchange = { version = "0.1.0", path = "../clippro-interchange" }
+clippro-measure = { version = "0.1.0", path = "../clippro-measure" }
 clippro-media = { version = "0.1.0", path = "../clippro-media" }
 clippro-project = { version = "0.1.0", path = "../clippro-project" }
 clippro-score = { version = "0.1.0", path = "../clippro-score" }

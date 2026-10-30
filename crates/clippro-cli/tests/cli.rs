@@ -87,5 +87,72 @@ fn analyze_score_info_and_exit_codes() {
     let p = Command::new(exe()).args(["--json", "presets"]).output().unwrap();
     let v: serde_json::Value = serde_json::from_slice(&p.stdout).unwrap();
     assert_eq!(v.as_array().unwrap().len(), 19);
+
+    // P13.4: stringout export and rendered selects.
+    let so = tmp.join("stringout.xml");
+    let out = Command::new(exe())
+        .arg("export")
+        .arg(&proj)
+        .args(["--format", "xmeml", "--preset", "Cleanup", "--layout", "stringout", "--group-by", "clip", "--separator", "slug", "--separator-length", "1s", "--out"])
+        .arg(&so)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(std::fs::read_to_string(&so).unwrap().contains("<effectid>Slug</effectid>"));
+    let bad = Command::new(exe()).arg("export").arg(&proj).args(["--format", "xmeml", "--layout", "stringout", "--group-by", "mood", "--out"]).arg(&so).output().unwrap();
+    assert_eq!(bad.status.code(), Some(1));
+    if clippro_ingest::ffmpeg::ffmpeg_exe().is_some() {
+        let out = Command::new(exe())
+            .args(["--json", "render"])
+            .arg(&proj)
+            .args(["--preset", "Cleanup", "--copy", "--nearest-keyframe", "--out"])
+            .arg(tmp.join("renders"))
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let r = v.as_array().unwrap();
+        assert!(!r.is_empty() && r.iter().all(|o| o["copied"] == true && Path::new(o["path"].as_str().unwrap()).exists()), "{v}");
+    }
+    std::fs::remove_dir_all(&tmp).unwrap();
+}
+
+/// P13.4: offload (exit 0, JSON report, usage error without a destination) and the self-test.
+#[test]
+fn offload_and_selftest() {
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-cli-offload");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let card = tmp.join("CARD01");
+    std::fs::create_dir_all(card.join("CLIP")).unwrap();
+    std::fs::write(card.join("CLIP/A.mxf"), vec![7u8; 100_000]).unwrap();
+    std::fs::write(card.join("index.xml"), b"<i/>").unwrap();
+    let out = Command::new(exe())
+        .args(["--json", "offload"])
+        .arg(&card)
+        .arg("--dest")
+        .arg(tmp.join("D1"))
+        .arg("--dest")
+        .arg(tmp.join("D2"))
+        .args(["--hash", "md5"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!((v["files"].as_u64(), v["copied"].as_u64()), (Some(2), Some(2)), "{v}");
+    assert!(tmp.join("D2/CARD01/CLIP/A.mxf").exists());
+    let mhl = std::fs::read_to_string(v["manifests"][0].as_str().unwrap()).unwrap();
+    assert!(mhl.contains("<md5 action=\"original\""));
+    let none = Command::new(exe()).arg("offload").arg(&card).output().unwrap();
+    assert_eq!(none.status.code(), Some(1), "--dest is required");
+    let bad = Command::new(exe()).arg("offload").arg(&card).arg("--dest").arg(tmp.join("D3")).args(["--hash", "crc"]).output().unwrap();
+    assert_eq!(bad.status.code(), Some(1));
+    if clippro_ingest::ffmpeg::ffmpeg_exe().is_some() {
+        let out = Command::new(exe()).args(["--json", "selftest", "--dir"]).arg(tmp.join("selftest")).output().unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
+        assert_eq!(out.status.code(), Some(0), "{v:#}\n{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(v["passed"], v["total"]);
+        assert!(v["total"].as_u64().unwrap() >= 9);
+        assert!(!tmp.join("selftest").exists(), "selftest cleans up without --keep");
+    }
     std::fs::remove_dir_all(&tmp).unwrap();
 }
