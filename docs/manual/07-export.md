@@ -10,14 +10,13 @@ Press `Ctrl+E` (or the share button) to export the current selects.
 | Final Cut Pro | FCPXML 1.10 (Resolve reads it too) |
 | OpenTimelineIO | Resolve 18.5 and later, and OTIO tools |
 | EDL | CMX3600, with locators for the markers |
-| Avid Media Composer | ALE subclips (with the marker list and EDL, the Avid route for now) |
+| Avid Media Composer | AAF: the sequence, with markers in their colours, linked to the original files (beta until confirmed in Media Composer) |
+| Avid ALE | Subclips for Media Composer |
 | Avid markers | A marker list for Media Composer's Import Markers |
 | CSV, JSON | Reports for spreadsheets and scripts |
 | HTML report | One self-contained file with thumbnails and sortable tables |
 | PDF contact sheet | The best frame of every select, for clients |
 | Rendered clips | A media file per select |
-
-AAF isn't available yet.
 
 ## Layout
 

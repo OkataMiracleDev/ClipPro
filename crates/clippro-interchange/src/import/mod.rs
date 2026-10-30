@@ -212,6 +212,26 @@ pub fn detect(text: &str) -> Option<crate::Format> {
     }
 }
 
+/// Compound-file signature (AAF).
+const CFB_MAGIC: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+
+/// The format of a timeline file's bytes (AAF by its signature, others by content).
+pub fn detect_bytes(bytes: &[u8]) -> Option<crate::Format> {
+    if bytes.starts_with(&CFB_MAGIC) {
+        return Some(crate::Format::Aaf);
+    }
+    detect(&String::from_utf8_lossy(&bytes[..bytes.len().min(8192)]))
+}
+
+/// Reads a timeline file's bytes in any supported format, AAF included.
+pub fn import_bytes(bytes: &[u8], rate: clippro_types::FrameRate) -> Result<Timeline, String> {
+    if bytes.starts_with(&CFB_MAGIC) {
+        return crate::aaf::import(bytes);
+    }
+    let text = String::from_utf8_lossy(bytes);
+    import(text.trim_start_matches('\u{feff}'), rate)
+}
+
 /// Reads a timeline in any supported format. `rate` is used where the format has none (EDL).
 pub fn import(text: &str, rate: clippro_types::FrameRate) -> Result<Timeline, String> {
     match detect(text) {

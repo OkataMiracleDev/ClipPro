@@ -101,6 +101,6 @@ export async function pickDiagnosticsPath(): Promise<string | null> {
 export async function pickTimeline(): Promise<string | null> {
   if (!isTauri) return "D:/Edits/Sarah Interview v3.xml";
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const r = await open({ title: "Review a timeline", filters: [{ name: "Timelines", extensions: ["xml", "fcpxml", "otio", "edl"] }] });
+  const r = await open({ title: "Review a timeline", filters: [{ name: "Timelines", extensions: ["xml", "fcpxml", "otio", "edl", "aaf"] }] });
   return typeof r === "string" ? r : null;
 }

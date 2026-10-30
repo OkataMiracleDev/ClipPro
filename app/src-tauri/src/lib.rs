@@ -680,8 +680,8 @@ fn review_result(rv: &clippro_core::review::TimelineReview, format: clippro_inte
 async fn timeline_review(state: State<'_, AppState>, settings: Settings, path: String, weak_below: f64) -> Result<ReviewResult, String> {
     let s = state.session()?;
     let (rv, clips, format) = blocking(move || {
-        let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
-        let format = clippro_interchange::import::detect(&text).ok_or("Not a timeline ClipPro can read (FCP7 XML, FCPXML, OTIO or EDL).")?;
+        let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
+        let format = clippro_interchange::import::detect_bytes(&bytes).ok_or("Not a timeline ClipPro can read (AAF, FCP7 XML, FCPXML, OTIO or EDL).")?;
         let clips = s.review_data(&settings).map_err(|e| e.to_string())?;
         // EDLs carry no frame rate: assume the project's most common one.
         let mut rates: Vec<(clippro_types::FrameRate, usize)> = Vec::new();
@@ -692,7 +692,7 @@ async fn timeline_review(state: State<'_, AppState>, settings: Settings, path: S
             }
         }
         let rate = rates.iter().max_by_key(|r| r.1).map(|r| r.0).unwrap_or_default();
-        let tl = clippro_interchange::import::import(&text, rate)?;
+        let tl = clippro_interchange::import::import_bytes(&bytes, rate)?;
         let opts = clippro_core::review::ReviewOptions { weak_below: weak_below.clamp(0.0, 1.0) as f32, ..Default::default() };
         let rv = clippro_core::review::review(tl, &clips, |f| settings.tier(f), &opts);
         Ok((rv, clips, format))
@@ -712,7 +712,7 @@ async fn timeline_export_back(state: State<'_, AppState>, swaps: Vec<ReviewSwap>
         let format = clippro_interchange::Format::parse(&format).ok_or_else(|| format!("Unknown export format “{format}”."))?;
         let swaps: Vec<clippro_core::review::Swap> = swaps.iter().map(|s| clippro_core::review::Swap { item: s.item as usize, alternative: s.alternative as usize }).collect();
         let tl = clippro_core::review::export_back(&rv, &clips, &swaps, markers);
-        std::fs::write(&path, format.render(&tl)).map_err(|e| format!("{path}: {e}"))?;
+        std::fs::write(&path, format.render_bytes(&tl)?).map_err(|e| format!("{path}: {e}"))?;
         let n = tl.video.iter().flat_map(|t| &t.items).filter(|i| matches!(i, clippro_interchange::model::Item::Clip(_))).count();
         Ok(ExportResult { path, selects: n as u32 })
     })

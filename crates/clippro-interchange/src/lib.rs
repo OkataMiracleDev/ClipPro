@@ -1,5 +1,6 @@
 //! Exporters and importers for NLE interchange formats (SPEC §16, P11.1).
 
+pub mod aaf;
 pub mod edl;
 pub mod fcp7;
 pub mod fcpxml;
@@ -20,6 +21,7 @@ pub enum Format {
     Fcpxml,
     Otio,
     Edl,
+    Aaf,
     Ale,
     AvidMarkers,
     Csv,
@@ -33,6 +35,7 @@ impl Format {
             Format::Fcpxml => "fcpxml",
             Format::Otio => "otio",
             Format::Edl => "edl",
+            Format::Aaf => "aaf",
             Format::Ale => "ale",
             Format::AvidMarkers => "txt",
             Format::Csv => "csv",
@@ -46,6 +49,7 @@ impl Format {
             "fcpxml" | "fcp" | "finalcut" => Format::Fcpxml,
             "otio" => Format::Otio,
             "edl" | "cmx3600" => Format::Edl,
+            "aaf" | "avid-aaf" => Format::Aaf,
             "ale" | "avid" => Format::Ale,
             "avid-markers" | "markers" => Format::AvidMarkers,
             "csv" => Format::Csv,
@@ -54,8 +58,10 @@ impl Format {
         })
     }
 
+    /// Text formats as a string (AAF is binary: use `render_bytes`; this returns "").
     pub fn render(self, t: &Timeline) -> String {
         match self {
+            Format::Aaf => String::new(),
             Format::Xmeml => fcp7::export(t),
             Format::Fcpxml => fcpxml::export(t),
             Format::Otio => otio::export(t),
@@ -66,4 +72,13 @@ impl Format {
             Format::Json => report::export_json(t),
         }
     }
+
+    /// The file contents for any format.
+    pub fn render_bytes(self, t: &Timeline) -> Result<Vec<u8>, String> {
+        match self {
+            Format::Aaf => aaf::export(t),
+            f => Ok(f.render(t).into_bytes()),
+        }
+    }
+
 }

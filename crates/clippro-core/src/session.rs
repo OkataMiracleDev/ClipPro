@@ -679,8 +679,8 @@ impl Session {
     /// Renders and writes any timeline, recording it in the export history; returns the number
     /// of clips on V1.
     pub fn write_timeline(&self, tl: &Timeline, format: Format, path: &Path, settings_json: &str) -> Result<usize> {
-        let text = format.render(tl);
-        std::fs::write(path, &text).map_err(|e| SessionError::Other(format!("{}: {e}", path.display())))?;
+        let bytes = format.render_bytes(tl).map_err(SessionError::Other)?;
+        std::fs::write(path, &bytes).map_err(|e| SessionError::Other(format!("{}: {e}", path.display())))?;
         let n = tl.video.first().map(|t| t.items.iter().filter(|i| matches!(i, clippro_interchange::model::Item::Clip(_))).count()).unwrap_or(0);
         lock(&self.db).record_export(&format!("{format:?}").to_lowercase(), &path.to_string_lossy(), settings_json)?;
         Ok(n)

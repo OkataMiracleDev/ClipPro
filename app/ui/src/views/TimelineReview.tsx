@@ -16,6 +16,7 @@ const FORMATS = [
   { value: "fcpxml", label: "FCPXML", ext: "fcpxml" },
   { value: "otio", label: "OTIO", ext: "otio" },
   { value: "edl", label: "EDL", ext: "edl" },
+  { value: "aaf", label: "AAF", ext: "aaf" },
 ] as const;
 type Fmt = (typeof FORMATS)[number]["value"];
 

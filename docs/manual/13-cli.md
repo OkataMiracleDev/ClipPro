@@ -7,7 +7,7 @@
 | `info <file>` | Prints a file's streams, timecode and metadata |
 | `analyze <paths…> --project p.clippro` | Imports and analyses; `--rate`, `--groups`, `--workers`, `--cpu-only`, `--no-cache` |
 | `score <project> --preset NAME` | Prints the selects; `--set score=55,100` and other overrides |
-| `export <project> --format F --out PATH` | Exports; `--layout selects\|with-rejects\|stringout`, `--group-by`, `--separator slug`, `--no-handles`, `--gap 1s` |
+| `export <project> --format F --out PATH` (F: `xmeml`, `fcpxml`, `otio`, `edl`, `aaf`, `ale`, `avid-markers`, `csv`, `json`, `html`, `contact-sheet`) | Exports; `--layout selects\|with-rejects\|stringout`, `--group-by`, `--separator slug`, `--no-handles`, `--gap 1s` |
 | `presets` | Lists the built-in presets |
 | `offload <src> --dest D1 --dest D2` | Copies and verifies, with ASC MHL; `--hash xxh64\|xxh3\|xxh128\|md5\|sha1` |
 | `proxy <project>` | Makes and links proxies; `--codec prores-proxy\|prores-lt\|dnxhr-lb\|h264`, `--height` |

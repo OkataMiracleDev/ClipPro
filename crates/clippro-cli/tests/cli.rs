@@ -71,6 +71,13 @@ fn analyze_score_info_and_exit_codes() {
         }
     }
 
+    // AAF (binary): a compound file that our reader takes back.
+    let aaf = tmp.join("selects.aaf");
+    let out = Command::new(exe()).arg("export").arg(&proj).args(["--format", "aaf", "--preset", "Cleanup", "--out"]).arg(&aaf).output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "aaf: {}", String::from_utf8_lossy(&out.stderr));
+    let back = clippro_interchange::aaf::import(&std::fs::read(&aaf).unwrap()).unwrap();
+    assert!(back.media.iter().any(|m| m.name == "tripod_static"));
+
     // Usage errors exit 1; media errors exit 2.
     let bad = Command::new(exe()).arg("score").arg(&proj).args(["--preset", "nope"]).output().unwrap();
     assert_eq!(bad.status.code(), Some(1));

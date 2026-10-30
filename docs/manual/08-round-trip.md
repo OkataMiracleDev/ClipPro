@@ -4,7 +4,7 @@
 
 Score an edit someone has already made, and swap weak shots for better takes.
 
-1. Click the clipboard button in the title bar (**Review a timeline…**) and choose an FCP7 XML, FCPXML, OTIO or EDL file.
+1. Click the clipboard button in the title bar (**Review a timeline…**) and choose an AAF, FCP7 XML, FCPXML, OTIO or EDL file.
 2. ClipPro finds each shot's media in the project: by path, then file name, then clip name, then reel and timecode. Shots it can't find are listed as offline.
 3. Each shot shows its score bar and average over the part the edit uses, plus any flags. Shots below the **Weak below** score, or containing a force-excluded moment, are marked weak.
 4. Open a shot to see better alternatives: other stretches of the same clip, or other takes of the same set-up (judged by how alike the pictures are). **Show in viewer** plays one; choose it to swap it in.
