@@ -35,6 +35,46 @@ export interface MediaSource {
   hasAudio: boolean;
 }
 
+export interface ReviewAlt {
+  clip: number;
+  clipName: string;
+  startUs: number;
+  endUs: number;
+  mean: number;
+  kind: "same_clip" | "take_group";
+  similarity: number;
+}
+
+export interface ReviewItem {
+  track: number;
+  name: string;
+  /** Timeline frames from the start. */
+  recordIn: number;
+  recordOut: number;
+  clip: number | null;
+  srcInUs: number;
+  srcOutUs: number;
+  mean: number | null;
+  bars: number[];
+  flags: string[];
+  excluded: boolean;
+  weak: boolean;
+  alternatives: ReviewAlt[];
+}
+
+export interface Review {
+  name: string;
+  format: string;
+  fps: number;
+  startTcFrames: number;
+  dropFrame: boolean;
+  duration: number;
+  tracks: number;
+  items: ReviewItem[];
+  linked: number;
+  missing: string[];
+}
+
 export type ClipState = "queued" | "running" | "paused" | "done" | "failed";
 
 export interface Clip {
@@ -197,6 +237,9 @@ export interface Backend {
   /** Audio streams of a clip and the chosen one (null = automatic). */
   audioStreams(clip: number): Promise<{ streams: { index: number; codec: string; channels: number; layout: string; language: string }[]; selected: number | null }>;
   audioStreamSet(clip: number, stream: number | null): Promise<void>;
+  /** Imported-timeline review (P11.3) and export back with swaps and score markers (P11.4). */
+  timelineReview(settings: Settings, path: string, weakBelow: number): Promise<Review>;
+  timelineExportBack(swaps: { item: number; alternative: number }[], markers: boolean, format: string, path: string): Promise<ExportResult>;
   audioLevels(): Promise<{ levels: number[]; sourceChannels: number }>;
   audioChannelGains(gains: number[]): Promise<void>;
   audioWaveforms(): Promise<{ clip: number; startUs: number; peaks: Float32Array; lufs: number | null }[]>;
@@ -240,6 +283,43 @@ export interface Backend {
 }
 
 export const n = (v: number | null | undefined, fallback = 0): number => (v === null || v === undefined || Number.isNaN(v) ? fallback : v);
+
+function adaptReview(r: import("./bindings").ReviewResult_Serialize): Review {
+  return {
+    name: r.name,
+    format: r.format,
+    fps: n(r.fps, 25),
+    startTcFrames: n(r.start_tc_frames),
+    dropFrame: r.drop_frame,
+    duration: n(r.duration),
+    tracks: r.tracks,
+    linked: r.linked,
+    missing: r.missing,
+    items: r.items.map((i) => ({
+      track: i.track,
+      name: i.name,
+      recordIn: n(i.record_in),
+      recordOut: n(i.record_out),
+      clip: i.clip ?? null,
+      srcInUs: n(i.src_in_us),
+      srcOutUs: n(i.src_out_us),
+      mean: i.mean ?? null,
+      bars: i.bars.map((v) => n(v)),
+      flags: i.flags,
+      excluded: i.excluded,
+      weak: i.weak,
+      alternatives: i.alternatives.map((a) => ({
+        clip: n(a.clip),
+        clipName: a.clip_name,
+        startUs: n(a.start_us),
+        endUs: n(a.end_us),
+        mean: n(a.mean),
+        kind: a.kind === "same_clip" ? "same_clip" : "take_group",
+        similarity: n(a.similarity),
+      })),
+    })),
+  };
+}
 
 function unwrap<T>(r: { status: "ok"; data: T } | { status: "error"; error: string }): T {
   if (r.status === "error") throw new Error(r.error);
@@ -401,6 +481,8 @@ const tauriBackend: Backend = {
     return { streams: r.streams, selected: r.selected ?? null };
   },
   audioStreamSet: async (clip, stream) => void unwrap(await commands.audioStreamSet(clip, stream)),
+  timelineReview: async (settings, path, weakBelow) => adaptReview(unwrap(await commands.timelineReview(settings, path, weakBelow))),
+  timelineExportBack: async (swaps, markers, format, path) => unwrap(await commands.timelineExportBack(swaps, markers, format, path)),
   audioLevels: async () => {
     const r = unwrap(await commands.audioLevels());
     return { levels: r.levels.map((v) => n(v, -120)), sourceChannels: r.source_channels };

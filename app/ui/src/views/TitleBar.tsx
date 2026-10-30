@@ -1,6 +1,7 @@
-import { ArrowDownUp, Check, FolderOpen, ListFilter, Minus, PanelRight, Pause, Play, Plus, Settings, Share, Square, X } from "lucide-react";
+import { ArrowDownUp, Check, ClipboardCheck, FolderOpen, ListFilter, Minus, PanelRight, Pause, Play, Plus, Settings, Share, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ExportSheet } from "./ExportSheet";
+import { TimelineReview } from "./TimelineReview";
 import { api, isTauri, type SortOrder } from "../api";
 import { cx, IconButton, Popover, PopoverClose, Spinner } from "../components/ui";
 import { actionFor } from "../lib/keys";
@@ -91,6 +92,8 @@ export function TitleBar() {
   const { project, importPaths, openProject, selectsOnly, toggleSelectsOnly, sort, setSort, inspectorOpen, toggleInspector, appSettings } = useApp();
   const windowsControls = appSettings?.window_controls === "windows";
   const [exportOpen, setExportOpen] = useState(false);
+  // `?review=1` opens the timeline review (screenshots).
+  const [reviewOpen, setReviewOpen] = useState(() => new URLSearchParams(location.search).get("review") === "1");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const a = actionFor(e);
@@ -162,6 +165,9 @@ export function TitleBar() {
             ))}
           </div>
         </Popover>
+        <IconButton label="Review a timeline…" disabled={!project} onClick={() => setReviewOpen(true)}>
+          <ClipboardCheck size={16} />
+        </IconButton>
         <IconButton label="Export selects… (Ctrl+E)" disabled={!project} onClick={() => setExportOpen(true)}>
           <Share size={16} />
         </IconButton>
@@ -174,6 +180,7 @@ export function TitleBar() {
       </div>
       {windowsControls && <CaptionButtons />}
       <ExportSheet open={exportOpen} onOpenChange={setExportOpen} />
+      {project && <TimelineReview open={reviewOpen} onOpenChange={setReviewOpen} />}
     </header>
   );
 }

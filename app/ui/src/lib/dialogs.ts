@@ -25,10 +25,10 @@ export async function pickProjectToOpen(): Promise<string | null> {
   return typeof r === "string" ? r : null;
 }
 
-export async function pickExportPath(defaultName: string, ext: string, label: string): Promise<string | null> {
+export async function pickExportPath(defaultName: string, ext: string, label: string, title = "Export selects"): Promise<string | null> {
   if (!isTauri) return `D:/Exports/${defaultName}.${ext}`;
   const { save } = await import("@tauri-apps/plugin-dialog");
-  const r = await save({ title: "Export selects", defaultPath: `${defaultName}.${ext}`, filters: [{ name: label, extensions: [ext] }] });
+  const r = await save({ title, defaultPath: `${defaultName}.${ext}`, filters: [{ name: label, extensions: [ext] }] });
   if (!r) return null;
   return r.toLowerCase().endsWith(`.${ext}`) ? r : `${r}.${ext}`;
 }
@@ -88,4 +88,11 @@ export async function pickNewProject(): Promise<string | null> {
   const r = await save({ title: "New project", defaultPath: "Untitled.clippro", filters: [{ name: "ClipPro project", extensions: ["clippro"] }] });
   if (!r) return null;
   return r.toLowerCase().endsWith(".clippro") ? r : `${r}.clippro`;
+}
+
+export async function pickTimeline(): Promise<string | null> {
+  if (!isTauri) return "D:/Edits/Sarah Interview v3.xml";
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const r = await open({ title: "Review a timeline", filters: [{ name: "Timelines", extensions: ["xml", "fcpxml", "otio", "edl"] }] });
+  return typeof r === "string" ? r : null;
 }

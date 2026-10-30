@@ -31,6 +31,8 @@ pub struct AppState {
     audio: audio_out::AudioOut,
     /// `--bench-preview` report file (ADR-002); `None` in normal runs.
     bench_out: Mutex<Option<PathBuf>>,
+    /// The imported timeline under review (P11.3) and the project clips it was scored against.
+    review: Mutex<Option<(clippro_core::review::TimelineReview, Vec<clippro_core::review::ClipData>)>>,
 }
 
 /// Self-test runs. `--bench-preview <out.json> <clip>...` measures the preview transports;
@@ -220,6 +222,7 @@ fn restart_watch(state: &AppState) {
 }
 
 fn replace_session(state: &AppState, s: Arc<Session>, path: PathBuf) {
+    *lock(&state.review) = None;
     remember_project(state, &path);
     state.preview.clear();
     state.audio.stop();
@@ -255,6 +258,7 @@ async fn project_close(state: State<'_, AppState>) -> Result<(), String> {
     lock(&state.watch).take();
     let s = lock(&state.session).take();
     *lock(&state.path) = None;
+    *lock(&state.review) = None;
     state.preview.clear();
     state.audio.stop();
     if let Some(s) = s {
@@ -480,6 +484,149 @@ async fn export_selects(app: tauri::AppHandle, state: State<'_, AppState>, setti
         let path = PathBuf::from(&request.path);
         let n = s.export_to(&settings, sort, &opts, format, &path).map_err(|e| e.to_string())?;
         Ok(ExportResult { path: request.path, selects: n as u32 })
+    })
+    .await
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct ReviewAlt {
+    pub clip: f64,
+    pub clip_name: String,
+    pub start_us: f64,
+    pub end_us: f64,
+    pub mean: f32,
+    /// "same_clip" | "take_group"
+    pub kind: String,
+    pub similarity: f32,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct ReviewItem {
+    pub track: u32,
+    pub name: String,
+    /// Timeline frames from the start.
+    pub record_in: f64,
+    pub record_out: f64,
+    pub clip: Option<f64>,
+    pub src_in_us: f64,
+    pub src_out_us: f64,
+    pub mean: Option<f32>,
+    pub bars: Vec<f32>,
+    pub flags: Vec<String>,
+    pub excluded: bool,
+    pub weak: bool,
+    pub alternatives: Vec<ReviewAlt>,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct ReviewResult {
+    pub name: String,
+    /// Detected format ("xmeml", "fcpxml", "otio", "edl").
+    pub format: String,
+    pub fps: f64,
+    pub start_tc_frames: f64,
+    pub drop_frame: bool,
+    pub duration: f64,
+    pub tracks: u32,
+    pub items: Vec<ReviewItem>,
+    pub linked: u32,
+    /// Timeline media nothing in the project matched.
+    pub missing: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Copy, Debug)]
+pub struct ReviewSwap {
+    pub item: u32,
+    pub alternative: u32,
+}
+
+fn review_result(rv: &clippro_core::review::TimelineReview, format: clippro_interchange::Format) -> ReviewResult {
+    let tl = &rv.timeline;
+    ReviewResult {
+        name: tl.name.clone(),
+        format: serde_json::to_value(format).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default(),
+        fps: tl.rate.fps(),
+        start_tc_frames: tl.start_tc_frames as f64,
+        drop_frame: tl.drop_frame,
+        duration: tl.duration() as f64,
+        tracks: tl.video.len() as u32,
+        items: rv
+            .items
+            .iter()
+            .map(|i| ReviewItem {
+                track: i.track as u32,
+                name: i.name.clone(),
+                record_in: i.record_in as f64,
+                record_out: i.record_out as f64,
+                clip: i.clip.map(|c| c.0 as f64),
+                src_in_us: i.src_in_us as f64,
+                src_out_us: i.src_out_us as f64,
+                mean: i.mean,
+                bars: i.bars.clone(),
+                flags: i.flags.iter().map(|f| f.label().to_string()).collect(),
+                excluded: i.excluded,
+                weak: i.weak,
+                alternatives: i
+                    .alternatives
+                    .iter()
+                    .map(|a| ReviewAlt {
+                        clip: a.clip.0 as f64,
+                        clip_name: a.clip_name.clone(),
+                        start_us: a.segment.start_us as f64,
+                        end_us: a.segment.end_us as f64,
+                        mean: a.segment.mean,
+                        kind: if a.kind == clippro_core::review::AltKind::SameClip { "same_clip".into() } else { "take_group".into() },
+                        similarity: a.similarity,
+                    })
+                    .collect(),
+            })
+            .collect(),
+        linked: rv.relink.linked.len() as u32,
+        missing: rv.relink.missing.iter().map(|&i| tl.media.get(i).map(|m| if m.name.is_empty() { m.path.display().to_string() } else { m.name.clone() }).unwrap_or_default()).collect(),
+    }
+}
+
+/// Imports an NLE timeline, relinks it to the project and reviews every item (SPEC EXP-10).
+#[tauri::command]
+#[specta::specta]
+async fn timeline_review(state: State<'_, AppState>, settings: Settings, path: String, weak_below: f64) -> Result<ReviewResult, String> {
+    let s = state.session()?;
+    let (rv, clips, format) = blocking(move || {
+        let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+        let format = clippro_interchange::import::detect(&text).ok_or("Not a timeline ClipPro can read (FCP7 XML, FCPXML, OTIO or EDL).")?;
+        let clips = s.review_data(&settings).map_err(|e| e.to_string())?;
+        // EDLs carry no frame rate: assume the project's most common one.
+        let mut rates: Vec<(clippro_types::FrameRate, usize)> = Vec::new();
+        for c in &clips {
+            match rates.iter_mut().find(|r| r.0 == c.media.rate) {
+                Some(r) => r.1 += 1,
+                None => rates.push((c.media.rate, 1)),
+            }
+        }
+        let rate = rates.iter().max_by_key(|r| r.1).map(|r| r.0).unwrap_or_default();
+        let tl = clippro_interchange::import::import(&text, rate)?;
+        let opts = clippro_core::review::ReviewOptions { weak_below: weak_below.clamp(0.0, 1.0) as f32, ..Default::default() };
+        let rv = clippro_core::review::review(tl, &clips, |f| settings.tier(f), &opts);
+        Ok((rv, clips, format))
+    })
+    .await?;
+    let out = review_result(&rv, format);
+    *lock(&state.review) = Some((rv, clips));
+    Ok(out)
+}
+
+/// Writes the reviewed timeline back out (P11.4): same tracks, accepted swaps, score markers.
+#[tauri::command]
+#[specta::specta]
+async fn timeline_export_back(state: State<'_, AppState>, swaps: Vec<ReviewSwap>, markers: bool, format: String, path: String) -> Result<ExportResult, String> {
+    let Some((rv, clips)) = lock(&state.review).clone() else { return Err("No timeline is being reviewed.".into()) };
+    blocking(move || {
+        let format = clippro_interchange::Format::parse(&format).ok_or_else(|| format!("Unknown export format “{format}”."))?;
+        let swaps: Vec<clippro_core::review::Swap> = swaps.iter().map(|s| clippro_core::review::Swap { item: s.item as usize, alternative: s.alternative as usize }).collect();
+        let tl = clippro_core::review::export_back(&rv, &clips, &swaps, markers);
+        std::fs::write(&path, format.render(&tl)).map_err(|e| format!("{path}: {e}"))?;
+        let n = tl.video.iter().flat_map(|t| &t.items).filter(|i| matches!(i, clippro_interchange::model::Item::Clip(_))).count();
+        Ok(ExportResult { path, selects: n as u32 })
     })
     .await
 }
@@ -1493,6 +1640,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             preset_settings,
             score,
             export_selects,
+            timeline_review,
+            timeline_export_back,
             media_source,
             preview_shared,
             inspect_sample,

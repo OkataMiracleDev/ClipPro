@@ -20,6 +20,10 @@ export const commands = {
 	presetSettings: (name: string) => typedError<Settings_Serialize, string>(__TAURI_INVOKE("preset_settings", { name })),
 	score: (settings: Settings_Deserialize, sort: SortOrder) => typedError<ScoreResult, string>(__TAURI_INVOKE("score", { settings, sort })),
 	exportSelects: (settings: Settings_Deserialize, sort: SortOrder, request: ExportRequest_Deserialize) => typedError<ExportResult, string>(__TAURI_INVOKE("export_selects", { settings, sort, request })),
+	/**  Imports an NLE timeline, relinks it to the project and reviews every item (SPEC EXP-10). */
+	timelineReview: (settings: Settings_Deserialize, path: string, weakBelow: number | null) => typedError<ReviewResult_Serialize, string>(__TAURI_INVOKE("timeline_review", { settings, path, weakBelow })),
+	/**  Writes the reviewed timeline back out (P11.4): same tracks, accepted swaps, score markers. */
+	timelineExportBack: (swaps: ReviewSwap[], markers: boolean, format: string, path: string) => typedError<ExportResult, string>(__TAURI_INVOKE("timeline_export_back", { swaps, markers, format, path })),
 	/**
 	 *  How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
 	 *  when it can play natively.
@@ -604,6 +608,90 @@ export type ProjectTemplate = {
 	name: string,
 	/**  The UI's template document (tuning, watch folders, export defaults). */
 	json: string,
+};
+
+export type ReviewAlt = {
+	clip: number | null,
+	clip_name: string,
+	start_us: number | null,
+	end_us: number | null,
+	mean: number | null,
+	/**  "same_clip" | "take_group" */
+	kind: string,
+	similarity: number | null,
+};
+
+export type ReviewItem = ReviewItem_Serialize | ReviewItem_Deserialize;
+
+export type ReviewItem_Deserialize = {
+	track: number,
+	name: string,
+	/**  Timeline frames from the start. */
+	record_in: number | null,
+	record_out: number | null,
+	clip?: number | null,
+	src_in_us: number | null,
+	src_out_us: number | null,
+	mean?: number | null,
+	bars: (number | null)[],
+	flags: string[],
+	excluded: boolean,
+	weak: boolean,
+	alternatives: ReviewAlt[],
+};
+
+export type ReviewItem_Serialize = {
+	track: number,
+	name: string,
+	/**  Timeline frames from the start. */
+	record_in: number | null,
+	record_out: number | null,
+	clip: number | null,
+	src_in_us: number | null,
+	src_out_us: number | null,
+	mean: number | null,
+	bars: (number | null)[],
+	flags: string[],
+	excluded: boolean,
+	weak: boolean,
+	alternatives: ReviewAlt[],
+};
+
+export type ReviewResult = ReviewResult_Serialize | ReviewResult_Deserialize;
+
+export type ReviewResult_Deserialize = {
+	name: string,
+	/**  Detected format ("xmeml", "fcpxml", "otio", "edl"). */
+	format: string,
+	fps: number | null,
+	start_tc_frames: number | null,
+	drop_frame: boolean,
+	duration: number | null,
+	tracks: number,
+	items: ReviewItem_Deserialize[],
+	linked: number,
+	/**  Timeline media nothing in the project matched. */
+	missing: string[],
+};
+
+export type ReviewResult_Serialize = {
+	name: string,
+	/**  Detected format ("xmeml", "fcpxml", "otio", "edl"). */
+	format: string,
+	fps: number | null,
+	start_tc_frames: number | null,
+	drop_frame: boolean,
+	duration: number | null,
+	tracks: number,
+	items: ReviewItem_Serialize[],
+	linked: number,
+	/**  Timeline media nothing in the project matched. */
+	missing: string[],
+};
+
+export type ReviewSwap = {
+	item: number,
+	alternative: number,
 };
 
 export type ScoreResult = {

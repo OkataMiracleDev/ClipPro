@@ -126,6 +126,54 @@ function defaultSettings(name: string): Settings {
   };
 }
 
+/** A demo editor's cut over the demo clips, reviewed like the engine would (P11.3). */
+function mockReview(path: string, weakBelow: number): import("./api").Review {
+  const fps = 25;
+  const cut: [string, number, number][] = [
+    ["INTERVIEW_SARAH_WIDE", 4, 9], ["BROLL_HANDS_05", 2, 5.5], ["INTERVIEW_SARAH_CU", 12, 18], ["DRONE_COAST_01", 6, 10],
+    ["SLATE_TEST", 1, 4], ["GIMBAL_MARKET_03", 8, 12.5], ["A001C004_241012_R1AB", 3, 7], ["DRONE_COAST_02", 14, 19], ["BROLL_STREET_11", 5, 8],
+  ];
+  const mean = (d: DemoClip, a: number, b: number) => {
+    const s = d.bar.subarray(Math.floor(a * 4), Math.max(Math.floor(a * 4) + 1, Math.floor(b * 4)));
+    return s.reduce((x, y) => x + y, 0) / Math.max(1, s.length);
+  };
+  const family = (n: string) => n.replace(/_(WIDE|CU|0\d|\d\d)$/, "").replace(/C\d{3}_.*/, "");
+  let at = 0;
+  const items = cut.map(([name, a, b]) => {
+    const d = demo.find((x) => x.clip.name === name)!;
+    const len = Math.round((b - a) * fps);
+    const m = mean(d, a, b);
+    const k0 = Math.floor(a * 4);
+    const k1 = Math.max(k0 + 1, Math.floor(b * 4));
+    const bits = d.flags.subarray(k0, k1).reduce((x, y) => x | y, 0);
+    const excluded = (bits & (1 << 2)) !== 0;
+    const flags = [bits & (1 << 5) ? "Shaky" : "", excluded ? "Solid colour" : ""].filter(Boolean);
+    const alternatives: import("./api").ReviewAlt[] = [];
+    for (const o of demo) {
+      const same = o === d;
+      if (!same && family(o.clip.name) !== family(name)) continue;
+      // Best window of the same length elsewhere.
+      let best = -1;
+      let bestAt = 0;
+      const w = b - a;
+      for (let t = 0; t + w <= o.durationUs / 1e6; t += 0.5) {
+        if (same && Math.abs(t - a) < w) continue;
+        const v = mean(o, t, t + w);
+        if (v > best) [best, bestAt] = [v, t];
+      }
+      if (best > m + 0.02) alternatives.push({ clip: o.clip.clip, clipName: o.clip.name, startUs: bestAt * 1e6, endUs: (bestAt + w) * 1e6, mean: best, kind: same ? "same_clip" : "take_group", similarity: same ? 1 : 0.86 });
+    }
+    alternatives.sort((x, y) => y.mean - x.mean);
+    const bars = Array.from(d.bar.subarray(k0, k1));
+    const item = { track: 0, name, recordIn: at, recordOut: at + len, clip: d.clip.clip, srcInUs: a * 1e6, srcOutUs: b * 1e6, mean: m, bars, flags, excluded, weak: m < weakBelow || excluded, alternatives: alternatives.slice(0, 3) };
+    at += len;
+    return item;
+  });
+  const offline = { track: 0, name: "MUSIC_BED_FINAL", recordIn: at, recordOut: at + 75, clip: null, srcInUs: 0, srcOutUs: 3e6, mean: null, bars: [], flags: [], excluded: false, weak: false, alternatives: [] };
+  const title = path.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, "");
+  return { name: title, format: path.endsWith(".edl") ? "edl" : path.endsWith(".fcpxml") ? "fcpxml" : path.endsWith(".otio") ? "otio" : "xmeml", fps, startTcFrames: 90000, dropFrame: false, duration: at + 75, tracks: 1, items: [...items, offline], linked: items.length, missing: ["MUSIC_BED_FINAL"] };
+}
+
 function scoreAll(s: Settings): Scored {
   const lo = s.score_lo ?? 0.55;
   const minUs = (s.len_min_s ?? 0) * 1e6;
@@ -322,6 +370,8 @@ export const mockBackend: Backend = {
     selected: null,
   }),
   audioStreamSet: async () => {},
+  timelineReview: async (_settings, path, weakBelow) => mockReview(path, weakBelow),
+  timelineExportBack: async (_swaps, _markers, _format, path) => ({ path, selects: 9 }),
   audioLevels: async () => ({ levels: [-12 - Math.random() * 10, -13 - Math.random() * 10], sourceChannels: 2 }),
   audioChannelGains: async () => {},
   audioWaveforms: async () =>
