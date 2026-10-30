@@ -32,6 +32,12 @@ export const commands = {
 	/**  Writes a sync group as a multicam: an FCPXML mc-clip, or stacked tracks in XML / OTIO. */
 	multicamExport: (group: SyncGroupDto_Deserialize, format: string, path: string) => typedError<ExportResult, string>(__TAURI_INVOKE("multicam_export", { group, format, path })),
 	/**
+	 *  Starts an offload in the background (P13.1); progress arrives as `OffloadProgress` events.
+	 *  With `add_to_project`, the first destination's copy is imported and analysed when done.
+	 */
+	offloadStart: (source: string, destinations: string[], hash: string, addToProject: boolean) => typedError<null, string>(__TAURI_INVOKE("offload_start", { source, destinations, hash, addToProject })),
+	offloadCancel: () => __TAURI_INVOKE<void>("offload_cancel"),
+	/**
 	 *  How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
 	 *  when it can play natively.
 	 */
@@ -148,6 +154,7 @@ export const events = {
 	analysisEvent: makeEvent<AnalysisEvent_Serialize, AnalysisEvent_Deserialize>("analysis-event"),
 	appSettings: makeEvent<AppSettings_Serialize, AppSettings_Deserialize>("app-settings"),
 	mediaAdded: makeEvent<MediaAdded, MediaAdded>("media-added"),
+	offloadProgress: makeEvent<OffloadProgress_Serialize, OffloadProgress_Deserialize>("offload-progress"),
 };
 
 /* Types */
@@ -590,6 +597,48 @@ export type MediaSource_Serialize = {
 	start_us: number | null,
 	codec: string,
 	has_audio: boolean,
+};
+
+/**  Offload progress (P13.1). Progress is sent at most every 100 ms. */
+export type OffloadProgress = OffloadProgress_Serialize | OffloadProgress_Deserialize;
+
+/**  Offload progress (P13.1). Progress is sent at most every 100 ms. */
+export type OffloadProgress_Deserialize = {
+	/**  started | progress | finished | failed | cancelled */
+	kind: string,
+	done: number | null,
+	total: number | null,
+	files: number,
+	index: number,
+	file?: string | null,
+	message?: string | null,
+	summary?: OffloadSummary | null,
+};
+
+/**  Offload progress (P13.1). Progress is sent at most every 100 ms. */
+export type OffloadProgress_Serialize = {
+	/**  started | progress | finished | failed | cancelled */
+	kind: string,
+	done: number | null,
+	total: number | null,
+	files: number,
+	index: number,
+	file: string | null,
+	message: string | null,
+	summary: OffloadSummary | null,
+};
+
+export type OffloadSummary = {
+	files: number,
+	bytes: number | null,
+	copied: number,
+	skipped: number,
+	/**  "Clips/A001.mov → D:/Shuttle: checksum mismatch …" */
+	failed: string[],
+	manifests: string[],
+	seconds: number | null,
+	/**  Clips added to the project from the first destination. */
+	imported: number,
 };
 
 export type OverrideDto = {

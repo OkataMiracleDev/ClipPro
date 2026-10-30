@@ -45,3 +45,4 @@ cpal = "0.18.2"
 webview2-com = "0.39.1"
 windows-core = "0.62"
 clippro-interchange = { version = "0.1.0", path = "../../crates/clippro-interchange" }
+clippro-ingest = { version = "0.1.0", path = "../../crates/clippro-ingest" }

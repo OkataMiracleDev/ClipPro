@@ -11,10 +11,10 @@ export async function pickMedia(): Promise<string[]> {
   return r === null ? [] : Array.isArray(r) ? r : [r];
 }
 
-export async function pickFolder(): Promise<string | null> {
-  if (!isTauri) return "D:/Footage";
+export async function pickFolder(title = "Add a folder of media"): Promise<string | null> {
+  if (!isTauri) return title.includes("destination") ? "E:/Shuttle" : title.includes("card") ? "F:/A002R2EC" : "D:/Footage";
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const r = await open({ directory: true, title: "Add a folder of media" });
+  const r = await open({ directory: true, title });
   return typeof r === "string" ? r : null;
 }
 

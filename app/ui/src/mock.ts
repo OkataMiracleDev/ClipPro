@@ -93,6 +93,8 @@ let mockTuning: string | null = null;
 let mockWatch: { path: string; subfolders: boolean; extensions: string[] }[] = [{ path: "D:/Footage/Incoming", subfolders: true, extensions: ["mov", "mxf"] }];
 const listeners = new Set<(e: AnalysisEvent) => void>();
 const mockSyncGroups: import("./api").SyncGroup[] = [];
+const offloadListeners = new Set<(p: import("./api").OffloadProgress) => void>();
+let mockOffloadCancel = false;
 let mockSyncId = 0;
 
 function defaultSettings(name: string): Settings {
@@ -499,6 +501,42 @@ export const mockBackend: Backend = {
     mockWatch = f;
   },
   onMediaAdded: async () => () => {},
+  // A demo offload: 3.2 GB over about 4 s, one checksum failure on the second destination.
+  offloadStart: async (_source, destinations) => {
+    const total = 3.2e9;
+    let done = 0;
+    mockOffloadCancel = false;
+    const emit = (p: import("./api").OffloadProgress) => offloadListeners.forEach((l) => l(p));
+    emit({ kind: "started", done: 0, total, files: 24, index: 0, file: null, message: null, summary: null });
+    const tick = () => {
+      if (mockOffloadCancel) return emit({ kind: "cancelled", done, total, files: 24, index: 0, file: null, message: null, summary: null });
+      done = Math.min(total, done + total / 40);
+      const index = Math.min(23, Math.floor((done / total) * 24));
+      if (done < total) {
+        emit({ kind: "progress", done, total, files: 24, index, file: `CLIP/A002C${String(index + 1).padStart(3, "0")}_241012_R2EC.MXF`, message: null, summary: null });
+        setTimeout(tick, 100);
+      } else {
+        emit({
+          kind: "finished",
+          done,
+          total,
+          files: 24,
+          index: 24,
+          file: null,
+          message: null,
+          summary: { files: 24, bytes: total, copied: 23, skipped: 0, failed: destinations.length > 1 ? [`CLIP/A002C014_241012_R2EC.MXF → ${destinations[1]}: checksum mismatch`] : [], manifests: destinations.map((d) => `${d}/A002R2EC/ascmhl/0001_A002R2EC_2026-10-30_101500Z.mhl`), seconds: 4.1, imported: 0 },
+        });
+      }
+    };
+    setTimeout(tick, 100);
+  },
+  offloadCancel: async () => {
+    mockOffloadCancel = true;
+  },
+  onOffload: async (cb) => {
+    offloadListeners.add(cb);
+    return () => offloadListeners.delete(cb);
+  },
   cameraMatches: async (s, count) => {
     const want = s.camera.static_only ? ["SLATE_TEST", "INTERVIEW_SARAH_WIDE", "INTERVIEW_SARAH_CU"] : ["DRONE_COAST_01", "DRONE_COAST_02", "GIMBAL_MARKET_03"];
     return demo

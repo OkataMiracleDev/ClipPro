@@ -1,7 +1,8 @@
-import { ArrowDownUp, Check, ClipboardCheck, FolderOpen, ListFilter, Minus, PanelRight, Pause, Play, Plus, Settings, Share, Square, X } from "lucide-react";
+import { ArrowDownUp, Check, ClipboardCheck, FolderOpen, HardDriveDownload, ListFilter, Minus, PanelRight, Pause, Play, Plus, Settings, Share, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ExportSheet } from "./ExportSheet";
 import { TimelineReview } from "./TimelineReview";
+import { OffloadSheet, useOffload } from "./OffloadSheet";
 import { api, isTauri, type SortOrder } from "../api";
 import { cx, IconButton, Popover, PopoverClose, Spinner } from "../components/ui";
 import { actionFor } from "../lib/keys";
@@ -93,6 +94,8 @@ export function TitleBar() {
   const windowsControls = appSettings?.window_controls === "windows";
   const [exportOpen, setExportOpen] = useState(() => new URLSearchParams(location.search).has("export"));
   // `?review=1` opens the timeline review (screenshots).
+  const [offloadOpen, setOffloadOpen] = useState(() => new URLSearchParams(location.search).has("offload"));
+  const offloading = useOffload((s) => s.running);
   const [reviewOpen, setReviewOpen] = useState(() => new URLSearchParams(location.search).get("review") === "1");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -134,6 +137,9 @@ export function TitleBar() {
           if (paths.length) await importPaths(paths);
         }}>
           <Plus size={17} />
+        </IconButton>
+        <IconButton label={offloading ? "Offload running…" : "Offload a card…"} active={offloading} onClick={() => setOffloadOpen(true)}>
+          <HardDriveDownload size={16} />
         </IconButton>
       </div>
       <div data-tauri-drag-region className="pointer-events-none flex flex-1 justify-center">
@@ -180,6 +186,7 @@ export function TitleBar() {
       </div>
       {windowsControls && <CaptionButtons />}
       <ExportSheet open={exportOpen} onOpenChange={setExportOpen} />
+      <OffloadSheet open={offloadOpen} onOpenChange={setOffloadOpen} />
       {project && <TimelineReview open={reviewOpen} onOpenChange={setReviewOpen} />}
     </header>
   );

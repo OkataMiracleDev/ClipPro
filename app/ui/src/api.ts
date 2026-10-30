@@ -75,6 +75,28 @@ export interface Review {
   missing: string[];
 }
 
+export interface OffloadSummary {
+  files: number;
+  bytes: number;
+  copied: number;
+  skipped: number;
+  failed: string[];
+  manifests: string[];
+  seconds: number;
+  imported: number;
+}
+
+export interface OffloadProgress {
+  kind: "started" | "progress" | "finished" | "failed" | "cancelled";
+  done: number;
+  total: number;
+  files: number;
+  index: number;
+  file: string | null;
+  message: string | null;
+  summary: OffloadSummary | null;
+}
+
 export type SyncMethod = "audio" | "timecode";
 
 export interface SyncMember {
@@ -306,6 +328,10 @@ export interface Backend {
   annotationSet(a: Annotation): Promise<void>;
   watchFoldersSet(folders: WatchFolder[]): Promise<void>;
   onMediaAdded(cb: (e: { added: number; names: string[] }) => void): Promise<() => void>;
+  /** Offload (P13.1): runs in the background; progress arrives through `onOffload`. */
+  offloadStart(source: string, destinations: string[], hash: string, addToProject: boolean): Promise<void>;
+  offloadCancel(): Promise<void>;
+  onOffload(cb: (e: OffloadProgress) => void): Promise<() => void>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
   frameUrl(media: number, us: number, width: number): string;
 }
@@ -579,6 +605,23 @@ const tauriBackend: Backend = {
   annotationSet: async (a) => void unwrap(await commands.annotationSet({ clip: a.clip, start_us: a.startUs, end_us: a.endUs, rating: a.rating, label: a.label, note: a.note })),
   watchFoldersSet: async (folders) => void unwrap(await commands.watchFoldersSet(folders)),
   onMediaAdded: async (cb) => events.mediaAdded.listen((e) => cb(e.payload)),
+  offloadStart: async (source, destinations, hash, addToProject) => void unwrap(await commands.offloadStart(source, destinations, hash, addToProject)),
+  offloadCancel: async () => void (await commands.offloadCancel()),
+  onOffload: async (cb) =>
+    events.offloadProgress.listen((e) => {
+      const p = e.payload;
+      const sm = p.summary;
+      cb({
+        kind: p.kind as OffloadProgress["kind"],
+        done: n(p.done),
+        total: n(p.total),
+        files: p.files,
+        index: p.index,
+        file: p.file ?? null,
+        message: p.message ?? null,
+        summary: sm ? { ...sm, bytes: n(sm.bytes), seconds: n(sm.seconds) } : null,
+      });
+    }),
   systemInfo: async () => {
     const r = unwrap(await commands.systemInfo());
     return { hwDecode: r.hw_decode, version: r.version };

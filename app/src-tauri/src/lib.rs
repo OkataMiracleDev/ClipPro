@@ -33,6 +33,8 @@ pub struct AppState {
     bench_out: Mutex<Option<PathBuf>>,
     /// The imported timeline under review (P11.3) and the project clips it was scored against.
     review: Mutex<Option<(clippro_core::review::TimelineReview, Vec<clippro_core::review::ClipData>)>>,
+    /// Cancel flag of the running offload (P13.1), if any.
+    offload: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
 }
 
 /// Self-test runs. `--bench-preview <out.json> <clip>...` measures the preview transports;
@@ -154,6 +156,34 @@ pub struct AnalysisEvent {
     pub done: Option<u32>,
     pub total: Option<u32>,
     pub error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct OffloadSummary {
+    pub files: u32,
+    pub bytes: f64,
+    pub copied: u32,
+    pub skipped: u32,
+    /// "Clips/A001.mov → D:/Shuttle: checksum mismatch …"
+    pub failed: Vec<String>,
+    pub manifests: Vec<String>,
+    pub seconds: f64,
+    /// Clips added to the project from the first destination.
+    pub imported: u32,
+}
+
+/// Offload progress (P13.1). Progress is sent at most every 100 ms.
+#[derive(Serialize, Deserialize, Type, Clone, Debug, Event)]
+pub struct OffloadProgress {
+    /// started | progress | finished | failed | cancelled
+    pub kind: String,
+    pub done: f64,
+    pub total: f64,
+    pub files: u32,
+    pub index: u32,
+    pub file: Option<String>,
+    pub message: Option<String>,
+    pub summary: Option<OffloadSummary>,
 }
 
 // ---------- Commands ----------
@@ -773,6 +803,89 @@ async fn multicam_export(state: State<'_, AppState>, group: SyncGroupDto, format
         Ok(ExportResult { path, selects: tl.video.len() as u32 })
     })
     .await
+}
+
+/// Starts an offload in the background (P13.1); progress arrives as `OffloadProgress` events.
+/// With `add_to_project`, the first destination's copy is imported and analysed when done.
+#[tauri::command]
+#[specta::specta]
+fn offload_start(app: tauri::AppHandle, state: State<'_, AppState>, source: String, destinations: Vec<String>, hash: String, add_to_project: bool) -> Result<(), String> {
+    use clippro_ingest::offload::{run, OffloadError, OffloadEvent, OffloadJob};
+    let mut slot = lock(&state.offload);
+    if slot.is_some() {
+        return Err("An offload is already running.".into());
+    }
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    *slot = Some(cancel.clone());
+    drop(slot);
+    let mut job = OffloadJob::new(PathBuf::from(&source), destinations.iter().map(PathBuf::from).collect());
+    job.hash = clippro_ingest::hash::HashKind::parse(&hash).unwrap_or_default();
+    let session = if add_to_project { state.session().ok() } else { None };
+    std::thread::spawn(move || {
+        let blank = |kind: &str| OffloadProgress { kind: kind.into(), done: 0.0, total: 0.0, files: 0, index: 0, file: None, message: None, summary: None };
+        let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+        let (mut files, mut index, mut file) = (0u32, 0u32, String::new());
+        let result = run(&job, &cancel, |e| match e {
+            OffloadEvent::Started { files: n, bytes } => {
+                files = *n as u32;
+                let _ = OffloadProgress { files, total: *bytes as f64, ..blank("started") }.emit(&app);
+            }
+            OffloadEvent::File { index: i, rel, .. } => {
+                index = *i as u32;
+                file = rel.to_string();
+            }
+            OffloadEvent::Progress { done, total } => {
+                if last.elapsed().as_millis() >= 100 || done == total {
+                    last = std::time::Instant::now();
+                    let _ = OffloadProgress { done: *done as f64, total: *total as f64, files, index, file: Some(file.clone()), ..blank("progress") }.emit(&app);
+                }
+            }
+            _ => {}
+        });
+        let app_state = app.state::<AppState>();
+        *lock(&app_state.offload) = None;
+        match result {
+            Ok(rep) => {
+                let mut imported = 0;
+                if let (Some(s), Some(d)) = (session, job.destinations.first()) {
+                    if let Ok(r) = s.import(&[job.dest_root(d)]) {
+                        imported = r.added.len() as u32;
+                        if imported > 0 {
+                            let _ = s.queue_analysis();
+                            let names = r.added.iter().filter_map(|(p, _)| p.file_stem().map(|n| n.to_string_lossy().into_owned())).collect();
+                            let _ = MediaAdded { added: imported, names }.emit(&app);
+                        }
+                    }
+                }
+                let summary = OffloadSummary {
+                    files: rep.files as u32,
+                    bytes: rep.bytes as f64,
+                    copied: rep.copied as u32,
+                    skipped: rep.skipped as u32,
+                    failed: rep.failed.iter().map(|(p, k, why)| format!("{p} → {}: {why}", job.destinations.get(*k).map(|d| d.display().to_string()).unwrap_or_default())).collect(),
+                    manifests: rep.manifests.iter().map(|m| m.display().to_string()).collect(),
+                    seconds: rep.seconds,
+                    imported,
+                };
+                let _ = OffloadProgress { done: rep.bytes as f64, total: rep.bytes as f64, files, index: files, summary: Some(summary), ..blank("finished") }.emit(&app);
+            }
+            Err(OffloadError::Cancelled) => {
+                let _ = blank("cancelled").emit(&app);
+            }
+            Err(e) => {
+                let _ = OffloadProgress { message: Some(e.to_string()), ..blank("failed") }.emit(&app);
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn offload_cancel(state: State<'_, AppState>) {
+    if let Some(c) = lock(&state.offload).as_ref() {
+        c.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// HTML report, or the contact sheet printed to PDF in a hidden WebView2 window (P7.6).
@@ -1795,6 +1908,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             sync_group_save,
             sync_group_delete,
             multicam_export,
+            offload_start,
+            offload_cancel,
             media_source,
             preview_shared,
             inspect_sample,
@@ -1854,7 +1969,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             bench_config,
             bench_report,
         ])
-        .events(collect_events![AnalysisEvent, settings::AppSettings, MediaAdded])
+        .events(collect_events![AnalysisEvent, settings::AppSettings, MediaAdded, OffloadProgress])
 }
 
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../ui/src/bindings.ts");
