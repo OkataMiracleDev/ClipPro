@@ -23,11 +23,9 @@ fn format_id(formats: &[(FrameRate, u32, u32)], m: &MediaRef) -> String {
     format!("r{}", i + 1)
 }
 
-pub fn export(tl: &Timeline) -> String {
-    let mut x = Xml::new(Some("<!DOCTYPE fcpxml>"));
-    x.open("fcpxml", &[("version", "1.10".into())]);
-    x.open("resources", &[]);
-    // Formats: the sequence format first, then one per distinct media format.
+/// Writes the formats (the sequence format first, then one per distinct media format) and one
+/// asset per media file into an open `<resources>`; returns the formats.
+fn resources(x: &mut Xml, tl: &Timeline) -> Vec<(FrameRate, u32, u32)> {
     let mut formats: Vec<(FrameRate, u32, u32)> = vec![(tl.rate, tl.width, tl.height)];
     for m in &tl.media {
         if !formats.contains(&(m.rate, m.width, m.height)) {
@@ -60,6 +58,15 @@ pub fn export(tl: &Timeline) -> String {
         x.empty("media-rep", &[("kind", "original-media".into()), ("src", file_url(&m.path))]);
         x.close();
     }
+    formats
+}
+
+pub fn export(tl: &Timeline) -> String {
+    let mut x = Xml::new(Some("<!DOCTYPE fcpxml>"));
+    x.open("fcpxml", &[("version", "1.10".into())]);
+    x.open("resources", &[]);
+    let formats = resources(&mut x, tl);
+    let asset_id = |i: usize| format!("a{}", i + 1);
     x.close(); // resources
     x.open("library", &[]);
     x.open("event", &[("name", "ClipPro".into())]);
@@ -159,6 +166,68 @@ fn connected_clip(x: &mut Xml, tl: &Timeline, lane: usize, j: usize, offset: Str
     );
 }
 
+/// A multicam clip (`<media><multicam>`, one `mc-angle` per video track, named after it) and a
+/// project whose spine holds one `mc-clip` of it showing the first angle (SPEC EXP-11).
+pub fn export_multicam(tl: &Timeline) -> String {
+    let mut x = Xml::new(Some("<!DOCTYPE fcpxml>"));
+    x.open("fcpxml", &[("version", "1.10".into())]);
+    x.open("resources", &[]);
+    let formats = resources(&mut x, tl);
+    let tc_format = if tl.drop_frame { "DF" } else { "NDF" };
+    let tc_start = t(tl.start_tc_frames, tl.rate);
+    x.open("media", &[("id", "m1".into()), ("name", tl.name.clone())]);
+    x.open("multicam", &[("format", "r1".into()), ("tcStart", tc_start.clone()), ("tcFormat", tc_format.into())]);
+    for (k, track) in tl.video.iter().enumerate() {
+        x.open("mc-angle", &[("name", track.name.clone()), ("angleID", format!("angle-{}", k + 1))]);
+        for (it, (rin, _)) in track.items.iter().zip(tl.positions(track)) {
+            let offset = t(tl.start_tc_frames + rin, tl.rate);
+            match it {
+                Item::Gap(n) => {
+                    x.empty("gap", &[("name", "Gap".into()), ("offset", offset), ("start", "0s".into()), ("duration", t(*n, tl.rate))]);
+                }
+                Item::Clip(c) => {
+                    let m = &tl.media[c.media];
+                    x.empty(
+                        "asset-clip",
+                        &[
+                            ("ref", format!("a{}", c.media + 1)),
+                            ("name", c.name.clone()),
+                            ("offset", offset),
+                            ("start", t(m.start_tc_frames + c.src_in, m.rate)),
+                            ("duration", t(c.len(), m.rate)),
+                            ("format", format_id(&formats, m)),
+                            ("tcFormat", if m.drop_frame { "DF".into() } else { "NDF".into() }),
+                        ],
+                    );
+                }
+            }
+        }
+        x.close();
+    }
+    x.close(); // multicam
+    x.close(); // media
+    x.close(); // resources
+    x.open("library", &[]);
+    x.open("event", &[("name", "ClipPro".into())]);
+    x.open("project", &[("name", tl.name.clone())]);
+    let dur = t(tl.duration(), tl.rate);
+    x.open(
+        "sequence",
+        &[
+            ("format", "r1".into()),
+            ("duration", dur.clone()),
+            ("tcStart", tc_start.clone()),
+            ("tcFormat", tc_format.into()),
+            ("audioLayout", "stereo".into()),
+            ("audioRate", "48k".into()),
+        ],
+    );
+    x.open("spine", &[]);
+    x.open("mc-clip", &[("ref", "m1".into()), ("name", tl.name.clone()), ("offset", tc_start.clone()), ("start", tc_start), ("duration", dur)]);
+    x.empty("mc-source", &[("angleID", "angle-1".into()), ("srcEnable", "all".into())]);
+    x.finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,6 +256,25 @@ mod tests {
         assert!(x.contains("start=\"900006/25s\""), "{x}");
         assert!(x.contains("src=\"file:///D:/Footage/Day%201/A001C003.mov\""));
         assert!(x.contains("<marker start="));
+    }
+
+    #[test]
+    fn multicam_angles() {
+        use crate::model::{ClipItem, Item, Track};
+        let mut tl = build(media(2), &selects(), &ExportOptions::default());
+        let clip = |m: usize| ClipItem { media: m, name: format!("cam{m}"), src_in: 0, src_out: 250, markers: vec![], select_index: None, score: None };
+        tl.video = vec![
+            Track { name: "FX6".into(), items: vec![Item::Clip(clip(0))] },
+            Track { name: "C70".into(), items: vec![Item::Gap(87), Item::Clip(clip(1))] },
+        ];
+        let x = export_multicam(&tl);
+        crate::validate::well_formed(&x).unwrap();
+        assert_eq!(x.matches("<mc-angle ").count(), 2);
+        assert!(x.contains("<mc-angle name=\"C70\" angleID=\"angle-2\">"), "{x}");
+        assert!(x.contains("<gap name=\"Gap\" offset=\"3600s\" start=\"0s\" duration=\"87/25s\"/>"), "{x}");
+        assert!(x.contains("<mc-clip ref=\"m1\""));
+        assert!(x.contains("duration=\"337/25s\""), "sequence spans the latest angle: {x}");
+        assert!(x.contains("<mc-source angleID=\"angle-1\" srcEnable=\"all\"/>"));
     }
 
     #[test]

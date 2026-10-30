@@ -459,6 +459,32 @@ impl Db {
         Ok(())
     }
 
+    /// Multicam sync groups (P11.5): (id, name, method, data_json).
+    pub fn sync_groups(&self) -> Result<Vec<(i64, String, String, String)>> {
+        let mut st = self.conn.prepare("SELECT id, name, method, data_json FROM sync_group ORDER BY name COLLATE NOCASE, id")?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Inserts a sync group (`id` None) or replaces one; returns its id.
+    pub fn save_sync_group(&self, id: Option<i64>, name: &str, method: &str, data_json: &str) -> Result<i64> {
+        match id {
+            Some(id) => {
+                self.conn.execute("UPDATE sync_group SET name = ?1, method = ?2, data_json = ?3 WHERE id = ?4", params![name, method, data_json, id])?;
+                Ok(id)
+            }
+            None => {
+                self.conn.execute("INSERT INTO sync_group(name, method, data_json) VALUES (?1, ?2, ?3)", params![name, method, data_json])?;
+                Ok(self.conn.last_insert_rowid())
+            }
+        }
+    }
+
+    pub fn delete_sync_group(&self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM sync_group WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     pub fn set_clip_bin(&self, clip: ClipId, bin: Option<i64>) -> Result<()> {
         self.conn.execute("UPDATE clip SET bin_id = ?1 WHERE id = ?2", params![bin, clip.0])?;
         Ok(())
@@ -733,6 +759,12 @@ mod tests {
         assert_eq!(db.clips().unwrap().iter().find(|c| c.id == c1).unwrap().bin_id, None);
         assert_eq!(db.bins().unwrap().len(), 1);
         db.delete_bin(sm).unwrap();
+        // Sync groups: insert, replace, delete.
+        let g = db.save_sync_group(None, "Cam A+B", "audio", "{}").unwrap();
+        assert_eq!(db.save_sync_group(Some(g), "Scene 4", "timecode", "{\"x\":1}").unwrap(), g);
+        assert_eq!(db.sync_groups().unwrap(), vec![(g, "Scene 4".to_string(), "timecode".to_string(), "{\"x\":1}".to_string())]);
+        db.delete_sync_group(g).unwrap();
+        assert!(db.sync_groups().unwrap().is_empty());
         let o = db.add_override(c1, "force_in", 1_000_000, 2_000_000).unwrap();
         assert_eq!(db.overrides().unwrap().len(), 1);
         db.remove_override(o).unwrap();

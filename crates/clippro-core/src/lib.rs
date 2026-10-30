@@ -4,6 +4,7 @@
 pub mod annotate;
 pub mod import;
 pub mod inspect;
+pub mod multicam;
 pub mod report;
 pub mod review;
 pub mod watch;

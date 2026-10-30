@@ -1,8 +1,10 @@
 //! Audio analysis (SPEC P10, ALGORITHMS §4): loudness, clipping, noise floor, voice activity,
-//! wind and hum per 100 ms, the audio flags, and their alignment to the video samples.
+//! wind and hum per 100 ms, the audio flags, their alignment to the video samples, and
+//! multicam audio sync.
 
 pub mod analyze;
 pub mod set;
+pub mod sync;
 
 pub use analyze::{AudioAnalyzer, BLOCK, RATE};
 pub use set::{Aligned, AudioSet, BLOCK_US};

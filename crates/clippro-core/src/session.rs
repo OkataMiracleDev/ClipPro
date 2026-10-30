@@ -338,7 +338,7 @@ impl Session {
         Ok(true)
     }
 
-    fn clip_media(&self, db: &Db, clip: ClipId) -> Result<MediaRow> {
+    pub(crate) fn clip_media(&self, db: &Db, clip: ClipId) -> Result<MediaRow> {
         let c = db.clips()?.into_iter().find(|c| c.id == clip).ok_or_else(|| SessionError::Other("Unknown clip".into()))?;
         db.media(c.media_id)?.ok_or_else(|| SessionError::Other("The clip's media is missing".into()))
     }

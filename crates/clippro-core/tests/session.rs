@@ -379,3 +379,52 @@ fn imported_timeline_review_and_export_back() {
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// PLAN P11.5: `multicam_b` starts 3.48 s into `multicam_a` — audio sync finds it within a
+/// frame with a confident PSR; groups persist; the stacked timeline and FCPXML mc-clip follow.
+#[test]
+fn multicam_sync_groups() {
+    use clippro_core::multicam::SyncMethod;
+    let Some(dir) = corpus() else { return };
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-multicam-test");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let s = Session::create(&tmp.join("p.clippro"), "Multicam", SessionOptions { cache_path: None, ..opts(&tmp) }).unwrap();
+    s.import(&[dir.join("multicam_a.mp4"), dir.join("multicam_b.mp4"), dir.join("prores_hq.mov")]).unwrap();
+    let st = s.clip_statuses().unwrap();
+    let id = |n: &str| st.iter().find(|c| c.name == n).unwrap().clip;
+    let (a, b, p) = (id("multicam_a"), id("multicam_b"), id("prores_hq"));
+    let g = s.sync_clips("Scene 1", &[b, a], SyncMethod::Audio, &Default::default()).unwrap();
+    assert!(g.warnings.is_empty(), "{:?}", g.warnings);
+    // Equal lengths: the first clip is the reference, so b sits at 0 and a at −3.48 s.
+    let off = |c| g.members.iter().find(|m| m.clip == c).unwrap();
+    let rel = off(b).offset_us.unwrap() - off(a).offset_us.unwrap();
+    assert!((rel - 3_480_000).abs() <= 40_000, "offset {rel} µs, want 3.48 s ± 1 frame");
+    let psr = off(if g.reference == a { b } else { a }).psr.unwrap();
+    assert!(psr >= 6.0, "PSR {psr}");
+    eprintln!("multicam_a/b: offset {:.4} s, PSR {psr:.1}", rel as f64 / 1e6);
+    // Persisted and listed.
+    let gid = s.save_sync_group(&g).unwrap();
+    let back = s.sync_groups().unwrap();
+    assert_eq!(back.len(), 1);
+    assert_eq!((back[0].id, back[0].members.len()), (Some(gid), 2));
+    // Stacked tracks: the reference on V1, the other angle 3.48 s (87 frames) apart.
+    let tl = s.multicam_timeline(&back[0]).unwrap();
+    assert_eq!(tl.video.len(), 2);
+    let gaps: Vec<i64> = tl.video.iter().map(|t| if let clippro_interchange::model::Item::Gap(n) = t.items[0] { n } else { 0 }).collect();
+    assert_eq!(gaps.iter().sum::<i64>(), 87, "{gaps:?}");
+    let x = clippro_interchange::fcpxml::export_multicam(&tl);
+    clippro_interchange::validate::well_formed(&x).unwrap();
+    assert_eq!(x.matches("<mc-angle ").count(), 2);
+    s.delete_sync_group(gid).unwrap();
+    assert!(s.sync_groups().unwrap().is_empty());
+    // Timecode mode: prores_hq carries 01:00:00:00; multicam_a has none.
+    let t = s.sync_clips("TC", &[a, p], SyncMethod::Timecode, &Default::default()).unwrap();
+    assert_eq!(t.reference, p);
+    assert_eq!(t.members.iter().find(|m| m.clip == p).unwrap().offset_us, Some(0));
+    assert_eq!(t.members.iter().find(|m| m.clip == a).unwrap().offset_us, None);
+    assert_eq!(t.warnings.len(), 1, "{:?}", t.warnings);
+    assert!(s.sync_clips("one", &[a], SyncMethod::Audio, &Default::default()).is_err());
+    s.close().unwrap();
+    std::fs::remove_dir_all(&tmp).unwrap();
+}
