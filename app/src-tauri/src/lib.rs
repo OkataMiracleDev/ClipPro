@@ -1043,6 +1043,58 @@ async fn media_relink_folder(state: State<'_, AppState>, folder: String) -> Resu
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct AudioLevels {
+    /// Peak per output channel since the last call (dBFS).
+    pub levels: Vec<f32>,
+    pub source_channels: u32,
+}
+
+/// Playback meters (P10.2); call at display rate during frame playback.
+#[tauri::command]
+#[specta::specta]
+async fn audio_levels(state: State<'_, AppState>) -> Result<AudioLevels, String> {
+    let (levels, n) = state.audio.take_levels();
+    Ok(AudioLevels { levels, source_channels: n as u32 })
+}
+
+/// Per-source-channel playback gains: 0 mutes, 1 plays (solo = mute the others).
+#[tauri::command]
+#[specta::specta]
+async fn audio_channel_gains(state: State<'_, AppState>, gains: Vec<f32>) -> Result<(), String> {
+    state.audio.set_channel_gains(gains.into_iter().map(|g| g.clamp(0.0, 1.0)).collect());
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct Waveform {
+    pub clip: f64,
+    pub start_us: f64,
+    /// Peak amplitude per 100 ms block, 0–255 (linear, 255 = full scale), base64.
+    pub peaks: String,
+    /// Integrated loudness of the whole clip (LUFS), if not silent.
+    pub lufs: Option<f32>,
+}
+
+/// Audio waveform envelopes for the timeline lane (P10.2).
+#[tauri::command]
+#[specta::specta]
+async fn audio_waveforms(state: State<'_, AppState>) -> Result<Vec<Waveform>, String> {
+    let s = state.session()?;
+    blocking(move || {
+        let b64 = base64::engine::general_purpose::STANDARD;
+        Ok(s.clip_audio()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|(c, a)| {
+                let peaks: Vec<u8> = a.cols.peak_dbfs.iter().map(|d| (10f32.powf(d / 20.0).clamp(0.0, 1.0) * 255.0).round() as u8).collect();
+                Waveform { clip: c.0 as f64, start_us: a.start_us as f64, peaks: b64.encode(peaks), lufs: a.integrated_lufs(i64::MIN / 2, i64::MAX / 2) }
+            })
+            .collect())
+    })
+    .await
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
 pub struct CacheInfo {
     pub path: String,
     pub entries: f64,
@@ -1411,6 +1463,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             system_info,
             settings_get,
             cache_info,
+            audio_waveforms,
+            audio_levels,
+            audio_channel_gains,
             project_save_as,
             media_relink,
             media_relink_folder,

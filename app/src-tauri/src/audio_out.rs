@@ -54,6 +54,12 @@ impl Drop for Playing {
 #[derive(Default)]
 pub struct AudioOut {
     playing: Mutex<Option<Playing>>,
+    /// Per-source-channel gain (mute = 0); missing entries are 1. Kept across clips.
+    channel_gain: Arc<Mutex<Vec<f32>>>,
+    /// Peak |sample| per output channel since the last `take_levels`.
+    levels: Arc<Mutex<Vec<f32>>>,
+    /// Channels in the source being played.
+    source_channels: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -63,6 +69,19 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 impl AudioOut {
     pub fn stop(&self) {
         lock(&self.playing).take();
+    }
+
+    /// Sets per-source-channel gains (P10.2 solo/mute); applies to audio decoded from now on.
+    pub fn set_channel_gains(&self, gains: Vec<f32>) {
+        *lock(&self.channel_gain) = gains;
+    }
+
+    /// Peak level per output channel (dBFS) since the last call, and the source channel count.
+    pub fn take_levels(&self) -> (Vec<f32>, usize) {
+        let mut l = lock(&self.levels);
+        let out = l.iter().map(|p| if *p <= 1e-6 { -120.0 } else { 20.0 * p.log10() }).collect();
+        l.iter_mut().for_each(|p| *p = 0.0);
+        (out, self.source_channels.load(Ordering::Acquire))
     }
 
     /// Media time being heard (µs), or `None` when nothing is playing.
@@ -98,9 +117,11 @@ impl AudioOut {
         });
         let ring: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::with_capacity((rate as f64 * AHEAD_S * 2.0) as usize * channels)));
 
+        *lock(&self.levels) = vec![0.0; channels];
         // Decoder: fills the ring (interleaved, device channel count) and stays AHEAD_S ahead.
         {
             let (ring, stop, clock) = (ring.clone(), stop.clone(), clock.clone());
+            let (gains, src_ch) = (self.channel_gain.clone(), self.source_channels.clone());
             std::thread::Builder::new()
                 .name("audio-decode".into())
                 .spawn(move || {
@@ -108,13 +129,18 @@ impl AudioOut {
                     let limit = (rate as f64 * AHEAD_S) as usize * channels;
                     let _ = decode_audio_with(&path, &opts, |block| {
                         let n = block.first().map_or(0, Vec::len);
+                        src_ch.store(block.len(), Ordering::Release);
+                        let g: Vec<f32> = {
+                            let gl = lock(&gains);
+                            (0..block.len()).map(|c| gl.get(c).copied().unwrap_or(1.0)).collect()
+                        };
                         let mut inter = Vec::with_capacity(n * channels);
                         for i in 0..n {
                             for c in 0..channels {
                                 // Mono to every channel; otherwise channel-for-channel (extra
                                 // source channels are dropped, missing ones repeat the last).
-                                let src = &block[c.min(block.len() - 1)];
-                                inter.push(src[i]);
+                                let k = c.min(block.len() - 1);
+                                inter.push(block[k][i] * g[k]);
                             }
                         }
                         loop {
@@ -138,6 +164,7 @@ impl AudioOut {
         let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<(), String>>();
         {
             let (stop, clock) = (stop.clone(), clock.clone());
+            let levels = self.levels.clone();
             std::thread::Builder::new()
                 .name("audio-out".into())
                 .spawn(move || {
@@ -153,6 +180,14 @@ impl AudioOut {
                         }
                         drop(ring);
                         out[take..].fill(0.0);
+                        {
+                            let mut l = lock(&levels);
+                            for (i, s) in out[..take].iter().enumerate() {
+                                if let Some(p) = l.get_mut(i % channels) {
+                                    *p = p.max(s.abs());
+                                }
+                            }
+                        }
                         cb_clock.cb_played.store(before, Ordering::Release);
                         cb_clock.latency_us.store(latency, Ordering::Release);
                         cb_clock.cb_at_us.store(cb_clock.epoch.elapsed().as_micros() as i64, Ordering::Release);

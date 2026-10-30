@@ -29,6 +29,7 @@ interface AppState {
   ab: { other: TuningDoc; showing: "a" | "b" } | null;
   overrides: import("./api").OverrideInfo[];
   bins: import("./api").Bin[];
+  waveforms: Map<number, { startUs: number; peaks: Float32Array; lufs: number | null }>;
   /** What the clip list shows (sidebar selection). */
   library: { kind: "all" } | { kind: "bin"; id: number } | { kind: "smart"; id: number };
   annotations: import("./api").Annotation[];
@@ -91,6 +92,7 @@ interface AppState {
   toggleAB(): void;
   refreshOverrides(): Promise<void>;
   refreshBins(): Promise<void>;
+  refreshWaveforms(): Promise<void>;
   setLibrary(l: AppState["library"]): void;
   addBin(name: string, kind: "manual" | "smart", query?: import("./lib/smart").SmartQuery): Promise<void>;
   updateBin(id: number, name: string, query?: import("./lib/smart").SmartQuery): Promise<void>;
@@ -172,6 +174,9 @@ function applyDoc(set: (p: Partial<AppState>) => void, d: TuningDoc) {
   });
 }
 
+/** Clips whose waveform has been fetched (or found to have no audio). */
+const waveformChecked = new Set<number>();
+
 let tuningTimer: ReturnType<typeof setTimeout> | null = null;
 /** Persists the tuning in effect to the project (debounced). */
 function saveTuningSoon(get: () => AppState) {
@@ -200,6 +205,7 @@ export const useApp = create<AppState>((set, get) => ({
   ab: null,
   overrides: [],
   bins: [],
+  waveforms: new Map(),
   library: { kind: "all" },
   annotations: [],
   marks: null,
@@ -357,6 +363,8 @@ export const useApp = create<AppState>((set, get) => ({
     } catch {
       /* no project open */
     }
+    // Waveforms for clips that finished analysis since the last fetch.
+    if (get().clips.some((c) => c.state === "done" && !waveformChecked.has(c.clip))) void get().refreshWaveforms();
   },
 
   async setPreset(name) {
@@ -444,6 +452,18 @@ export const useApp = create<AppState>((set, get) => ({
 
   endAB() {
     set({ ab: null });
+  },
+
+  async refreshWaveforms() {
+    if (!get().project) return set({ waveforms: new Map() });
+    const done = get().clips.filter((c) => c.state === "done").map((c) => c.clip);
+    try {
+      const w = await api.audioWaveforms();
+      done.forEach((c) => waveformChecked.add(c));
+      set({ waveforms: new Map(w.map((x) => [x.clip, x])) });
+    } catch {
+      /* keep */
+    }
   },
 
   async refreshBins() {

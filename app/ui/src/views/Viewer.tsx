@@ -17,6 +17,7 @@ import { rgbaToLuma, scopeBus, waveform } from "../lib/scope";
 import { actionFor, isTyping, keyFor, type ActionId } from "../lib/keys";
 import { shuttle, type ShuttleKey } from "../lib/shuttle";
 import { WaveformScope } from "./WaveformScope";
+import { AudioMeters } from "./AudioMeters";
 import { MeasureOverlay, type MeasureOverlayKind } from "./MeasureOverlay";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
@@ -306,6 +307,7 @@ export function Viewer() {
           <span className="font-mono text-[11px] text-white/55 tabular">
             {formatClock(playheadUs)} / {formatClock(durationUs)}
           </span>
+          {src?.hasAudio && !native && <AudioMeters />}
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: scoreColor(value) }} />
             <span className="font-mono tabular">{Number.isFinite(value) ? Math.round(value * 100) : "—"}</span>

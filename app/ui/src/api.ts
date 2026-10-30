@@ -193,6 +193,10 @@ export interface Backend {
   getSettings(): Promise<AppSettings>;
   /** Global measurement cache (Settings → Cache). */
   cacheInfo(): Promise<{ path: string; entries: number; bytes: number }>;
+  /** Audio peak envelopes per clip (100 ms bins, 0–1). */
+  audioLevels(): Promise<{ levels: number[]; sourceChannels: number }>;
+  audioChannelGains(gains: number[]): Promise<void>;
+  audioWaveforms(): Promise<{ clip: number; startUs: number; peaks: Float32Array; lufs: number | null }[]>;
   projectSaveAs(path: string): Promise<ProjectInfo>;
   mediaRelink(media: number, path: string): Promise<void>;
   mediaRelinkFolder(folder: string): Promise<number>;
@@ -389,6 +393,13 @@ const tauriBackend: Backend = {
     return { path: r.path, entries: n(r.entries), bytes: n(r.bytes) };
   },
   cacheClear: async () => n(unwrap(await commands.cacheClear())),
+  audioLevels: async () => {
+    const r = unwrap(await commands.audioLevels());
+    return { levels: r.levels.map((v) => n(v, -120)), sourceChannels: r.source_channels };
+  },
+  audioChannelGains: async (gains) => void unwrap(await commands.audioChannelGains(gains)),
+  audioWaveforms: async () =>
+    unwrap(await commands.audioWaveforms()).map((w) => ({ clip: n(w.clip), startUs: n(w.start_us), peaks: Float32Array.from(b64(w.peaks), (v) => v / 255), lufs: w.lufs ?? null })),
   projectSaveAs: async (path) => unwrap(await commands.projectSaveAs(path)),
   mediaRelink: async (media, path) => void unwrap(await commands.mediaRelink(media, path)),
   mediaRelinkFolder: async (folder) => unwrap(await commands.mediaRelinkFolder(folder)),

@@ -14,6 +14,7 @@ const RULER = 18;
 const NAME = 16;
 const BAR = 44;
 const FLAGS = 10;
+const WAVE = 18;
 const GAP_PX = 6;
 
 /** Flag bits drawn in the flag lane, with their colours. */
@@ -25,6 +26,10 @@ const FLAG_LANE: [number, string][] = [
   [1 << 2, "#636366"], // solid colour
   [1 << 6, "#5e5ce6"], // low light
   [1 << 7, "#64d2ff"], // focus hunting
+  [1 << 10, "#ff375f"], // audio clipping
+  [1 << 11, "#48484a"], // silence
+  [1 << 12, "#30b0c7"], // wind
+  [1 << 13, "#ffd60a"], // hum
 ];
 
 interface Block {
@@ -42,7 +47,7 @@ interface Block {
 const LABEL_COLOURS: Record<string, string> = Object.fromEntries(LABELS.map((l) => [l.name, l.colour]));
 
 export function Timeline() {
-  const { clips, scored, selectsOnly, selectedClip, selectedSelect, playheadUs, setPlayhead, selectSelect, overrides, annotations, marks } = useApp();
+  const { clips, scored, selectsOnly, selectedClip, selectedSelect, playheadUs, setPlayhead, selectSelect, overrides, annotations, marks, waveforms } = useApp();
   const [wrap, size] = useSize<HTMLDivElement>();
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [pxPerSec, setPxPerSec] = useState<number | null>(null);
@@ -120,10 +125,10 @@ export function Timeline() {
       const active = selectsOnly ? b.selectIndex === selectedSelect : b.clip === selectedClip;
       // Block background + name
       ctx.fillStyle = raised;
-      ctx.fillRect(x0, barTop, w, BAR + FLAGS);
+      ctx.fillRect(x0, barTop, w, BAR + FLAGS + WAVE);
       ctx.save();
       ctx.beginPath();
-      ctx.rect(x0, RULER, w, NAME + BAR + FLAGS);
+      ctx.rect(x0, RULER, w, NAME + BAR + FLAGS + WAVE);
       ctx.clip();
       ctx.fillStyle = active ? text2 : text3;
       ctx.font = "11px 'Inter Variable', sans-serif";
@@ -162,6 +167,21 @@ export function Timeline() {
               lane++;
               if (lane > 3) break;
             }
+          }
+        }
+        // Audio waveform lane: peak per pixel column, mirrored about the lane centre.
+        const wf = waveforms.get(b.clip);
+        if (wf && wf.peaks.length) {
+          const mid = barTop + BAR + FLAGS + WAVE / 2;
+          ctx.fillStyle = text3;
+          for (let px = Math.max(0, Math.floor(x0)); px < Math.min(size.w, Math.ceil(x1)); px++) {
+            const us0 = b.src0 + ((px - x0) / pps) * 1e6 - wf.startUs;
+            const k0 = Math.max(0, Math.floor(us0 / 100_000));
+            const k1 = Math.min(wf.peaks.length - 1, Math.floor((us0 + 1e6 / pps) / 100_000));
+            let pk = 0;
+            for (let k = k0; k <= k1; k++) pk = Math.max(pk, wf.peaks[k]!);
+            const h = Math.max(1, Math.round(pk * (WAVE - 4)));
+            ctx.fillRect(px, mid - h / 2, 1, h);
           }
         }
         // Segments (normal mode): outline the selects inside the clip
@@ -216,7 +236,7 @@ export function Timeline() {
       if (active) {
         ctx.strokeStyle = selectsOnly ? "#64d2ff" : accent;
         ctx.lineWidth = 2;
-        ctx.strokeRect(x0 + 1, barTop + 1, w - 2, BAR + FLAGS - 2);
+        ctx.strokeRect(x0 + 1, barTop + 1, w - 2, BAR + FLAGS + WAVE - 2);
       }
     });
     // Playhead
@@ -228,7 +248,7 @@ export function Timeline() {
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(x, 4);
-      ctx.lineTo(x, barTop + BAR + FLAGS);
+      ctx.lineTo(x, barTop + BAR + FLAGS + WAVE);
       ctx.stroke();
     }
   });

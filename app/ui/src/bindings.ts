@@ -49,6 +49,12 @@ export const commands = {
 	settingsGet: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_get")),
 	/**  The global measurement cache (Settings → Cache). */
 	cacheInfo: () => typedError<CacheInfo, string>(__TAURI_INVOKE("cache_info")),
+	/**  Audio waveform envelopes for the timeline lane (P10.2). */
+	audioWaveforms: () => typedError<Waveform_Serialize[], string>(__TAURI_INVOKE("audio_waveforms")),
+	/**  Playback meters (P10.2); call at display rate during frame playback. */
+	audioLevels: () => typedError<AudioLevels, string>(__TAURI_INVOKE("audio_levels")),
+	/**  Per-source-channel playback gains: 0 mutes, 1 plays (solo = mute the others). */
+	audioChannelGains: (gains: (number | null)[]) => typedError<null, string>(__TAURI_INVOKE("audio_channel_gains", { gains })),
 	/**  Save As (PRJ-1): writes a consistent copy and continues in it. */
 	projectSaveAs: (path: string) => typedError<ProjectInfo, string>(__TAURI_INVOKE("project_save_as", { path })),
 	/**  Points a clip's media at a moved file (content must match). */
@@ -225,6 +231,12 @@ export type AppSettings_Serialize = {
 	keybindings: { [key in string]: string },
 	/**  Score colours: oklch red→green, or blue→orange for colour-blind viewers. */
 	colour_blind_scores: boolean,
+};
+
+export type AudioLevels = {
+	/**  Peak per output channel since the last call (dBFS). */
+	levels: (number | null)[],
+	source_channels: number,
 };
 
 export type BenchClip = {
@@ -705,6 +717,26 @@ export type WatchFolderDto = {
 	subfolders: boolean,
 	/**  Lower-case extensions without the dot; empty = all media. */
 	extensions: string[],
+};
+
+export type Waveform = Waveform_Serialize | Waveform_Deserialize;
+
+export type Waveform_Deserialize = {
+	clip: number | null,
+	start_us: number | null,
+	/**  Peak amplitude per 100 ms block, 0–255 (linear, 255 = full scale), base64. */
+	peaks: string,
+	/**  Integrated loudness of the whole clip (LUFS), if not silent. */
+	lufs?: number | null,
+};
+
+export type Waveform_Serialize = {
+	clip: number | null,
+	start_us: number | null,
+	/**  Peak amplitude per 100 ms block, 0–255 (linear, 255 = full scale), base64. */
+	peaks: string,
+	/**  Integrated loudness of the whole clip (LUFS), if not silent. */
+	lufs: number | null,
 };
 
 /* Tauri Specta runtime */

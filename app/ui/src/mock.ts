@@ -311,6 +311,22 @@ export const mockBackend: Backend = {
   getSettings: async () => mockSettings,
   cacheInfo: async () => ({ path: "C:/Users/you/AppData/Local/ClipPro/cache/measure-cache.sqlite", entries: 312, bytes: 211_000_000 }),
   cacheClear: async () => 312,
+  audioLevels: async () => ({ levels: [-12 - Math.random() * 10, -13 - Math.random() * 10], sourceChannels: 2 }),
+  audioChannelGains: async () => {},
+  audioWaveforms: async () =>
+    demo
+      .filter((d) => !d.clip.name.startsWith("TIMELAPSE"))
+      .map((d, i) => {
+        const r = rng(d.clip.clip * 31);
+        const nb = Math.floor(d.durationUs / 100_000);
+        const peaks = new Float32Array(nb);
+        let v = 0.3;
+        for (let k = 0; k < nb; k++) {
+          v += (r() - 0.5) * 0.15 + (0.35 - v) * 0.05;
+          peaks[k] = Math.min(1, Math.max(0.02, v * (d.clip.name.startsWith("INTERVIEW") ? 1.4 : 0.8) * (0.6 + 0.4 * Math.abs(Math.sin(k / 3 + i)))));
+        }
+        return { clip: d.clip.clip, startUs: 0, peaks, lufs: -23 + (i % 5) };
+      }),
   projectSaveAs: async (path) => ({ path, name: path.split(/[\\/]/).pop()!.replace(/\.clippro$/i, ""), recovered: false }),
   mediaRelink: async () => {},
   mediaRelinkFolder: async () => 0,

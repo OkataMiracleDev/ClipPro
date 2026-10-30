@@ -540,6 +540,30 @@ impl Session {
         Ok(map)
     }
 
+    /// The decoded audio set of each clip that has one (waveform lane, meters).
+    pub fn clip_audio(&self) -> Result<Vec<(ClipId, Arc<clippro_audio::AudioSet>)>> {
+        let key = self.run_params().key();
+        let db = lock(&self.db);
+        let mut out = Vec::new();
+        for c in db.clips()? {
+            let Some(m) = db.media(c.media_id)? else { continue };
+            let Some(run) = db.run_by_key(m.id, &key)? else { continue };
+            let cached = lock(&self.loaded_audio).get(&run.id.0).cloned();
+            let a = match cached {
+                Some(a) => a,
+                None => {
+                    let a = db.audio(run.id)?.and_then(|b| clippro_audio::AudioSet::decode(&b)).map(Arc::new);
+                    lock(&self.loaded_audio).insert(run.id.0, a.clone());
+                    a
+                }
+            };
+            if let Some(a) = a {
+                out.push((c.id, a));
+            }
+        }
+        Ok(out)
+    }
+
     /// Scores every analysed clip with `settings`.
     pub fn score(&self, settings: &Settings) -> Result<Selects> {
         let clips = self.clip_inputs()?;
