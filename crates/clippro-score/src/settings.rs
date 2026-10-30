@@ -76,6 +76,9 @@ pub struct Settings {
     pub switches: MasterSwitches,
     /// Shot types rewarded by the Shot-type match sub-metric.
     pub shot_types: Vec<String>,
+    /// Keep only the best select of each take group (TUN-13; needs the AI modules).
+    #[serde(default)]
+    pub best_take_only: bool,
 }
 
 fn default_sub(sm: SubMetric) -> SubSetting {
@@ -107,6 +110,7 @@ impl Default for Settings {
             snap_to_sentences: false,
             switches: MasterSwitches { metrics: true, flags: true, camera_filter: true },
             shot_types: Vec::new(),
+            best_take_only: false,
         }
     }
 }

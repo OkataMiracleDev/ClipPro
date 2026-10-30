@@ -23,6 +23,9 @@ pub struct ClipInput {
     pub extra: BTreeMap<SubMetric, Arc<Vec<f32>>>,
     /// Extra per-sample flags (audio, AI), OR-ed with stored flags.
     pub extra_flags: Option<Arc<Vec<u32>>>,
+    /// Sentence boundaries from the transcript (ALGORITHMS §8.1): where a select may start and
+    /// where it may end, in µs. Used when `Settings::snap_to_sentences` is on.
+    pub snaps: Option<Arc<(Vec<i64>, Vec<i64>)>>,
 }
 
 /// Normalised columns for one clip.

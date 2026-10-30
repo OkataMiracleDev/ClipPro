@@ -143,7 +143,7 @@ fn measure(frames: &[(Image, Option<Image>)], motion: bool, cal: &Calibration) -
 
 fn normalised(ms: MeasurementSet, sm: SubMetric, cal: &Calibration) -> Vec<f32> {
     let n = ms.len();
-    let input = ClipInput { id: ClipId(1), version: 1, ms: Arc::new(ms), duration_us: (n as f64 / RATE * 1e6) as i64, profile: Default::default(), extra: Default::default(), extra_flags: None };
+    let input = ClipInput { id: ClipId(1), version: 1, ms: Arc::new(ms), duration_us: (n as f64 / RATE * 1e6) as i64, profile: Default::default(), extra: Default::default(), extra_flags: None, snaps: None };
     normalise(&input, 0.0, cal).n.get(sm as usize).cloned().unwrap_or_default()
 }
 

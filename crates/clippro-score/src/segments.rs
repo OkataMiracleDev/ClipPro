@@ -218,6 +218,7 @@ pub fn finalise(
     s: &Settings,
     t: &Timing,
     overrides: &[Override],
+    snaps: Option<&(Vec<i64>, Vec<i64>)>,
 ) -> Vec<Segment> {
     // Per-clip cap (forced segments are exempt and don't count).
     if let Some(cap) = s.max_per_clip {
@@ -234,8 +235,33 @@ pub fn finalise(
     }
     apply_overrides(&mut segs, fs, t, overrides);
     segs.sort_by_key(|x| x.start_us);
+    if let (true, Some(sn)) = (s.snap_to_sentences, snaps) {
+        snap_to_sentences(&mut segs, fs, t, sn);
+    }
     add_handles(&mut segs, fs, s, t);
     segs
+}
+
+/// Moves automatic segments' edges to the nearest sentence boundary within ±1.5 s, never into
+/// a force-excluded sample or across a hard cut (ALGORITHMS §8.1).
+pub fn snap_to_sentences(segs: &mut [Segment], fs: &FrameScores, t: &Timing, snaps: &(Vec<i64>, Vec<i64>)) {
+    let sample_at = |us: i64| t.time_us.partition_point(|x| *x < us).min(t.time_us.len().saturating_sub(1));
+    let clear = |a: i64, b: i64| -> bool {
+        let (i, j) = (sample_at(a), sample_at(b));
+        (i..=j).all(|k| !fs.force_out.get(k).copied().unwrap_or(false)) && (i + 1..=j).all(|k| !fs.cut_before.get(k).copied().unwrap_or(false))
+    };
+    let pick = |edge: i64, cands: &[i64]| {
+        cands.iter().copied().filter(|c| (c - edge).abs() <= 1_500_000 && clear(edge.min(*c), edge.max(*c))).min_by_key(|c| (c - edge).abs()).unwrap_or(edge)
+    };
+    for seg in segs.iter_mut().filter(|x| x.kind == SegmentKind::Auto) {
+        let (a, b) = (pick(seg.start_us, &snaps.0).max(0), pick(seg.end_us, &snaps.1).min(t.duration_us));
+        if b > a {
+            seg.start_us = a;
+            seg.end_us = b;
+            seg.in_us = seg.in_us.min(a);
+            seg.out_us = seg.out_us.max(b);
+        }
+    }
 }
 
 fn samples_in(t: &Timing, a: i64, b: i64) -> Option<(usize, usize)> {

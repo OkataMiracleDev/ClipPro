@@ -547,6 +547,7 @@ impl Session {
                 profile,
                 extra,
                 extra_flags,
+                snaps: None,
             });
         }
         Ok(out)

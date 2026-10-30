@@ -42,6 +42,7 @@ fn input(id: i64, ms: MeasurementSet) -> ClipInput {
         profile: ColourProfile::Rec709,
         extra: BTreeMap::new(),
         extra_flags: None,
+        snaps: None,
     }
 }
 
@@ -322,7 +323,7 @@ fn run_segments(fs: &FrameScores, s: &Settings, overrides: &[Override]) -> Vec<S
     let timing = Timing { time_us: &t, rate_hz: RATE, duration_us: t.last().unwrap() + STEP / 2 };
     let runs = candidate_runs(fs, s, &timing);
     let segs = segments_from_runs(&runs, fs, s, &timing);
-    finalise(segs, fs, s, &timing, overrides)
+    finalise(segs, fs, s, &timing, overrides, None)
 }
 
 #[test]
@@ -680,4 +681,31 @@ proptest! {
             }
         }
     }
+}
+
+/// TUN-12 / ALGORITHMS §8.1: with snapping on, edges move to the nearest sentence boundary
+/// within 1.5 s, but never across a force-excluded sample.
+#[test]
+fn sentence_snapping() {
+    let mut score = vec![0.1f32; 4];
+    score.extend([0.9; 12]);
+    score.extend([0.1; 8]);
+    let mut fs = fs_from(&score);
+    let mut s = base_settings();
+    s.snap_to_sentences = true;
+    let t = times(fs.score.len());
+    let timing = Timing { time_us: &t, rate_hz: RATE, duration_us: t.last().unwrap() + STEP / 2 };
+    let segs = segments_from_runs(&candidate_runs(&fs, &s, &timing), &fs, &s, &timing);
+    let snaps = (vec![600_000, 2_500_000], vec![4_200_000, 9_000_000]);
+    let out = finalise(segs.clone(), &fs, &s, &timing, &[], Some(&snaps));
+    assert_eq!((out[0].start_us, out[0].end_us), (600_000, 4_200_000));
+    // Off: unchanged.
+    s.snap_to_sentences = false;
+    let plain = finalise(segs.clone(), &fs, &s, &timing, &[], Some(&snaps));
+    assert_ne!(plain[0].start_us, 600_000);
+    // A force-excluded sample between the old start and the boundary blocks that edge only.
+    s.snap_to_sentences = true;
+    fs.force_out[3] = true;
+    let blocked = finalise(segs, &fs, &s, &timing, &[], Some(&snaps));
+    assert_eq!((blocked[0].start_us, blocked[0].end_us), (plain[0].start_us, 4_200_000));
 }

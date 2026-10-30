@@ -459,6 +459,127 @@ impl Db {
         Ok(())
     }
 
+    // ---------- AI (P12) ----------
+
+    /// Stores one module's result for a media file (replacing any earlier one).
+    pub fn save_ai(&self, media: MediaId, module: &str, model_id: &str, model_hash: &str, data: &[u8]) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO ai_result(media_id, module, model_id, model_hash, data, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![media.0, module, model_id, model_hash, data, now()],
+        )?;
+        Ok(())
+    }
+
+    /// (model_id, data) of a module's result.
+    pub fn ai(&self, media: MediaId, module: &str) -> Result<Option<(String, Vec<u8>)>> {
+        let mut st = self.conn.prepare("SELECT model_id, data FROM ai_result WHERE media_id = ?1 AND module = ?2")?;
+        let mut rows = st.query(params![media.0, module])?;
+        Ok(match rows.next()? {
+            Some(r) => Some((r.get(0)?, r.get(1)?)),
+            None => None,
+        })
+    }
+
+    /// Media ids that have a result for `module`.
+    pub fn ai_media(&self, module: &str) -> Result<Vec<MediaId>> {
+        let mut st = self.conn.prepare("SELECT media_id FROM ai_result WHERE module = ?1")?;
+        let rows = st.query_map(params![module], |r| Ok(MediaId(r.get(0)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn clear_ai(&self, media: MediaId) -> Result<()> {
+        self.conn.execute("DELETE FROM ai_result WHERE media_id = ?1", params![media.0])?;
+        self.conn.execute("DELETE FROM face_track WHERE media_id = ?1", params![media.0])?;
+        self.conn.execute("DELETE FROM transcript WHERE media_id = ?1", params![media.0])?;
+        self.conn.execute("DELETE FROM transcript_fts WHERE media_id = ?1", params![media.0])?;
+        Ok(())
+    }
+
+    /// Replaces a media file's face tracks; returns their ids.
+    pub fn set_face_tracks(&self, media: MediaId, tracks: &[Vec<u8>]) -> Result<Vec<i64>> {
+        self.conn.execute("DELETE FROM face_track WHERE media_id = ?1", params![media.0])?;
+        let mut ids = Vec::new();
+        for t in tracks {
+            self.conn.execute("INSERT INTO face_track(media_id, data) VALUES (?1, ?2)", params![media.0, t])?;
+            ids.push(self.conn.last_insert_rowid());
+        }
+        Ok(ids)
+    }
+
+    /// (track id, media id, person id, data) of every face track.
+    pub fn face_tracks(&self) -> Result<Vec<(i64, MediaId, Option<i64>, Vec<u8>)>> {
+        let mut st = self.conn.prepare("SELECT id, media_id, person_id, data FROM face_track ORDER BY id")?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, MediaId(r.get(1)?), r.get(2)?, r.get(3)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn set_track_person(&self, track: i64, person: Option<i64>) -> Result<()> {
+        self.conn.execute("UPDATE face_track SET person_id = ?1 WHERE id = ?2", params![person, track])?;
+        Ok(())
+    }
+
+    /// (id, name, cover, embedding) of every person.
+    pub fn people(&self) -> Result<Vec<(i64, String, Option<String>, Option<Vec<u8>>)>> {
+        let mut st = self.conn.prepare("SELECT id, name, cover_face_ref, embedding FROM person ORDER BY id")?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn add_person(&self, name: &str, cover: Option<&str>, embedding: &[u8]) -> Result<i64> {
+        self.conn.execute("INSERT INTO person(name, cover_face_ref, embedding) VALUES (?1, ?2, ?3)", params![name, cover, embedding])?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn update_person(&self, id: i64, name: &str, cover: Option<&str>, embedding: &[u8]) -> Result<()> {
+        self.conn.execute("UPDATE person SET name = ?1, cover_face_ref = ?2, embedding = ?3 WHERE id = ?4", params![name, cover, embedding, id])?;
+        Ok(())
+    }
+
+    pub fn rename_person(&self, id: i64, name: &str) -> Result<()> {
+        self.conn.execute("UPDATE person SET name = ?1 WHERE id = ?2", params![name, id])?;
+        Ok(())
+    }
+
+    /// Deletes a person; their tracks become unassigned.
+    pub fn delete_person(&self, id: i64) -> Result<()> {
+        self.conn.execute("UPDATE face_track SET person_id = NULL WHERE person_id = ?1", params![id])?;
+        self.conn.execute("DELETE FROM person WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Stores a transcript and indexes its segments for full-text search.
+    pub fn save_transcript(&self, media: MediaId, language: &str, data: &[u8], segments: &[(i64, String)]) -> Result<()> {
+        self.conn.execute("INSERT OR REPLACE INTO transcript(media_id, language, data) VALUES (?1, ?2, ?3)", params![media.0, language, data])?;
+        self.conn.execute("DELETE FROM transcript_fts WHERE media_id = ?1", params![media.0])?;
+        for (start, text) in segments {
+            self.conn.execute("INSERT INTO transcript_fts(media_id, start_us, text) VALUES (?1, ?2, ?3)", params![media.0, start, text])?;
+        }
+        Ok(())
+    }
+
+    pub fn transcript(&self, media: MediaId) -> Result<Option<(String, Vec<u8>)>> {
+        let mut st = self.conn.prepare("SELECT language, data FROM transcript WHERE media_id = ?1")?;
+        let mut rows = st.query(params![media.0])?;
+        Ok(match rows.next()? {
+            Some(r) => Some((r.get::<_, Option<String>>(0)?.unwrap_or_default(), r.get(1)?)),
+            None => None,
+        })
+    }
+
+    /// Full-text search over transcripts: (media, segment start µs, text), best first.
+    pub fn search_transcripts(&self, query: &str, limit: usize) -> Result<Vec<(MediaId, i64, String)>> {
+        // Quote each word so punctuation in the query can't break FTS syntax.
+        let q: Vec<String> = query.split_whitespace().map(|w| format!("\"{}\"", w.replace('"', ""))).filter(|w| w.len() > 2).collect();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut st = self.conn.prepare("SELECT media_id, start_us, text FROM transcript_fts WHERE transcript_fts MATCH ?1 ORDER BY rank LIMIT ?2")?;
+        let rows = st
+            .query_map(params![q.join(" "), limit as i64], |r| Ok((MediaId(r.get(0)?), r.get(1)?, r.get(2)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// Multicam sync groups (P11.5): (id, name, method, data_json).
     pub fn sync_groups(&self) -> Result<Vec<(i64, String, String, String)>> {
         let mut st = self.conn.prepare("SELECT id, name, method, data_json FROM sync_group ORDER BY name COLLATE NOCASE, id")?;
@@ -759,6 +880,24 @@ mod tests {
         assert_eq!(db.clips().unwrap().iter().find(|c| c.id == c1).unwrap().bin_id, None);
         assert_eq!(db.bins().unwrap().len(), 1);
         db.delete_bin(sm).unwrap();
+        // AI results, faces, people, transcripts and search.
+        db.save_ai(m, "clip", "clip-b32-vision", "abc", b"emb").unwrap();
+        assert_eq!(db.ai(m, "clip").unwrap(), Some(("clip-b32-vision".to_string(), b"emb".to_vec())));
+        assert_eq!(db.ai_media("clip").unwrap(), vec![m]);
+        let tids = db.set_face_tracks(m, &[b"t1".to_vec(), b"t2".to_vec()]).unwrap();
+        let p = db.add_person("Sarah", None, b"e").unwrap();
+        db.set_track_person(tids[0], Some(p)).unwrap();
+        assert_eq!(db.face_tracks().unwrap()[0].2, Some(p));
+        db.rename_person(p, "Sarah K").unwrap();
+        assert_eq!(db.people().unwrap()[0].1, "Sarah K");
+        db.save_transcript(m, "en", b"{}", &[(0, "The quick brown fox".into()), (5_000_000, "jumps over the dog".into())]).unwrap();
+        let hits = db.search_transcripts("brown fox", 10).unwrap();
+        assert_eq!(hits, vec![(m, 0, "The quick brown fox".to_string())]);
+        assert!(db.search_transcripts("\"", 10).unwrap().is_empty());
+        db.delete_person(p).unwrap();
+        assert_eq!(db.face_tracks().unwrap()[0].2, None);
+        db.clear_ai(m).unwrap();
+        assert!(db.ai(m, "clip").unwrap().is_none() && db.face_tracks().unwrap().is_empty() && db.transcript(m).unwrap().is_none());
         // Sync groups: insert, replace, delete.
         let g = db.save_sync_group(None, "Cam A+B", "audio", "{}").unwrap();
         assert_eq!(db.save_sync_group(Some(g), "Scene 4", "timecode", "{\"x\":1}").unwrap(), g);

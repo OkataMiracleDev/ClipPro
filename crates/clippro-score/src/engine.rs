@@ -213,10 +213,11 @@ impl Engine {
                 }
                 let segs = c.segs.clone()?;
                 let ovs = overrides.get(&clip.id).unwrap_or(&empty);
-                let key_final = hash_of((key_segs, s.max_per_clip, s.handles_samples, overrides_key(ovs), clip.duration_us));
+                let snaps = clip.snaps.as_deref();
+                let key_final = hash_of((key_segs, s.max_per_clip, s.handles_samples, overrides_key(ovs), clip.duration_us, s.snap_to_sentences, snaps.map(|x| (x.0.len(), x.1.len(), x.0.first().copied(), x.1.last().copied()))));
                 if c.fin.is_none() || c.key_final != key_final {
                     counters.finalise.fetch_add(1, Ordering::Relaxed);
-                    c.fin = Some(Arc::new(finalise((*segs).clone(), &fs, s, &t, ovs)));
+                    c.fin = Some(Arc::new(finalise((*segs).clone(), &fs, s, &t, ovs, snaps)));
                     c.key_final = key_final;
                 }
                 let fin = c.fin.clone()?;
