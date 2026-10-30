@@ -7,8 +7,7 @@
 | Status | Approved for build |
 | Platform | Windows 10 (22H2+) / Windows 11, x64 only |
 | Deliverable | `ClipPro.exe` (GUI), `clippro-cli.exe` (headless), NSIS installer `ClipPro_<ver>_x64-setup.exe` |
-| Builder | Claude Code, building autonomously from [PLAN.md](PLAN.md) |
-| Companion docs | [ALGORITHMS.md](ALGORITHMS.md) (all measurement and scoring maths), [PLAN.md](PLAN.md) (phased build plan), [../CLAUDE.md](../CLAUDE.md) (build rules) |
+| Companion docs | [ALGORITHMS.md](ALGORITHMS.md) (all measurement and scoring maths), [decisions/](decisions/) (architecture decision records) |
 
 ---
 
@@ -747,7 +746,7 @@ Benchmarks live in `crates/*/benches` and `clippro-cli bench`. CI tracks regress
 | FFmpeg LGPL constraints (no x264/x265) | proxy encoding | Hardware encoders + ProRes/DNx (LGPL) + Media Foundation H.264 |
 | AI model licences | redistribution | Download-on-demand with licence display; only permissive models listed by default |
 | DirectML maintenance status | AI GPU acceleration | `ort` EP abstraction; Windows ML EP when available; CPU always works |
-| Autonomous build drifting from spec | correctness | PLAN tasks carry explicit acceptance tests; CLAUDE.md requires running them before marking done |
+| Build drifting from spec | correctness | Every feature carries explicit acceptance tests, run before it is marked done |
 
 ## 28. Out of scope for 1.0 (backlog)
 Native BRAW/R3D/ARRIRAW decode via vendor SDKs; image sequences; macOS build; smart reframe (vertical crops from face/subject tracking exported as transforms); burn-in renders; collaborative review links; localisation; scripting/plugin API; Premiere/Resolve panel extensions for one-click send; map view for GPS metadata.

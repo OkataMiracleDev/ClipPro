@@ -13,3 +13,9 @@ app/src-tauri/gen/
 *.log
 app/src-tauri/target/
 target/bindings-check.ts
+# Private working notes (kept locally, never published)
+/CLAUDE.md
+/docs/PLAN.md
+/docs/PROGRESS.md
+/docs/BLOCKERS.md
+/docs/CHECKPOINTS.md

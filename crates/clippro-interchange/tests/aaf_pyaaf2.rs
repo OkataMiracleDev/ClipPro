@@ -1,6 +1,6 @@
 //! PLAN P7b: ClipPro's AAF is read back by pyaaf2, an independent implementation, with the same
 //! edit, media, timecode and markers; and P11.2: our reader reads a pyaaf2-authored file.
-//! Needs Python with pyaaf2 in `third_party/pyaaf2` (see docs/BLOCKERS.md B-2); skips otherwise.
+//! Needs Python with pyaaf2 in `third_party/pyaaf2` (`scripts/bootstrap.ps1` installs it); skips otherwise.
 
 use clippro_interchange::model::{ClipItem, Item, Marker, MarkerColor, MediaRef, Timeline, Track};
 use clippro_types::FrameRate;

@@ -22,7 +22,7 @@ New-Item -ItemType Directory -Force $tp | Out-Null
 $tmp = Join-Path $root 'target\tmp-bootstrap'
 New-Item -ItemType Directory -Force $tmp | Out-Null
 
-# Pinned versions (keep in step with docs/PROGRESS.md "Environment").
+# Pinned versions.
 $FFMPEG = 'n9.0'
 $CMAKE = '4.4.5'
 $NINJA = '1.13.2'
