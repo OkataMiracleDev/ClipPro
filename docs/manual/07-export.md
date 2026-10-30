@@ -28,9 +28,11 @@ Press `Ctrl+E` (or the share button) to export the current selects.
 
 ## Markers
 
-Each select can carry a marker. Its name is a template; these tokens are filled in:
+Each select can carry a marker. Its name and comment are templates; these tokens are filled in:
 
 `{clip}` `{index}` `{score}` `{flags}` `{duration}` `{tc_in}` `{tc_out}` `{rating}` `{label}` `{note}`
+
+With local AI on (see Local AI), three more: `{transcript}` (what is said during the select), `{people}` (who is on screen) and `{shot}` (the shot type). The comment defaults to `{flags}`.
 
 The marker colour follows the score (green, yellow, red) unless you gave the select a colour label.
 

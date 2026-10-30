@@ -8,7 +8,7 @@ Open Settings with `Ctrl+,` or the gear button.
 - **Keyboard**: every shortcut, rebindable. Click a shortcut and press the new keys; clashes are shown before you confirm.
 - **Cache**: where measurements are cached, how much space they use, and a button to clear them.
 - **Compatibility**: colour-blind-safe score colours (blue to orange instead of red to green).
-- **AI Models**: the optional on-device AI modules. Nothing downloads without your consent.
+- **AI Models**: the optional on-device AI modules, their downloads, the transcript model and language, and Deterministic AI. Nothing downloads without your consent. See Local AI.
 
 ## Default shortcuts
 

@@ -475,7 +475,7 @@ Faces need a colour decode at 2 Hz and 640 px long edge. This is an AI job with 
 - The "Shot-type match" sub-metric is the probability of the user-selected class(es).
 
 ### 8.7 Aesthetic, semantic search, best thumbnail
-- **Aesthetic**: a linear/MLP head on the CLIP embedding, giving 0–10. Normalised as `smoothstep(3.5, 7.0, x)`.
+- **Aesthetic**: 0–10 from CLIP prompt contrast, "a beautiful, well-composed photograph" against "a dull, poorly composed photograph" (ADR-005, in place of a trained head). Normalised as `smoothstep(3.5, 7.0, x)`.
 - **Semantic search**: query text → CLIP text embedding. Cosine against stored image embeddings. Results are aggregated per segment (max) and per clip, and shown ranked with a threshold slider.
 - **Best thumbnail** per segment: `argmax_k` of `F_k · (0.5 + 0.5·face_in_focus_k if faces on) · (1 − 0.5·motion_blur_k)` over samples away from the edges (ignoring the outer 10% of the span).
 
