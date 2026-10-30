@@ -13,6 +13,7 @@ use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
 pub mod ai;
 pub mod audio_out;
+pub mod data;
 pub mod diag;
 pub mod presets;
 pub mod preview;
@@ -1813,6 +1814,9 @@ async fn settings_import(app: tauri::AppHandle, state: State<'_, AppState>, path
         let cur = lock(&state.settings);
         s.last_project = cur.last_project.clone();
         s.recent_projects = cur.recent_projects.clone();
+        // The data folder belongs to this PC (it may not exist on the one the file came from).
+        s.data_dir = cur.data_dir.clone();
+        s.pending_cache_move = cur.pending_cache_move.clone();
     }
     let s = s.sanitised();
     if let Some(p) = lock(&state.settings_path).as_ref() {
@@ -1833,7 +1837,13 @@ async fn settings_get(state: State<'_, AppState>) -> Result<settings::AppSetting
 #[tauri::command]
 #[specta::specta]
 async fn settings_set(app: tauri::AppHandle, state: State<'_, AppState>, settings: settings::AppSettings) -> Result<settings::AppSettings, String> {
-    let s = settings.sanitised();
+    let mut s = settings.sanitised();
+    {
+        // Only `data_dir_set` changes the data folder, since it also moves the files.
+        let cur = lock(&state.settings);
+        s.data_dir = cur.data_dir.clone();
+        s.pending_cache_move = cur.pending_cache_move.clone();
+    }
     if let Some(p) = lock(&state.settings_path).as_ref() {
         s.save(p)?;
     }
@@ -2211,6 +2221,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             bench_config,
             bench_report,
             startup_project,
+            data::data_info,
+            data::data_dir_set,
             ai::ai_models,
             ai::ai_model_download,
             ai::ai_download_cancel,
@@ -2323,6 +2335,10 @@ pub fn run(bench: Option<Bench>) {
                 let state = app.state::<AppState>();
                 *lock(&state.settings) = settings::AppSettings::load(&p);
                 *lock(&state.settings_path) = Some(p);
+                // The user's Data folder (models and measurement cache), before any project opens.
+                let data_dir = lock(&state.settings).data_dir.clone();
+                data::apply(data_dir.as_deref());
+                data::finish_pending(&state);
             }
             if let Some(b) = bench.as_ref().filter(|b| b.pdf) {
                 let (out, clips, app) = (b.out.clone(), b.clips.clone(), app.handle().clone());

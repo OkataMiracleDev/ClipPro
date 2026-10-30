@@ -76,7 +76,7 @@ function makeDemo(): DemoClip[] {
 }
 
 const demo = makeDemo();
-let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, recent_projects: ["D:/Projects/Coast Doc.clippro", "D:/Projects/Sarah Interview.clippro", "E:/Weddings/Okafor.clippro"], workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true, keybindings: {}, colour_blind_scores: false, tour_done: !new URLSearchParams(location.search).has("tour"), ai_consent: true, ai_faces: true, ai_shots: true, ai_transcripts: true, ai_speakers: true, whisper_model: "whisper-small", ai_language: "", ai_deterministic: false };
+let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, recent_projects: ["D:/Projects/Coast Doc.clippro", "D:/Projects/Sarah Interview.clippro", "E:/Weddings/Okafor.clippro"], workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true, keybindings: {}, colour_blind_scores: false, tour_done: !new URLSearchParams(location.search).has("tour"), ai_consent: true, ai_faces: true, ai_shots: true, ai_transcripts: true, ai_speakers: true, whisper_model: "whisper-small", ai_language: "", ai_deterministic: false, data_dir: null, pending_cache_move: null };
 const settingsListeners = new Set<(s: AppSettings) => void>();
 const mockBins: { id: number; name: string; kind: string; query: string | null }[] = [
   { id: 1, name: "Interviews", kind: "manual", query: null },
@@ -146,6 +146,12 @@ function mockTranscript(clip: number): import("./api").Transcript | null {
     return ws.map((w, k) => ({ startUs: l.startUs + k * step, endUs: l.startUs + (k + 1) * step, text: w, prob: 0.9, filler: /^um,?$/i.test(w) }));
   });
   return { language: "en", words, lines, flubs: [[lines[2]!.startUs, lines[2]!.startUs + 1.6e6]] };
+}
+
+function mockData(): import("./api").DataInfo {
+  const def = "C:/Users/you/AppData/Local/ClipPro";
+  const root = mockSettings.data_dir ?? def;
+  return { root, defaultRoot: def, isDefault: root === def, modelsDir: `${root}/models`, modelsEnv: false, cachePath: `${root}/cache/measure-cache.sqlite`, cacheMovePending: false };
 }
 
 const offloadListeners = new Set<(p: import("./api").OffloadProgress) => void>();
@@ -641,6 +647,11 @@ export const mockBackend: Backend = {
     if (m) m.installed = false;
   },
   startupProject: async () => null,
+  dataInfo: async () => mockData(),
+  dataDirSet: async (path) => {
+    mockSettings = { ...mockSettings, data_dir: path };
+    return { info: mockData(), moved: path ? 9 : 0, notes: [] };
+  },
   aiRun: async () => 0,
   aiCancel: async () => {},
   aiRunning: async () => false,

@@ -32,13 +32,18 @@ pub fn model(id: &str) -> Option<ModelInfo> {
     manifest().into_iter().find(|m| m.id == id)
 }
 
-/// `%LOCALAPPDATA%\ClipPro\models` (or `CLIPPRO_MODELS` when set).
+/// `CLIPPRO_MODELS` when set (development and tests), else `<data folder>\models`
+/// (`%LOCALAPPDATA%\ClipPro\models` unless the user chose another Data folder).
 pub fn models_dir() -> PathBuf {
-    if let Some(d) = std::env::var_os("CLIPPRO_MODELS") {
-        return PathBuf::from(d);
+    if let Some(d) = models_env() {
+        return d;
     }
-    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    base.join("ClipPro").join("models")
+    clippro_types::paths::data_root().join("models")
+}
+
+/// The `CLIPPRO_MODELS` override, if set.
+pub fn models_env() -> Option<PathBuf> {
+    std::env::var_os("CLIPPRO_MODELS").filter(|d| !d.is_empty()).map(PathBuf::from)
 }
 
 pub fn path_of(m: &ModelInfo) -> PathBuf {

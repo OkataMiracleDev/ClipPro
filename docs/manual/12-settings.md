@@ -2,7 +2,11 @@
 
 Open Settings with `Ctrl+,` or the gear button.
 
-- **General**: theme (system, light or dark), window controls (macOS or Windows style), reopening the last project, and exporting or importing all your settings.
+- **General**: theme (system, light or dark), window controls (macOS or Windows style), reopening the last project, the **Data folder**, and exporting or importing all your settings.
+
+## Data folder
+
+AI models and the measurement cache live in one folder, `%LOCALAPPDATA%\ClipPro` unless you choose another (for example on a bigger drive). In **Settings → General → Data folder**, choose **Change…**. With **Move existing models and cache** on, what's already there moves with it, so nothing is downloaded or analysed again. If a project is open, the cache moves the next time ClipPro starts. **Use default** goes back to the standard folder. Projects are saved wherever you choose, and importing a settings file never changes this PC's data folder.
 - **Performance**: hardware decoding and the number of workers.
 - **Analysis**: the default sample rate, pair sampling and which groups to measure.
 - **Keyboard**: every shortcut, rebindable. Click a shortcut and press the new keys; clashes are shown before you confirm.

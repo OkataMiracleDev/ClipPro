@@ -77,9 +77,11 @@ Report 'opentimelineio (OTIO validator)' $otio 'pip install opentimelineio (no w
 # E2E drivers, corpus, AI models
 Report 'tauri-driver + msedgedriver (E2E)' ((Test-Path (Join-Path $tp 'tools\bin\tauri-driver.exe')) -and (Test-Path (Join-Path $tp 'tools\msedgedriver.exe'))) 'third_party/tools' -Optional
 Report 'test corpus' (Test-Path (Join-Path $root 'testdata\gen\tripod_static.mp4')) 'clippro-testgen --out testdata/gen --mini' -Optional
-$models = Join-Path $root 'target\models'
+$models = [Environment]::GetEnvironmentVariable('CLIPPRO_MODELS', 'User')
+if ($env:CLIPPRO_MODELS) { $models = $env:CLIPPRO_MODELS }
+if (-not $models) { $models = Join-Path $root 'target\models' }
 $n = (Get-ChildItem $models -File -ErrorAction SilentlyContinue | Measure-Object).Count
-Report 'AI models for tests' ($n -ge 5) "target/models ($n files; AI tests skip without them)" -Optional
+Report 'AI models for tests' ($n -ge 5) "$models ($n files; AI tests skip without them)" -Optional
 
 if ($script:failed -gt 0) {
     Write-Host "$($script:failed) required item(s) missing. Run scripts\bootstrap.ps1." -ForegroundColor Red

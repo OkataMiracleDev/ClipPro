@@ -5,9 +5,9 @@
 import { Accessibility, Database, Gauge, Keyboard, ScanLine, SlidersHorizontal, Sparkles } from "lucide-react";
 import { KeyboardTab } from "./KeyboardTab";
 import { AiTab } from "./Ai";
-import { pickSettingsFile } from "../lib/dialogs";
+import { pickFolder, pickSettingsFile } from "../lib/dialogs";
 import { useEffect, useState } from "react";
-import { api, isTauri, type AppSettings } from "../api";
+import { api, isTauri, type AppSettings, type DataInfo } from "../api";
 import { cx, Segmented, Switch } from "../components/ui";
 import { CaptionButtons, TrafficLights } from "./TitleBar";
 
@@ -180,6 +180,7 @@ export function SettingsWindow() {
             </Row>
           </>
         ) : null}
+        {s && tab === "general" && <DataFolderRow onSaved={setS} />}
         {s && tab === "general" && (
           <Row label="Settings file" hint="Move your settings and shortcuts to another PC. Recent projects stay on this one.">
             <div className="flex gap-2">
@@ -221,6 +222,63 @@ export function SettingsWindow() {
         {!isTauri && <p className="mt-6 text-center text-[11px] text-text-3">Browser preview — settings aren't saved.</p>}
       </main>
     </div>
+  );
+}
+
+/** Settings → General → Data folder: where AI models and the measurement cache live. */
+function DataFolderRow({ onSaved }: { onSaved: (s: AppSettings) => void }) {
+  const [info, setInfo] = useState<DataInfo | null>(null);
+  const [moveExisting, setMoveExisting] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    api.dataInfo().then(setInfo, () => setInfo(null));
+  }, []);
+  const change = async (path: string | null) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await api.dataDirSet(path, moveExisting);
+      setInfo(r.info);
+      const parts = [r.moved ? `Moved ${r.moved} file${r.moved === 1 ? "" : "s"}.` : "", ...r.notes].filter(Boolean);
+      setNote(parts.join(" ") || "Saved.");
+      onSaved(await api.getSettings());
+    } catch (e) {
+      setNote(String(e));
+    }
+    setBusy(false);
+  };
+  return (
+    <Row label="Data folder" hint="AI models and the measurement cache. Projects are saved wherever you choose.">
+      <div className="max-w-80 truncate text-[13px]" title={info?.root}>
+        {info ? info.root : "…"}
+        {info?.isDefault && <span className="text-text-3"> (default)</span>}
+      </div>
+      {info?.modelsEnv && <div className="text-[11px] text-text-3">Models: {info.modelsDir} (set by CLIPPRO_MODELS)</div>}
+      {info?.cacheMovePending && <div className="text-[11px] text-text-3">The measurement cache moves the next time ClipPro starts.</div>}
+      <div className="mt-1 flex items-center gap-2">
+        <button
+          disabled={busy}
+          className="h-7 rounded-(--radius-control) px-3 text-[13px] ring-1 ring-separator-strong hover:bg-control-hover disabled:opacity-40"
+          onClick={async () => {
+            const p = await pickFolder("Choose the data folder");
+            if (p) await change(p);
+          }}
+        >
+          {busy ? "Moving…" : "Change…"}
+        </button>
+        {info && !info.isDefault && (
+          <button disabled={busy} className="h-7 rounded-(--radius-control) px-3 text-[13px] ring-1 ring-separator-strong hover:bg-control-hover disabled:opacity-40" onClick={() => void change(null)}>
+            Use default
+          </button>
+        )}
+      </div>
+      <label className="mt-1 flex items-center gap-2 text-[12px] text-text-2">
+        <Switch label="Move existing models and cache" checked={moveExisting} onChange={setMoveExisting} />
+        Move existing models and cache
+      </label>
+      {note && <div className="text-[11px] text-text-2">{note}</div>}
+    </Row>
   );
 }
 

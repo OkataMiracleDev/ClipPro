@@ -164,6 +164,12 @@ export const commands = {
 	benchReport: (report: string) => typedError<null, string>(__TAURI_INVOKE("bench_report", { report })),
 	/**  A project passed on the command line (double-clicking a `.clippro` file), if any. */
 	startupProject: () => __TAURI_INVOKE<string | null>("startup_project"),
+	dataInfo: () => __TAURI_INVOKE<DataInfo>("data_info"),
+	/**
+	 *  Changes the data folder (`None` = the default) and, with `move_existing`, moves the models
+	 *  and the measurement cache into it. A cache in use by the open project moves at next start-up.
+	 */
+	dataDirSet: (path: string | null, moveExisting: boolean) => typedError<DataMoveResult, string>(__TAURI_INVOKE("data_dir_set", { path, moveExisting })),
 	aiModels: () => __TAURI_INVOKE<AiModels>("ai_models"),
 	/**  Downloads models one after another in the background (`AiProgress` download events). */
 	aiModelDownload: (ids: string[]) => typedError<null, string>(__TAURI_INVOKE("ai_model_download", { ids })),
@@ -333,6 +339,13 @@ export type AppSettings_Deserialize = {
 	ai_language?: string,
 	/**  CPU only, repeatable results. */
 	ai_deterministic?: boolean,
+	/**  Data folder for AI models and the measurement cache; `None` = `%LOCALAPPDATA%\ClipPro`. */
+	data_dir?: string | null,
+	/**
+	 *  A measurement cache still to move into the data folder (an open project was using it when
+	 *  the folder changed); moved at the next start-up.
+	 */
+	pending_cache_move?: string | null,
 };
 
 export type AppSettings_Serialize = {
@@ -375,6 +388,13 @@ export type AppSettings_Serialize = {
 	ai_language: string,
 	/**  CPU only, repeatable results. */
 	ai_deterministic: boolean,
+	/**  Data folder for AI models and the measurement cache; `None` = `%LOCALAPPDATA%\ClipPro`. */
+	data_dir: string | null,
+	/**
+	 *  A measurement cache still to move into the data folder (an open project was using it when
+	 *  the folder changed); moved at the next start-up.
+	 */
+	pending_cache_move: string | null,
 };
 
 export type AudioLevels = {
@@ -550,6 +570,26 @@ export type CodecChoice = {
 
 /**  Log/colour profiles for preview and log-aware exposure (SPEC VIE-6). */
 export type ColourProfile = "rec709" | "s_log3" | "log_c3" | "log_c4" | "v_log" | "c_log2" | "c_log3" | "n_log" | "f_log2" | "d_log" | "apple_log" | "log3_g10" | "bmd_film_gen5";
+
+export type DataInfo = {
+	/**  The data folder in effect. */
+	root: string,
+	default_root: string,
+	is_default: boolean,
+	models_dir: string,
+	/**  `CLIPPRO_MODELS` overrides the models folder (development setups). */
+	models_env: boolean,
+	cache_path: string,
+	/**  The cache waits for the next start-up to move (a project was open). */
+	cache_move_pending: boolean,
+};
+
+export type DataMoveResult = {
+	info: DataInfo,
+	/**  Files moved now. */
+	moved: number,
+	notes: string[],
+};
 
 export type ExportRequest = ExportRequest_Serialize | ExportRequest_Deserialize;
 

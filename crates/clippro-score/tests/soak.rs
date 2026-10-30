@@ -1,8 +1,9 @@
 //! P14.6 memory soak: a 100 h synthetic project (40 clips × 2.5 h at 4 Hz) re-scored
 //! continuously with changing settings. The working set may not grow more than 5% after the
-//! first minute of warm-up (caches filled). On demand, for one hour:
+//! first minute of warm-up (caches filled). On demand, for 15 minutes (the owner's choice over
+//! PLAN's hour, 2026-10-30):
 //!
-//!     CLIPPRO_SOAK_SECS=3600 cargo test --release -p clippro-score --test soak -- --ignored --nocapture
+//!     CLIPPRO_SOAK_SECS=900 cargo test --release -p clippro-score --test soak -- --ignored --nocapture
 
 use clippro_measure::calibration::Calibration;
 use clippro_measure::columns::{Col, MeasurementSet, NCOLS};

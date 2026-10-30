@@ -96,6 +96,18 @@ export interface JobProgress {
   outputs: string[];
 }
 
+/** The Data folder: AI models and the measurement cache. */
+export interface DataInfo {
+  root: string;
+  defaultRoot: string;
+  isDefault: boolean;
+  modelsDir: string;
+  /** CLIPPRO_MODELS overrides the models folder (development setups). */
+  modelsEnv: boolean;
+  cachePath: string;
+  cacheMovePending: boolean;
+}
+
 /** Local AI (P12): models, the AI queue, People, transcripts and search. */
 export interface AiModel {
   id: string;
@@ -428,6 +440,9 @@ export interface Backend {
   diagnosticsSave(path: string): Promise<void>;
   diagnosticsOpenFolder(): Promise<void>;
   onJob(cb: (e: JobProgress) => void): Promise<() => void>;
+  dataInfo(): Promise<DataInfo>;
+  /** Changes the data folder (null = default), moving the models and cache when asked. */
+  dataDirSet(path: string | null, moveExisting: boolean): Promise<{ info: DataInfo; moved: number; notes: string[] }>;
   aiModels(): Promise<{ models: AiModel[]; dir: string; bytes: number }>;
   aiModelDownload(ids: string[]): Promise<void>;
   aiDownloadCancel(id: string): Promise<void>;
@@ -570,6 +585,16 @@ export function adaptScore(r: ScoreResult): Scored {
     takes: r.takes.map((t) => ({ clip: n(t.clip), startUs: n(t.start_us), group: t.group, rank: t.rank, size: t.size })),
   };
 }
+
+const adaptData = (d: import("./bindings").DataInfo): DataInfo => ({
+  root: d.root,
+  defaultRoot: d.default_root,
+  isDefault: d.is_default,
+  modelsDir: d.models_dir,
+  modelsEnv: d.models_env,
+  cachePath: d.cache_path,
+  cacheMovePending: d.cache_move_pending,
+});
 
 const adaptClip = (c: RawClip): Clip => ({
   clip: n(c.clip),
@@ -749,6 +774,11 @@ const tauriBackend: Backend = {
         summary: sm ? { ...sm, bytes: n(sm.bytes), seconds: n(sm.seconds) } : null,
       });
     }),
+  dataInfo: async () => adaptData(await commands.dataInfo()),
+  dataDirSet: async (path, moveExisting) => {
+    const r = unwrap(await commands.dataDirSet(path, moveExisting));
+    return { info: adaptData(r.info), moved: r.moved, notes: r.notes };
+  },
   aiModels: async () => {
     const r = await commands.aiModels();
     return { models: r.models.map((m) => ({ ...m, module: m.module as AiModel["module"], size: n(m.size) })), dir: r.dir, bytes: n(r.bytes) };

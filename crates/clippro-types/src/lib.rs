@@ -2,6 +2,7 @@
 //! No IO lives here.
 
 pub mod domain;
+pub mod paths;
 pub mod rational;
 pub mod timecode;
 pub mod typed;

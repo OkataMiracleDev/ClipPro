@@ -51,6 +51,11 @@ pub struct AppSettings {
     pub ai_language: String,
     /// CPU only, repeatable results.
     pub ai_deterministic: bool,
+    /// Data folder for AI models and the measurement cache; `None` = `%LOCALAPPDATA%\ClipPro`.
+    pub data_dir: Option<String>,
+    /// A measurement cache still to move into the data folder (an open project was using it when
+    /// the folder changed); moved at the next start-up.
+    pub pending_cache_move: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -77,6 +82,8 @@ impl Default for AppSettings {
             whisper_model: "whisper-small".into(),
             ai_language: String::new(),
             ai_deterministic: false,
+            data_dir: None,
+            pending_cache_move: None,
         }
     }
 }
@@ -112,6 +119,9 @@ impl AppSettings {
         }
         if self.ai_language.len() > 3 || !self.ai_language.chars().all(|c| c.is_ascii_lowercase()) {
             self.ai_language = String::new();
+        }
+        if self.data_dir.as_deref().is_some_and(|d| d.trim().is_empty() || !Path::new(d).is_absolute()) {
+            self.data_dir = None;
         }
         self.workers = self.workers.min(64);
         self.recent_projects.truncate(10);
@@ -159,6 +169,10 @@ mod tests {
         assert_eq!(o.analyze.rate, SampleRate::Detailed);
         assert_eq!(o.analyze.decode.hw, HwMode::Off);
         assert!(o.cache_path.is_none());
+        // The data folder must be a full path.
+        let d = AppSettings { data_dir: Some(r"D:\ClipPro Data".into()), ..Default::default() }.sanitised();
+        assert_eq!(d.data_dir.as_deref(), Some(r"D:\ClipPro Data"));
+        assert!(AppSettings { data_dir: Some("relative".into()), ..Default::default() }.sanitised().data_dir.is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

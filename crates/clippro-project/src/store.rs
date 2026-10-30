@@ -747,9 +747,9 @@ impl MeasureCache {
     }
 
     /// Default location: `%LOCALAPPDATA%\ClipPro\cache\measure-cache.sqlite`.
+    /// `<data folder>\cache\measure-cache.sqlite` (see `clippro_types::paths`).
     pub fn default_path() -> PathBuf {
-        let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-        base.join("ClipPro").join("cache").join("measure-cache.sqlite")
+        clippro_types::paths::data_root().join("cache").join("measure-cache.sqlite")
     }
 
     pub fn get(&self, fingerprint: &str, run_key: &str) -> Result<Option<Vec<u8>>> {
