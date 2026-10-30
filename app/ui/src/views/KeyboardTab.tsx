@@ -89,7 +89,7 @@ export function KeyboardTab({ s, update }: { s: AppSettings; update: (p: Partial
           })}
         </section>
       ))}
-      <button className="self-start text-[12px] text-accent" onClick={() => update({ keybindings: {} })}>
+      <button className="self-start text-[12px] text-accent-text" onClick={() => update({ keybindings: {} })}>
         Reset all shortcuts to the defaults
       </button>
     </div>

@@ -93,7 +93,7 @@ export function SettingsWindow() {
               role="tab"
               aria-selected={tab === t.value}
               onClick={() => setTab(t.value)}
-              className={cx("flex w-[78px] flex-col items-center gap-1 rounded-md py-1.5 text-[11px]", tab === t.value ? "bg-accent-soft text-accent" : "text-text-2 hover:bg-control-hover")}
+              className={cx("flex w-[78px] flex-col items-center gap-1 rounded-md py-1.5 text-[11px]", tab === t.value ? "bg-accent-soft text-accent-text" : "text-text-2 hover:bg-control-hover")}
             >
               <t.icon size={20} strokeWidth={1.6} />
               {t.label}

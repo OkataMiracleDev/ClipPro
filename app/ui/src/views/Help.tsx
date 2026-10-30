@@ -102,7 +102,7 @@ export function Help() {
                     aria-current={p.file === page.file ? "page" : undefined}
                     className={cx("flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[12.5px]", p.file === page.file ? "bg-accent-soft text-text" : "text-text-2 hover:bg-control-hover")}
                   >
-                    {p.file.startsWith("whats-new") && <Sparkles size={12} className="text-accent" />}
+                    {p.file.startsWith("whats-new") && <Sparkles size={12} className="text-accent-text" />}
                     <span className="truncate">{p.title}</span>
                   </button>
                 ))

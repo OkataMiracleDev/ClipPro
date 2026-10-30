@@ -122,7 +122,7 @@ function ItemRow({
         <span className="flex min-w-0 items-center gap-1.5">
           {offline && <Link2Off size={12} className="shrink-0 text-text-3" aria-label="Offline" />}
           {item.weak && swap === undefined && <AlertTriangle size={12} className="shrink-0 text-[var(--c-score-lo)]" aria-label="Weak" />}
-          {swap !== undefined && <Check size={12} className="shrink-0 text-accent" aria-label="Swapped" />}
+          {swap !== undefined && <Check size={12} className="shrink-0 text-accent-text" aria-label="Swapped" />}
           <span className="truncate text-[12.5px]">{item.name}</span>
           {item.flags.map((f) => (
             <span key={f} className="shrink-0 rounded px-1 text-[10px] text-text-2 ring-1 ring-separator-strong">

@@ -103,7 +103,7 @@ export function PeopleSection({ item }: { item: (active: boolean) => string }) {
 
 // ---------- Transcript panel ----------
 
-const SPEAKER_COLOURS = ["text-accent", "text-[oklch(0.65_0.15_150)]", "text-[oklch(0.68_0.15_60)]", "text-[oklch(0.62_0.16_320)]"];
+const SPEAKER_COLOURS = ["text-accent-text", "text-[oklch(0.65_0.15_150)]", "text-[oklch(0.68_0.15_60)]", "text-[oklch(0.62_0.16_320)]"];
 
 function SearchBox() {
   const { clips, setPlayhead, ai } = useApp();

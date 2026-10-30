@@ -42,7 +42,7 @@ function Verdict({ d }: { d: Inspection }) {
   return (
     <div className={`flex flex-col gap-1 rounded-(--radius-control) px-3 py-2 ring-1 ${d.pass ? "bg-accent-soft ring-accent" : "bg-control ring-separator-strong"}`}>
       <div className="flex items-center gap-1.5 text-[13px] font-medium">
-        {d.pass ? <Check size={14} className="text-accent" /> : <X size={14} className="text-text-3" />}
+        {d.pass ? <Check size={14} className="text-accent-text" /> : <X size={14} className="text-text-3" />}
         {d.pass ? `Selected${d.select ? ` · select ${d.select}` : ""}` : "Not selected"}
       </div>
       {d.reasons.map((r) => (

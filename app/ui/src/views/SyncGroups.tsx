@@ -65,7 +65,7 @@ export function SyncGroupsSection() {
       ) : (
         groups.map((g) => (
           <div key={g.id} className="group flex h-7 items-center gap-2 rounded-md px-2 text-[12px] text-text-2 hover:bg-control-hover">
-            <Layers size={13} className="shrink-0 text-accent" />
+            <Layers size={13} className="shrink-0 text-accent-text" />
             <button className="min-w-0 flex-1 truncate text-left" onClick={() => show([], g)}>
               {g.name}
             </button>

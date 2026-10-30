@@ -45,7 +45,7 @@ export const IconButton = forwardRef<
         className={cx(
           "no-drag inline-flex h-7 min-w-7 items-center justify-center rounded-(--radius-control) px-1.5 text-text-2",
           "transition-colors duration-75 hover:bg-control-hover hover:text-text disabled:opacity-40",
-          active && "bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent",
+          active && "bg-accent-soft text-accent-text hover:bg-accent-soft hover:text-accent-text",
           className,
         )}
         {...rest}

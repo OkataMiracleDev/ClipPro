@@ -71,7 +71,7 @@ export function WatchFolders() {
       ) : (
         folders.map((f, i) => (
           <div key={f.path} className="group flex h-7 items-center gap-2 rounded-md px-2 text-[12px] text-text-2 hover:bg-control-hover">
-            <Eye size={13} className="shrink-0 text-accent" />
+            <Eye size={13} className="shrink-0 text-accent-text" />
             <Popover
               trigger={
                 <button className="min-w-0 flex-1 truncate text-left" title={`${f.path}${f.subfolders ? " (with subfolders)" : ""}${f.extensions.length ? ` · ${f.extensions.join(", ")}` : ""}`}>

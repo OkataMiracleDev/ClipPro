@@ -70,7 +70,7 @@ export function SelectEditor() {
       </div>
       {take && (
         <div className="flex flex-wrap items-center gap-1 text-[11px] text-text-2">
-          <span className={cx("rounded px-1.5 py-0.5", take.rank === 1 ? "bg-accent-soft text-accent" : "bg-control")}>
+          <span className={cx("rounded px-1.5 py-0.5", take.rank === 1 ? "bg-accent-soft text-accent-text" : "bg-control")}>
             Take {take.rank} of {take.size}
             {take.rank === 1 ? " · best" : ""}
           </span>
@@ -126,7 +126,7 @@ export function SelectEditor() {
 function OverrideChip({ kind, onRemove }: { kind: string; onRemove: () => void }) {
   const label = { force_in: "Forced in", force_out: "Forced out", trim: "Trimmed", manual: "Manual select" }[kind] ?? kind;
   return (
-    <span className="flex items-center gap-0.5 rounded bg-accent-soft px-1.5 py-0.5 text-[10.5px] text-accent">
+    <span className="flex items-center gap-0.5 rounded bg-accent-soft px-1.5 py-0.5 text-[10.5px] text-accent-text">
       {label}
       <button aria-label={`Remove: ${label}`} onClick={onRemove} className="hover:text-text">
         <X size={10} />

@@ -191,7 +191,7 @@ export function PresetChanges() {
     <Popover
       align="end"
       trigger={
-        <button className="rounded px-1.5 py-1 text-[11px] text-accent hover:bg-control-hover" title="What changed from the preset">
+        <button className="rounded px-1.5 py-1 text-[11px] text-accent-text hover:bg-control-hover" title="What changed from the preset">
           {changes.length} change{changes.length === 1 ? "" : "s"}
         </button>
       }

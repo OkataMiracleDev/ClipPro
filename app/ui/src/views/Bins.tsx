@@ -219,7 +219,7 @@ export function SmartEditor({ open, edit, onClose }: { open: boolean; edit: { id
           {q.rules.map((r, i) => (
             <RuleRow key={i} r={r} onChange={(nr) => setQ({ ...q, rules: q.rules.map((x, j) => (j === i ? nr : x)) })} onRemove={() => setQ({ ...q, rules: q.rules.filter((_, j) => j !== i) })} />
           ))}
-          <button className="flex items-center gap-1 self-start text-[12px] text-accent" onClick={() => setQ({ ...q, rules: [...q.rules, defaultRule("flag")] })}>
+          <button className="flex items-center gap-1 self-start text-[12px] text-accent-text" onClick={() => setQ({ ...q, rules: [...q.rules, defaultRule("flag")] })}>
             <Plus size={12} /> Add condition
           </button>
         </div>

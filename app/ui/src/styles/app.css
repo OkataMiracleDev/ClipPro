@@ -21,9 +21,11 @@
   /* Text */
   --c-text: rgba(255, 255, 255, 0.92);
   --c-text-2: rgba(255, 255, 255, 0.62);
-  --c-text-3: rgba(255, 255, 255, 0.4);
-  /* Accent (user-selectable later) */
-  --c-accent: #0a84ff;
+  --c-text-3: rgba(255, 255, 255, 0.52);
+  /* Accent (user-selectable later). Fills carry white text at ≥ 4.5:1; accent-coloured text
+     uses the lighter --c-accent-text, which is ≥ 4.5:1 on every surface (WCAG AA, P14.6). */
+  --c-accent: #0071e3;
+  --c-accent-text: #4aa3ff;
   --c-accent-fg: #ffffff;
   --c-accent-soft: rgba(10, 132, 255, 0.22);
   --c-focus: rgba(10, 132, 255, 0.4);
@@ -62,9 +64,12 @@
     --c-separator: rgba(0, 0, 0, 0.08);
     --c-separator-strong: rgba(0, 0, 0, 0.14);
     --c-text: rgba(0, 0, 0, 0.88);
-    --c-text-2: rgba(0, 0, 0, 0.58);
-    --c-text-3: rgba(0, 0, 0, 0.38);
-    --c-accent: #007aff;
+    --c-text-2: rgba(0, 0, 0, 0.68);
+    --c-text-3: rgba(0, 0, 0, 0.55);
+    --c-accent: #0066cc;
+    --c-accent-text: #0058b0;
+    --c-danger: #d70015;
+    --c-warning: #946000;
     --c-accent-soft: rgba(0, 122, 255, 0.16);
     --c-focus: rgba(0, 122, 255, 0.4);
     --shadow-float: 0 8px 30px rgba(0, 0, 0, 0.18);
@@ -83,9 +88,12 @@
   --c-separator: rgba(0, 0, 0, 0.08);
   --c-separator-strong: rgba(0, 0, 0, 0.14);
   --c-text: rgba(0, 0, 0, 0.88);
-  --c-text-2: rgba(0, 0, 0, 0.58);
-  --c-text-3: rgba(0, 0, 0, 0.38);
-  --c-accent: #007aff;
+  --c-text-2: rgba(0, 0, 0, 0.68);
+  --c-text-3: rgba(0, 0, 0, 0.55);
+  --c-accent: #0066cc;
+  --c-accent-text: #0058b0;
+  --c-danger: #d70015;
+  --c-warning: #946000;
   --c-accent-soft: rgba(0, 122, 255, 0.16);
   --c-focus: rgba(0, 122, 255, 0.4);
   --shadow-float: 0 8px 30px rgba(0, 0, 0, 0.18);
@@ -108,6 +116,7 @@
   --color-text-3: var(--c-text-3);
   --color-accent: var(--c-accent);
   --color-accent-fg: var(--c-accent-fg);
+  --color-accent-text: var(--c-accent-text);
   --color-accent-soft: var(--c-accent-soft);
   --color-danger: var(--c-danger);
   --color-warning: var(--c-warning);
