@@ -35,6 +35,8 @@ pub struct AppState {
     review: Mutex<Option<(clippro_core::review::TimelineReview, Vec<clippro_core::review::ClipData>)>>,
     /// Cancel flag of the running offload (P13.1), if any.
     offload: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
+    /// Cancel flag of the running proxy or render job (P13.2/P13.3), if any.
+    job: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
 }
 
 /// Self-test runs. `--bench-preview <out.json> <clip>...` measures the preview transports;
@@ -184,6 +186,38 @@ pub struct OffloadProgress {
     pub file: Option<String>,
     pub message: Option<String>,
     pub summary: Option<OffloadSummary>,
+}
+
+/// Proxy and render jobs (P13.2/P13.3). Progress is sent at most every 150 ms.
+#[derive(Serialize, Deserialize, Type, Clone, Debug, Event)]
+pub struct JobProgress {
+    /// proxy | render
+    pub job: String,
+    /// progress | finished | failed | cancelled
+    pub kind: String,
+    pub index: u32,
+    pub count: u32,
+    pub fraction: f32,
+    pub name: Option<String>,
+    pub message: Option<String>,
+    pub outputs: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct CodecChoice {
+    pub value: String,
+    pub label: String,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct RenderRequest {
+    pub out_dir: String,
+    pub template: String,
+    pub stream_copy: bool,
+    pub allow_nearest_keyframe: bool,
+    /// prores422 | prores_hq | dnxhr_hq | h264
+    pub codec: String,
+    pub handles: bool,
 }
 
 // ---------- Commands ----------
@@ -884,6 +918,115 @@ fn offload_start(app: tauri::AppHandle, state: State<'_, AppState>, source: Stri
 #[specta::specta]
 fn offload_cancel(state: State<'_, AppState>) {
     if let Some(c) = lock(&state.offload).as_ref() {
+        c.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+fn start_job(state: &AppState) -> Result<Arc<std::sync::atomic::AtomicBool>, String> {
+    let mut slot = lock(&state.job);
+    if slot.is_some() {
+        return Err("Another proxy or render job is running.".into());
+    }
+    let c = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    *slot = Some(c.clone());
+    Ok(c)
+}
+
+fn finish_job(app: &tauri::AppHandle, job: &str, result: Result<Vec<String>, String>, count: u32) {
+    *lock(&app.state::<AppState>().job) = None;
+    let base = JobProgress { job: job.into(), kind: String::new(), index: count, count, fraction: 1.0, name: None, message: None, outputs: Vec::new() };
+    let e = match result {
+        Ok(outputs) => JobProgress { kind: "finished".into(), outputs, ..base },
+        Err(m) if m == "cancelled" => JobProgress { kind: "cancelled".into(), ..base },
+        Err(m) => JobProgress { kind: "failed".into(), message: Some(m), ..base },
+    };
+    let _ = e.emit(app);
+}
+
+/// Proxy codecs with a working encoder here (P13.2).
+#[tauri::command]
+#[specta::specta]
+async fn proxy_codecs() -> Result<Vec<CodecChoice>, String> {
+    blocking(|| {
+        Ok(clippro_ingest::proxy::available()
+            .into_iter()
+            .map(|c| CodecChoice { value: serde_json::to_value(c).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default(), label: c.label().into() })
+            .collect())
+    })
+    .await
+}
+
+/// Makes and links proxies for `clips` in the background (`JobProgress`, job "proxy").
+#[tauri::command]
+#[specta::specta]
+fn proxies_make(app: tauri::AppHandle, state: State<'_, AppState>, clips: Vec<f64>, codec: String, max_height: u32, out_dir: Option<String>) -> Result<(), String> {
+    let s = state.session()?;
+    let codec: clippro_ingest::proxy::ProxyCodec = serde_json::from_value(serde_json::Value::String(codec)).map_err(|e| e.to_string())?;
+    let cancel = start_job(&state)?;
+    let opts = clippro_ingest::proxy::ProxyOptions { codec, max_height: max_height.clamp(144, 4320), out_dir: out_dir.map(PathBuf::from) };
+    std::thread::spawn(move || {
+        let names = s.clip_names().unwrap_or_default();
+        let count = clips.len() as u32;
+        let mut outputs = Vec::new();
+        let mut last = std::time::Instant::now();
+        let mut result = Ok(());
+        for (i, c) in clips.iter().enumerate() {
+            let id = clippro_types::ClipId(*c as i64);
+            let name = names.get(&id).map(|n| n.0.clone());
+            let r = s.make_proxy(id, &opts, &cancel, |f| {
+                if last.elapsed().as_millis() >= 150 {
+                    last = std::time::Instant::now();
+                    let _ = JobProgress { job: "proxy".into(), kind: "progress".into(), index: i as u32, count, fraction: f, name: name.clone(), message: None, outputs: Vec::new() }.emit(&app);
+                }
+            });
+            match r {
+                Ok(p) => outputs.push(p.display().to_string()),
+                Err(e) => {
+                    result = Err(e.to_string());
+                    break;
+                }
+            }
+        }
+        finish_job(&app, "proxy", result.map(|_| outputs), count);
+    });
+    Ok(())
+}
+
+/// Renders the current selects to files in the background (`JobProgress`, job "render").
+#[tauri::command]
+#[specta::specta]
+fn render_selects(app: tauri::AppHandle, state: State<'_, AppState>, settings: Settings, sort: SortOrder, request: RenderRequest) -> Result<(), String> {
+    let s = state.session()?;
+    let codec: clippro_ingest::render::RenderCodec = serde_json::from_value(serde_json::Value::String(request.codec.clone())).map_err(|e| e.to_string())?;
+    let cancel = start_job(&state)?;
+    let opts = clippro_ingest::render::RenderOptions {
+        stream_copy: request.stream_copy,
+        allow_nearest_keyframe: request.allow_nearest_keyframe,
+        codec,
+        out_dir: PathBuf::from(&request.out_dir),
+        template: request.template.clone(),
+    };
+    std::thread::spawn(move || {
+        let mut last = std::time::Instant::now();
+        let mut count = 0u32;
+        let r = s.render_selects(&settings, sort, &opts, request.handles, &cancel, |i, n, f| {
+            count = n as u32;
+            if last.elapsed().as_millis() >= 150 {
+                last = std::time::Instant::now();
+                let _ = JobProgress { job: "render".into(), kind: "progress".into(), index: i as u32, count: n as u32, fraction: f, name: None, message: None, outputs: Vec::new() }.emit(&app);
+            }
+        });
+        let result = r.map(|v| v.iter().map(|o| o.path.display().to_string()).collect::<Vec<_>>()).map_err(|e| e.to_string());
+        let n = result.as_ref().map(|v| v.len() as u32).unwrap_or(count);
+        finish_job(&app, "render", result, n);
+    });
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn job_cancel(state: State<'_, AppState>) {
+    if let Some(c) = lock(&state.job).as_ref() {
         c.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
@@ -1910,6 +2053,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             multicam_export,
             offload_start,
             offload_cancel,
+            proxy_codecs,
+            proxies_make,
+            render_selects,
+            job_cancel,
             media_source,
             preview_shared,
             inspect_sample,
@@ -1969,7 +2116,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             bench_config,
             bench_report,
         ])
-        .events(collect_events![AnalysisEvent, settings::AppSettings, MediaAdded, OffloadProgress])
+        .events(collect_events![AnalysisEvent, settings::AppSettings, MediaAdded, OffloadProgress, JobProgress])
 }
 
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../ui/src/bindings.ts");

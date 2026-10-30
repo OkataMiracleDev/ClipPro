@@ -37,6 +37,13 @@ export const commands = {
 	 */
 	offloadStart: (source: string, destinations: string[], hash: string, addToProject: boolean) => typedError<null, string>(__TAURI_INVOKE("offload_start", { source, destinations, hash, addToProject })),
 	offloadCancel: () => __TAURI_INVOKE<void>("offload_cancel"),
+	/**  Proxy codecs with a working encoder here (P13.2). */
+	proxyCodecs: () => typedError<CodecChoice[], string>(__TAURI_INVOKE("proxy_codecs")),
+	/**  Makes and links proxies for `clips` in the background (`JobProgress`, job "proxy"). */
+	proxiesMake: (clips: (number | null)[], codec: string, maxHeight: number, outDir: string | null) => typedError<null, string>(__TAURI_INVOKE("proxies_make", { clips, codec, maxHeight, outDir })),
+	/**  Renders the current selects to files in the background (`JobProgress`, job "render"). */
+	renderSelects: (settings: Settings_Deserialize, sort: SortOrder, request: RenderRequest) => typedError<null, string>(__TAURI_INVOKE("render_selects", { settings, sort, request })),
+	jobCancel: () => __TAURI_INVOKE<void>("job_cancel"),
 	/**
 	 *  How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
 	 *  when it can play natively.
@@ -153,6 +160,7 @@ export const commands = {
 export const events = {
 	analysisEvent: makeEvent<AnalysisEvent_Serialize, AnalysisEvent_Deserialize>("analysis-event"),
 	appSettings: makeEvent<AppSettings_Serialize, AppSettings_Deserialize>("app-settings"),
+	jobProgress: makeEvent<JobProgress_Serialize, JobProgress_Deserialize>("job-progress"),
 	mediaAdded: makeEvent<MediaAdded, MediaAdded>("media-added"),
 	offloadProgress: makeEvent<OffloadProgress_Serialize, OffloadProgress_Deserialize>("offload-progress"),
 };
@@ -388,6 +396,11 @@ export type ClipScore = {
 	segments: Segment[],
 };
 
+export type CodecChoice = {
+	value: string,
+	label: string,
+};
+
 /**  Log/colour profiles for preview and log-aware exposure (SPEC VIE-6). */
 export type ColourProfile = "rec709" | "s_log3" | "log_c3" | "log_c4" | "v_log" | "c_log2" | "c_log3" | "n_log" | "f_log2" | "d_log" | "apple_log" | "log3_g10" | "bmd_film_gen5";
 
@@ -548,6 +561,37 @@ export type InspectSub = {
 	weight: number | null,
 };
 
+/**  Proxy and render jobs (P13.2/P13.3). Progress is sent at most every 150 ms. */
+export type JobProgress = JobProgress_Serialize | JobProgress_Deserialize;
+
+/**  Proxy and render jobs (P13.2/P13.3). Progress is sent at most every 150 ms. */
+export type JobProgress_Deserialize = {
+	/**  proxy | render */
+	job: string,
+	/**  progress | finished | failed | cancelled */
+	kind: string,
+	index: number,
+	count: number,
+	fraction: number | null,
+	name?: string | null,
+	message?: string | null,
+	outputs: string[],
+};
+
+/**  Proxy and render jobs (P13.2/P13.3). Progress is sent at most every 150 ms. */
+export type JobProgress_Serialize = {
+	/**  proxy | render */
+	job: string,
+	/**  progress | finished | failed | cancelled */
+	kind: string,
+	index: number,
+	count: number,
+	fraction: number | null,
+	name: string | null,
+	message: string | null,
+	outputs: string[],
+};
+
 export type LongSegmentMode = "split" | "trim_best";
 
 export type MasterSwitches = {
@@ -678,6 +722,16 @@ export type ProjectTemplate = {
 	name: string,
 	/**  The UI's template document (tuning, watch folders, export defaults). */
 	json: string,
+};
+
+export type RenderRequest = {
+	out_dir: string,
+	template: string,
+	stream_copy: boolean,
+	allow_nearest_keyframe: boolean,
+	/**  prores422 | prores_hq | dnxhr_hq | h264 */
+	codec: string,
+	handles: boolean,
 };
 
 export type ReviewAlt = {

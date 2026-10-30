@@ -93,6 +93,23 @@ let mockTuning: string | null = null;
 let mockWatch: { path: string; subfolders: boolean; extensions: string[] }[] = [{ path: "D:/Footage/Incoming", subfolders: true, extensions: ["mov", "mxf"] }];
 const listeners = new Set<(e: AnalysisEvent) => void>();
 const mockSyncGroups: import("./api").SyncGroup[] = [];
+const jobListeners = new Set<(p: import("./api").JobProgress) => void>();
+let mockJobCancel = false;
+/** A demo proxy/render job: about a second per item. */
+function mockJob(job: "proxy" | "render", count: number, dir = "D:/Footage/Proxy") {
+  mockJobCancel = false;
+  let t = 0;
+  const emit = (p: Partial<import("./api").JobProgress>) => jobListeners.forEach((l) => l({ job, kind: "progress", index: 0, count, fraction: 0, name: null, message: null, outputs: [], ...p }));
+  const tick = () => {
+    if (mockJobCancel) return emit({ kind: "cancelled" });
+    t += 0.2;
+    const index = Math.floor(t);
+    if (index >= count) return emit({ kind: "finished", index: count, fraction: 1, outputs: Array.from({ length: count }, (_, i) => `${dir}/select_${String(i + 1).padStart(3, "0")}.mov`) });
+    emit({ index, fraction: t - index, name: demo[index % demo.length]!.clip.name });
+    setTimeout(tick, 200);
+  };
+  setTimeout(tick, 200);
+}
 const offloadListeners = new Set<(p: import("./api").OffloadProgress) => void>();
 let mockOffloadCancel = false;
 let mockSyncId = 0;
@@ -532,6 +549,21 @@ export const mockBackend: Backend = {
   },
   offloadCancel: async () => {
     mockOffloadCancel = true;
+  },
+  proxyCodecs: async () => [
+    { value: "prores_proxy", label: "ProRes 422 Proxy" },
+    { value: "prores_lt", label: "ProRes 422 LT" },
+    { value: "dnxhr_lb", label: "DNxHR LB" },
+    { value: "h264", label: "H.264" },
+  ],
+  proxiesMake: async (clips) => mockJob("proxy", clips.length),
+  renderSelects: async (settings, _sort, request) => mockJob("render", Math.min(12, scoreAll(settings).selects.length), request.out_dir),
+  jobCancel: async () => {
+    mockJobCancel = true;
+  },
+  onJob: async (cb) => {
+    jobListeners.add(cb);
+    return () => jobListeners.delete(cb);
   },
   onOffload: async (cb) => {
     offloadListeners.add(cb);

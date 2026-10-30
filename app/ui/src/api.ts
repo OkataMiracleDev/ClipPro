@@ -75,6 +75,27 @@ export interface Review {
   missing: string[];
 }
 
+export interface RenderRequest {
+  out_dir: string;
+  template: string;
+  stream_copy: boolean;
+  allow_nearest_keyframe: boolean;
+  /** prores422 | prores_hq | dnxhr_hq | h264 */
+  codec: string;
+  handles: boolean;
+}
+
+export interface JobProgress {
+  job: "proxy" | "render";
+  kind: "progress" | "finished" | "failed" | "cancelled";
+  index: number;
+  count: number;
+  fraction: number;
+  name: string | null;
+  message: string | null;
+  outputs: string[];
+}
+
 export interface OffloadSummary {
   files: number;
   bytes: number;
@@ -332,6 +353,12 @@ export interface Backend {
   offloadStart(source: string, destinations: string[], hash: string, addToProject: boolean): Promise<void>;
   offloadCancel(): Promise<void>;
   onOffload(cb: (e: OffloadProgress) => void): Promise<() => void>;
+  /** Proxies and rendered selects (P13.2/P13.3): background jobs reported through `onJob`. */
+  proxyCodecs(): Promise<{ value: string; label: string }[]>;
+  proxiesMake(clips: number[], codec: string, maxHeight: number, outDir: string | null): Promise<void>;
+  renderSelects(settings: Settings, sort: SortOrder, request: RenderRequest): Promise<void>;
+  jobCancel(): Promise<void>;
+  onJob(cb: (e: JobProgress) => void): Promise<() => void>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
   frameUrl(media: number, us: number, width: number): string;
 }
@@ -607,6 +634,15 @@ const tauriBackend: Backend = {
   onMediaAdded: async (cb) => events.mediaAdded.listen((e) => cb(e.payload)),
   offloadStart: async (source, destinations, hash, addToProject) => void unwrap(await commands.offloadStart(source, destinations, hash, addToProject)),
   offloadCancel: async () => void (await commands.offloadCancel()),
+  proxyCodecs: async () => unwrap(await commands.proxyCodecs()),
+  proxiesMake: async (clips, codec, maxHeight, outDir) => void unwrap(await commands.proxiesMake(clips, codec, maxHeight, outDir)),
+  renderSelects: async (settings, sort, request) => void unwrap(await commands.renderSelects(settings, sort, request)),
+  jobCancel: async () => void (await commands.jobCancel()),
+  onJob: async (cb) =>
+    events.jobProgress.listen((e) => {
+      const p = e.payload;
+      cb({ job: p.job === "render" ? "render" : "proxy", kind: p.kind as JobProgress["kind"], index: p.index, count: p.count, fraction: n(p.fraction), name: p.name ?? null, message: p.message ?? null, outputs: p.outputs });
+    }),
   onOffload: async (cb) =>
     events.offloadProgress.listen((e) => {
       const p = e.payload;

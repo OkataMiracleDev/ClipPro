@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { Button, Segmented, Sheet, Switch } from "../components/ui";
-import { pickExportPath } from "../lib/dialogs";
+import { pickExportPath, pickFolder } from "../lib/dialogs";
 import { useApp } from "../store";
 
 interface FormatDef {
@@ -26,6 +26,14 @@ const FORMATS: FormatDef[] = [
   { value: "json", label: "JSON report", hint: "For scripts and pipelines", ext: "json", filter: "JSON", timeline: false },
   { value: "html", label: "HTML report", hint: "Thumbnails, sortable tables, one file", ext: "html", filter: "HTML", timeline: false },
   { value: "pdf", label: "PDF contact sheet", hint: "Best frame of each select, for clients", ext: "pdf", filter: "PDF", timeline: false },
+  { value: "render", label: "Rendered clips", hint: "A media file per select, with source timecode", ext: "", filter: "", timeline: false },
+];
+
+const RENDER_CODECS = [
+  { value: "prores422", label: "ProRes 422" },
+  { value: "prores_hq", label: "ProRes 422 HQ" },
+  { value: "dnxhr_hq", label: "DNxHR HQ" },
+  { value: "h264", label: "H.264" },
 ];
 
 type GroupBy = "clip" | "camera" | "date" | "reel" | "rating" | "label";
@@ -44,7 +52,7 @@ const REPORTS = new Set(["html", "pdf"]);
 
 export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { settings, sort, project, scored, toast } = useApp();
-  const [format, setFormat] = useState("xmeml");
+  const [format, setFormat] = useState(() => (new URLSearchParams(location.search).get("export") === "render" ? "render" : "xmeml"));
   // `?export=stringout` (screenshots) starts on the stringout layout.
   const [layout, setLayout] = useState<"selects" | "with_rejects" | "stringout">(() => (new URLSearchParams(location.search).get("export") === "stringout" ? "stringout" : "selects"));
   const [groupBy, setGroupBy] = useState<GroupBy>("clip");
@@ -57,11 +65,27 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
   const [markers, setMarkers] = useState(true);
   const [markerName, setMarkerName] = useState("Select {index} · {score}");
   const [busy, setBusy] = useState(false);
+  const [copy, setCopy] = useState(true);
+  const [nearest, setNearest] = useState(false);
+  const [renderCodec, setRenderCodec] = useState("prores422");
+  const [template, setTemplate] = useState("{clip}_{index}_{tc_in}");
   const def = FORMATS.find((f) => f.value === format) ?? FORMATS[0]!;
   const count = scored?.summary.count ?? 0;
 
   async function run() {
     if (!settings) return;
+    if (format === "render") {
+      const dir = await pickFolder("Choose a folder for the rendered selects");
+      if (!dir) return;
+      try {
+        await api.renderSelects(settings, sort, { out_dir: dir, template, stream_copy: copy, allow_nearest_keyframe: copy && nearest, codec: renderCodec, handles });
+        toast(`Rendering ${count} select${count === 1 ? "" : "s"} in the background`);
+        onOpenChange(false);
+      } catch (e) {
+        toast(`Couldn’t start rendering: ${e}`, "error");
+      }
+      return;
+    }
     const base = `${(project?.name ?? "ClipPro").replace(/[\\/:*?"<>|]/g, "-")} selects`;
     const path = await pickExportPath(base, def.ext, def.filter);
     if (!path) return;
@@ -104,7 +128,7 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
               role="radio"
               aria-checked={f.value === format}
               onClick={() => setFormat(f.value)}
-              className={`rounded-(--radius-control) px-2.5 py-2 text-left ring-1 ${f.value === format ? "bg-accent-soft ring-accent" : "ring-separator-strong hover:bg-control-hover"}`}
+              className={`rounded-(--radius-control) px-2.5 py-2 text-left ring-1 [&:last-child:nth-child(odd)]:col-span-2 ${f.value === format ? "bg-accent-soft ring-accent" : "ring-separator-strong hover:bg-control-hover"}`}
             >
               <span className="block text-[13px] font-medium">{f.label}</span>
               <span className="block text-[11px] text-text-3">{f.hint}</span>
@@ -202,13 +226,42 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
             <Switch label="Include audio" checked={audio} onChange={setAudio} />
           </label>
         )}
-        {!REPORTS.has(format) && (
+        {!REPORTS.has(format) && format !== "render" && (
           <label className={row}>
             <span className="text-[12px] text-text-2">Markers</span>
             <Switch label="Markers" checked={markers} onChange={setMarkers} />
           </label>
         )}
-        {markers && !REPORTS.has(format) && (
+        {format === "render" && (
+          <div className="flex flex-col gap-2.5 rounded-(--radius-control) bg-control-hover/40 p-2.5 ring-1 ring-separator ring-inset">
+            <label className={row}>
+              <span className="text-[12px] text-text-2">Copy without re-encoding when the in point is a keyframe</span>
+              <Switch label="Stream copy" checked={copy} onChange={setCopy} />
+            </label>
+            {copy && (
+              <label className={row}>
+                <span className="text-[12px] text-text-2">Start at the keyframe before the in point if needed</span>
+                <Switch label="Allow nearest keyframe" checked={nearest} onChange={setNearest} />
+              </label>
+            )}
+            <label className={row}>
+              <span className="text-[12px] text-text-2">{copy ? "Otherwise encode as" : "Encode as"}</span>
+              <select aria-label="Codec" value={renderCodec} onChange={(e) => setRenderCodec(e.target.value)} className="h-6 rounded border border-separator-strong bg-control px-1.5 text-[12px]">
+                {RENDER_CODECS.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[12px] text-text-2">File names</span>
+              <input value={template} onChange={(e) => setTemplate(e.target.value)} aria-label="File names" className="h-7 rounded border border-separator-strong bg-control px-2 font-mono text-[12px]" />
+              <span className="text-[11px] text-text-3">Tokens: {"{clip} {index} {tc_in} {tc_out} {score} {rating} {label}"}. Files are QuickTime (.mov).</span>
+            </label>
+          </div>
+        )}
+        {markers && !REPORTS.has(format) && format !== "render" && (
           <label className="flex flex-col gap-1">
             <span className="text-[12px] text-text-2">Marker name</span>
             <input

@@ -104,6 +104,36 @@ function AudioStreamMenu({ c, item }: { c: Clip; item: string }) {
   );
 }
 
+/** "Make proxy ›": the codecs that work on this machine (P13.2). */
+function ProxyMenu({ c, item }: { c: Clip; item: string }) {
+  const [codecs, setCodecs] = useState<{ value: string; label: string }[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    proxyCodecs ??= api.proxyCodecs();
+    proxyCodecs.then((r) => live && setCodecs(r), () => live && setCodecs([]));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <CM.Sub>
+      <CM.SubTrigger className={item} disabled={c.missing || !codecs?.length}>
+        Make proxy ›
+      </CM.SubTrigger>
+      <CM.Portal>
+        <CM.SubContent className="z-50 min-w-48 rounded-lg bg-raised p-1 shadow-(--shadow-float) ring-1 ring-separator-strong">
+          {(codecs ?? []).map((k) => (
+            <CM.Item key={k.value} className={item} onSelect={() => void api.proxiesMake([c.clip], k.value, 1080, null).catch((e) => useApp.getState().toast(`${e}`, "error"))}>
+              {k.label}, up to 1080p
+            </CM.Item>
+          ))}
+        </CM.SubContent>
+      </CM.Portal>
+    </CM.Sub>
+  );
+}
+let proxyCodecs: Promise<{ value: string; label: string }[]> | null = null;
+
 /** Right-click menu for a clip (SPEC P5.3). */
 function ClipMenu({ c, children }: { c: Clip; children: React.ReactNode }) {
   const { retryClip, bumpClip, linkProxy, toast } = useApp.getState();
@@ -129,6 +159,7 @@ function ClipMenu({ c, children }: { c: Clip; children: React.ReactNode }) {
           <CM.Item className={item} onSelect={() => useSync.getState().show([c.clip])}>
             Sync with other clips…
           </CM.Item>
+          <ProxyMenu c={c} item={item} />
           <CM.Sub>
             <CM.SubTrigger className={item}>Move to bin ›</CM.SubTrigger>
             <CM.Portal>

@@ -7,6 +7,7 @@ import { api } from "../api";
 import { Spinner } from "../components/ui";
 import { formatDuration } from "../lib/typed";
 import { useApp } from "../store";
+import { JobStatus } from "./Jobs";
 
 let info: Promise<{ hwDecode: boolean; version: string }> | null = null;
 
@@ -57,6 +58,7 @@ export function StatusBar() {
             ? `${analysis.paused ? "Paused" : "Analysing"} · ${done} of ${total} done · ${Math.round(fraction * 100)}%${eta !== null && !analysis.paused ? ` · about ${formatDuration(Math.max(1, Math.round(eta)))} left` : ""}`
             : `${done} of ${total} analysed${failed ? ` · ${failed} failed` : ""}`}
       </span>
+      <JobStatus />
       {scoring && (
         <span className="flex items-center gap-1">
           <Spinner size={10} /> Scoring…
