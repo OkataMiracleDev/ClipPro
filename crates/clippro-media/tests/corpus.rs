@@ -338,3 +338,18 @@ fn preview_seek_accuracy_across_codecs() {
         assert!(misses.is_empty(), "{name}: wrong frames (target, got, want): {misses:?}");
     }
 }
+
+/// Keyframe lists for render-selects stream copy (P13.3): H.264 with GOP 50 at 25 fps has a
+/// keyframe at least every 2 s from 0; ProRes is all keyframes.
+#[test]
+fn keyframe_lists() {
+    let Some(dir) = corpus() else { return };
+    let k = keyframes(&dir.join("tripod_static.mp4")).unwrap();
+    assert_eq!(k.first(), Some(&0), "{k:?}");
+    assert!(k.windows(2).all(|w| w[1] > w[0] && w[1] - w[0] <= 2_040_000), "{k:?}");
+    let info = probe(&dir.join("tripod_static.mp4")).unwrap();
+    assert!(k.len() as i64 >= info.duration_us / 2_000_000, "{k:?}");
+    let p = keyframes(&dir.join("prores_hq.mov")).unwrap();
+    assert_eq!(p.len(), 50, "every ProRes frame is a keyframe");
+    assert_eq!(p[1], 40_000);
+}

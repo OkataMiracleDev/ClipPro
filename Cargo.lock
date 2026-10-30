@@ -698,6 +698,8 @@ version = "0.1.0"
 name = "clippro-ingest"
 version = "0.1.0"
 dependencies = [
+ "clippro-media",
+ "clippro-types",
  "md-5",
  "quick-xml",
  "serde",

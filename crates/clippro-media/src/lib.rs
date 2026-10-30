@@ -9,4 +9,4 @@ pub mod video;
 
 pub use ffi::{MediaError, Result};
 pub use probe::{probe, AudioInfo, MediaInfo, VideoInfo};
-pub use video::{sample_plan, DecodeOptions, FrameView, HwMode, SampleFrames, VideoDecoder};
+pub use video::{keyframes, sample_plan, DecodeOptions, FrameView, HwMode, SampleFrames, VideoDecoder};

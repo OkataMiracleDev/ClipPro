@@ -779,6 +779,45 @@ pub fn view(f: &Frame, pts_us: i64) -> Result<FrameView<'_>> {
     Ok(FrameView { width: w, height: h, pts_us, luma, chroma })
 }
 
+/// Keyframe times of the best video stream (µs from its first frame): from the container index
+/// when it has one, else by reading every packet (no decoding). Index entries carry decode
+/// timestamps, so they are measured from the first entry, which removes a constant B-frame delay.
+pub fn keyframes(path: &Path) -> Result<Vec<i64>> {
+    let mut input = Input::open(path)?;
+    let stream = input.best_stream(ff::AVMediaType::AVMEDIA_TYPE_VIDEO).ok_or(MediaError::NoStream("video"))?;
+    let st = input.streams()[stream];
+    let (tb, start) = unsafe { ((*st).time_base, if (*st).start_time != ff::AV_NOPTS_VALUE { (*st).start_time } else { 0 }) };
+    let mut out = Vec::new();
+    let n = unsafe { ff::avformat_index_get_entries_count(st) };
+    let mut first: Option<i64> = None;
+    for i in 0..n {
+        let e = unsafe { ff::avformat_index_get_entry(st, i) };
+        if e.is_null() {
+            continue;
+        }
+        let (ts, flags) = unsafe { ((*e).timestamp, (*e).flags() as i32) };
+        let base = *first.get_or_insert(ts);
+        if flags & ff::AVINDEX_KEYFRAME as i32 != 0 {
+            out.push(ts_to_us(ts - base, tb));
+        }
+    }
+    if out.is_empty() {
+        let mut pkt = Packet::new();
+        while input.read(&mut pkt) >= 0 {
+            if pkt.stream() == stream && pkt.is_key() {
+                let pts = pkt.pts();
+                if pts != ff::AV_NOPTS_VALUE {
+                    out.push(ts_to_us(pts - start, tb));
+                }
+            }
+            pkt.unref();
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
