@@ -9,6 +9,9 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[dev-dependencies]
+zstd = "0.13"
+
 [dependencies]
 clippro-types = { path = "../clippro-types" }
 clippro-measure = { path = "../clippro-measure" }

@@ -165,6 +165,11 @@ pub fn decode(blob: &[u8]) -> Result<MeasurementSet, CodecError> {
         return Err(CodecError::Version(ver));
     }
     let n = r.u32()? as usize;
+    // Each sample stores at least a time (8), flags (4) and a pHash (8): a count the payload
+    // can't hold is corruption, rejected before anything is allocated for it.
+    if n > raw.len() / 20 {
+        return Err(CodecError::Truncated);
+    }
     let mut ms = MeasurementSet::new(n);
     ms.cols = vec![vec![f32::NAN; n]; NCOLS];
     ms.rate_hz = r.f64()?;
