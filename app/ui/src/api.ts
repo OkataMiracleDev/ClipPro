@@ -351,6 +351,8 @@ export interface Backend {
   linkProxy(clip: number, path: string): Promise<void>;
   reveal(path: string): Promise<void>;
   systemInfo(): Promise<{ hwDecode: boolean; version: string }>;
+  /** A project passed on the command line (a double-clicked `.clippro` file). */
+  startupProject(): Promise<string | null>;
   /** Sub-metrics in `Settings.subs` order. */
   submetrics(): Promise<import("./lib/submetrics").SubMetricInfo[]>;
   /** Clips best matching the camera-movement filter (live preview). */
@@ -796,6 +798,7 @@ const tauriBackend: Backend = {
       const p = e.payload;
       cb({ kind: p.kind as AiProgress["kind"], model: p.model ?? null, clip: p.clip ?? null, stage: (p.stage ?? null) as AiProgress["stage"], fraction: n(p.fraction), index: p.index, count: p.count, message: p.message ?? null });
     }),
+  startupProject: async () => (await commands.startupProject()) ?? null,
   systemInfo: async () => {
     const r = unwrap(await commands.systemInfo());
     return { hwDecode: r.hw_decode, version: r.version };

@@ -261,7 +261,11 @@ export const useApp = create<AppState>((set, get) => ({
       });
       // Browser preview: open the mock demo project straight away. The app reopens the last one.
       if (!isTauri) await get().openProject("Demo.clippro");
-      else if (st.reopen_last && st.last_project) await get().openProject(st.last_project);
+      else {
+        const start = await api.startupProject();
+        if (start) await get().openProject(start);
+        else if (st.reopen_last && st.last_project) await get().openProject(st.last_project);
+      }
     } catch (e) {
       get().toast(String(e), "error");
     }

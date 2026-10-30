@@ -162,6 +162,8 @@ export const commands = {
 	benchConfig: () => typedError<BenchClip[] | null, string>(__TAURI_INVOKE("bench_config")),
 	/**  Writes the benchmark report and exits. */
 	benchReport: (report: string) => typedError<null, string>(__TAURI_INVOKE("bench_report", { report })),
+	/**  A project passed on the command line (double-clicking a `.clippro` file), if any. */
+	startupProject: () => __TAURI_INVOKE<string | null>("startup_project"),
 	aiModels: () => __TAURI_INVOKE<AiModels>("ai_models"),
 	/**  Downloads models one after another in the background (`AiProgress` download events). */
 	aiModelDownload: (ids: string[]) => typedError<null, string>(__TAURI_INVOKE("ai_model_download", { ids })),

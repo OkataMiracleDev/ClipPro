@@ -1888,6 +1888,13 @@ fn e2e_enabled() -> bool {
     e2e_mode()
 }
 
+/// A project passed on the command line (double-clicking a `.clippro` file), if any.
+#[tauri::command]
+#[specta::specta]
+fn startup_project() -> Option<String> {
+    std::env::args().skip(1).find(|a| a.to_lowercase().ends_with(".clippro") && std::path::Path::new(a).is_file())
+}
+
 /// Machine capabilities for the status bar.
 #[tauri::command]
 #[specta::specta]
@@ -2206,6 +2213,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             audio_clock,
             bench_config,
             bench_report,
+            startup_project,
             ai::ai_models,
             ai::ai_model_download,
             ai::ai_download_cancel,

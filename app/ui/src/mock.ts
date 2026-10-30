@@ -640,6 +640,7 @@ export const mockBackend: Backend = {
     const m = mockModels.find((x) => x.id === id);
     if (m) m.installed = false;
   },
+  startupProject: async () => null,
   aiRun: async () => 0,
   aiCancel: async () => {},
   aiRunning: async () => false,

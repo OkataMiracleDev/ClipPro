@@ -6,8 +6,14 @@
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": { "script": "npm run dev", "cwd": "../ui" },
-    "beforeBuildCommand": { "script": "npm run build", "cwd": "../ui" }
+    "beforeDevCommand": {
+      "script": "npm run dev",
+      "cwd": "../ui"
+    },
+    "beforeBuildCommand": {
+      "script": "npm run build && cargo build --release -p clippro-cli",
+      "cwd": "../ui"
+    }
   },
   "app": {
     "windows": [
@@ -26,19 +32,64 @@
     ],
     "security": {
       "csp": "default-src 'self'; img-src 'self' data: blob: asset: http://asset.localhost clippro: http://clippro.localhost; media-src 'self' blob: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ipc: http://ipc.localhost clippro: http://clippro.localhost",
-      "assetProtocol": { "enable": true, "scope": [] }
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
     "publisher": "Miracle Okata",
     "copyright": "Copyright (c) 2026 Miracle Okata",
     "category": "Video",
     "shortDescription": "Footage selects for editors",
     "windows": {
-      "nsis": { "installMode": "currentUser" }
-    }
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "startMenuFolder": "ClipPro"
+      },
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    },
+    "resources": {
+      "../../third_party/ffmpeg/bin/avcodec-63.dll": "avcodec-63.dll",
+      "../../third_party/ffmpeg/bin/avdevice-63.dll": "avdevice-63.dll",
+      "../../third_party/ffmpeg/bin/avfilter-12.dll": "avfilter-12.dll",
+      "../../third_party/ffmpeg/bin/avformat-63.dll": "avformat-63.dll",
+      "../../third_party/ffmpeg/bin/avutil-61.dll": "avutil-61.dll",
+      "../../third_party/ffmpeg/bin/swresample-7.dll": "swresample-7.dll",
+      "../../third_party/ffmpeg/bin/swscale-10.dll": "swscale-10.dll",
+      "../../third_party/ffmpeg/bin/ffmpeg.exe": "ffmpeg.exe",
+      "../../target/release/DirectML.dll": "DirectML.dll",
+      "licenses/NOTICE.md": "licenses/NOTICE.md",
+      "licenses/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt",
+      "licenses/THIRD-PARTY-RUST.md": "licenses/THIRD-PARTY-RUST.md",
+      "licenses/THIRD-PARTY-JS.md": "licenses/THIRD-PARTY-JS.md",
+      "../../target/release/clippro-cli.exe": "clippro-cli.exe"
+    },
+    "license": "LicenseRef-Proprietary",
+    "fileAssociations": [
+      {
+        "ext": [
+          "clippro"
+        ],
+        "name": "ClipPro project",
+        "description": "ClipPro project",
+        "role": "Editor",
+        "mimeType": "application/x-clippro"
+      }
+    ]
   }
 }
