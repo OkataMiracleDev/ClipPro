@@ -29,4 +29,6 @@ export PATH="$HOME/.cargo/bin:$_vc/bin/Hostx64/x64:$_sdk/bin/$_sdk_ver/x64:$_tp/
 export CMAKE_GENERATOR=Ninja
 export CMAKE_C_COMPILER="$(_w "$_vc/bin/Hostx64/x64/cl.exe")"
 export CMAKE_CXX_COMPILER="$(_w "$_vc/bin/Hostx64/x64/cl.exe")"
+# AI models for tests and dev runs (the app uses %LOCALAPPDATA%\ClipPro\models).
+export CLIPPRO_MODELS="${CLIPPRO_MODELS:-$(_w "$_root/target/models")}"
 unset _root _tp _msvc_ver _sdk_ver _vc _sdk

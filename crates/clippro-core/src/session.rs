@@ -95,11 +95,15 @@ pub struct Session {
     sched: Scheduler,
     events: Mutex<Receiver<Event>>,
     pub(crate) engine: Mutex<Engine>,
-    opts: SessionOptions,
-    cal: Calibration,
+    pub(crate) opts: SessionOptions,
+    pub(crate) cal: Calibration,
     loaded: Mutex<HashMap<i64, Arc<MeasurementSet>>>,
     /// Decoded audio sets by run id (None = the run has no audio).
     loaded_audio: Mutex<HashMap<i64, Option<Arc<clippro_audio::AudioSet>>>>,
+    /// Stored AI results by media id (P12).
+    pub(crate) ai_cache: Mutex<HashMap<i64, Arc<crate::ai::AiData>>>,
+    /// CLIP, loaded on the first visual search.
+    pub(crate) clip_model: Mutex<Option<clippro_ai::clip::Clip>>,
 }
 
 impl Session {
@@ -126,6 +130,8 @@ impl Session {
             cal,
             loaded: Mutex::new(HashMap::new()),
             loaded_audio: Mutex::new(HashMap::new()),
+            ai_cache: Mutex::new(HashMap::new()),
+            clip_model: Mutex::new(None),
         }
     }
 
@@ -492,6 +498,40 @@ impl Session {
 
     /// Engine inputs for every clip with finished measurements (clip order).
     pub fn clip_inputs(&self) -> Result<Vec<ClipInput>> {
+        self.clip_inputs_for(&[])
+    }
+
+    /// Engine inputs with the AI Content columns, flags and snap points; `shot_types` drives the
+    /// Shot-type match sub-metric.
+    pub fn clip_inputs_for(&self, shot_types: &[String]) -> Result<Vec<ClipInput>> {
+        let mut out = self.base_inputs()?;
+        let media: HashMap<ClipId, i64> = lock(&self.db).clips()?.into_iter().map(|c| (c.id, c.media_id.0)).collect();
+        for c in &mut out {
+            let Some(&m) = media.get(&c.id) else { continue };
+            let (cols, flags, snaps) = self.ai_inputs(MediaId(m), &c.ms.time_us, shot_types);
+            if cols.is_empty() && flags.is_none() && snaps.is_none() {
+                continue;
+            }
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(&self.ai_data(MediaId(m)).map(|d| d.version).unwrap_or(0), &mut h);
+            std::hash::Hash::hash(shot_types, &mut h);
+            c.version ^= std::hash::Hasher::finish(&h) & 0x00FF_FFFF_0000_0000;
+            for (k, v) in cols {
+                c.extra.insert(k, Arc::new(v));
+            }
+            if let Some(f) = flags {
+                let merged = match &c.extra_flags {
+                    Some(a) => a.iter().zip(&f).map(|(x, y)| x | y).collect(),
+                    None => f,
+                };
+                c.extra_flags = Some(Arc::new(merged));
+            }
+            c.snaps = snaps.map(Arc::new);
+        }
+        Ok(out)
+    }
+
+    fn base_inputs(&self) -> Result<Vec<ClipInput>> {
         let key = self.run_params().key();
         let db = lock(&self.db);
         let mut out = Vec::new();
@@ -594,13 +634,19 @@ impl Session {
 
     /// Scores every analysed clip with `settings`.
     pub fn score(&self, settings: &Settings) -> Result<Selects> {
-        let clips = self.clip_inputs()?;
+        let clips = self.clip_inputs_for(&settings.shot_types)?;
         let overrides = self.overrides()?;
-        let mut engine = lock(&self.engine);
-        engine.retain(&clips.iter().map(|c| c.id).collect::<Vec<_>>());
-        engine
-            .score(&clips, settings, &overrides, &AtomicBool::new(false))
-            .ok_or_else(|| SessionError::Other("scoring was cancelled".into()))
+        let mut sel = {
+            let mut engine = lock(&self.engine);
+            engine.retain(&clips.iter().map(|c| c.id).collect::<Vec<_>>());
+            engine
+                .score(&clips, settings, &overrides, &AtomicBool::new(false))
+                .ok_or_else(|| SessionError::Other("scoring was cancelled".into()))?
+        };
+        if settings.best_take_only {
+            self.apply_best_take(&mut sel)?;
+        }
+        Ok(sel)
     }
 
     /// Builds an export timeline from the current selects (SPEC §16). Exports always point at

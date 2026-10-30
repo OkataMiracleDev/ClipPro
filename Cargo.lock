@@ -713,6 +713,7 @@ name = "clippro-core"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "clippro-ai",
  "clippro-analysis",
  "clippro-audio",
  "clippro-ingest",
@@ -722,6 +723,7 @@ dependencies = [
  "clippro-project",
  "clippro-score",
  "clippro-testgen",
+ "clippro-transcribe",
  "clippro-types",
  "image-webp",
  "notify",
