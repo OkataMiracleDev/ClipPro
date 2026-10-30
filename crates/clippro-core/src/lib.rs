@@ -10,6 +10,7 @@ pub mod review;
 pub mod watch;
 pub mod session;
 pub mod store;
+pub mod stringout;
 
 pub use inspect::Inspection;
 pub use session::{ClipStatus, ImportReport, Session, SessionError, SessionOptions};

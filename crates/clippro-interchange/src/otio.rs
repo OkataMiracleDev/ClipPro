@@ -35,6 +35,9 @@ pub fn export(tl: &Timeline) -> String {
             .iter()
             .map(|it| match it {
                 Item::Gap(n) => json!({ "OTIO_SCHEMA": "Gap.1", "name": "", "source_range": range(0, *n, tl.rate), "effects": [], "markers": [], "metadata": {} }),
+                Item::Slug { len, title } => json!({ "OTIO_SCHEMA": "Gap.1", "name": title, "source_range": range(0, *len, tl.rate), "effects": [],
+                    "markers": [{ "OTIO_SCHEMA": "Marker.2", "name": title, "comment": "", "color": "WHITE", "marked_range": range(0, 1, tl.rate), "metadata": {} }],
+                    "metadata": { "clippro": { "slug": true } } }),
                 Item::Clip(c) => {
                     let m = &tl.media[c.media];
                     let start = m.start_tc_frames + c.src_in;

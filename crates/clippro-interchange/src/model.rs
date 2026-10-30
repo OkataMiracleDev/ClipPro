@@ -111,6 +111,9 @@ pub enum Item {
     Clip(ClipItem),
     /// A gap in timeline frames.
     Gap(i64),
+    /// Titled filler in timeline frames (stringout group heads, SPEC EXP-12): a Slug generator
+    /// in FCP7 XML, a named gap with a marker in FCPXML/OTIO, a black event in EDLs.
+    Slug { len: i64, title: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -149,7 +152,7 @@ impl Timeline {
     /// Timeline length of an item in timeline frames.
     pub fn item_len(&self, item: &Item) -> i64 {
         match item {
-            Item::Gap(n) => *n,
+            Item::Gap(n) | Item::Slug { len: n, .. } => *n,
             Item::Clip(c) => convert_frames(c.len(), self.media[c.media].rate, self.rate),
         }
     }
@@ -364,6 +367,42 @@ pub fn build(media: Vec<MediaRef>, selects: &[SelectInput], opts: &ExportOptions
     Timeline { name: opts.name.clone(), rate, drop_frame: drop, start_tc_frames, width, height, media, video, with_audio: opts.with_audio }
 }
 
+/// What separates stringout groups (SPEC EXP-12).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum Separator {
+    #[default]
+    None,
+    /// Empty space between groups.
+    Gap { seconds: f64 },
+    /// A titled slug before every group.
+    Slug { seconds: f64 },
+}
+
+/// Builds a stringout (P11.6): `groups` are (title, selects in play order), in play order. The
+/// selects run back to back inside a group; groups are separated by gaps or headed by slugs.
+pub fn build_stringout(media: Vec<MediaRef>, groups: &[(String, Vec<SelectInput>)], sep: Separator, opts: &ExportOptions) -> Timeline {
+    let groups: Vec<&(String, Vec<SelectInput>)> = groups.iter().filter(|g| !g.1.is_empty()).collect();
+    let flat: Vec<SelectInput> = groups.iter().flat_map(|g| g.1.iter().cloned()).collect();
+    let mut tl = build(media, &flat, &ExportOptions { layout: Layout::SelectsOnly, gap_s: 0.0, ..opts.clone() });
+    let frames = |s: f64| (s.max(0.0) * tl.rate.fps()).round().max(1.0) as i64;
+    let mut clips = tl.video.first_mut().map(|t| std::mem::take(&mut t.items)).unwrap_or_default().into_iter();
+    let mut items = Vec::new();
+    for (gi, (title, sel)) in groups.iter().enumerate() {
+        match sep {
+            Separator::Gap { seconds } if gi > 0 && seconds > 0.0 => items.push(Item::Gap(frames(seconds))),
+            Separator::Slug { seconds } => items.push(Item::Slug { len: frames(seconds), title: title.clone() }),
+            _ => {}
+        }
+        items.extend(clips.by_ref().take(sel.len()));
+    }
+    if let Some(t) = tl.video.first_mut() {
+        t.name = "Stringout".into();
+        t.items = items;
+    }
+    tl
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -449,6 +488,44 @@ pub(crate) mod tests {
         let Item::Clip(c) = &t.video[0].items[0] else { panic!() };
         assert_eq!((c.src_in, c.src_out), (25, 100));
         assert_eq!(c.markers[0].at, 0);
+    }
+
+    #[test]
+    fn stringout_groups_and_separators() {
+        let sel = selects();
+        let groups = vec![("A001".to_string(), vec![sel[0].clone(), sel[1].clone()]), ("Empty".to_string(), vec![]), ("A002".to_string(), vec![sel[2].clone()])];
+        let kinds = |t: &Timeline| -> Vec<String> {
+            t.video[0]
+                .items
+                .iter()
+                .map(|i| match i {
+                    Item::Clip(c) => c.name.clone(),
+                    Item::Gap(n) => format!("gap {n}"),
+                    Item::Slug { len, title } => format!("slug {title} {len}"),
+                })
+                .collect()
+        };
+        let o = ExportOptions::default();
+        let none = build_stringout(media(2), &groups, Separator::None, &o);
+        assert_eq!(kinds(&none), ["A001C003", "A001C003", "A002C004"]);
+        let gap = build_stringout(media(2), &groups, Separator::Gap { seconds: 2.0 }, &o);
+        assert_eq!(kinds(&gap), ["A001C003", "A001C003", "gap 50", "A002C004"]);
+        let slug = build_stringout(media(2), &groups, Separator::Slug { seconds: 3.0 }, &o);
+        assert_eq!(kinds(&slug), ["slug A001 75", "A001C003", "A001C003", "slug A002 75", "A002C004"]);
+        assert_eq!(slug.duration(), none.duration() + 150);
+        // Every exporter writes the slugs; importers read them back as gaps, clips unmoved.
+        for f in [crate::Format::Xmeml, crate::Format::Fcpxml, crate::Format::Otio, crate::Format::Edl] {
+            let text = f.render(&slug);
+            assert!(text.contains("A002"), "{f:?}");
+            let back = crate::import::import(&text, slug.rate).unwrap();
+            let sig = |t: &Timeline| crate::import::edit_signature(t).iter().map(|c| (c.2, c.3, c.4)).collect::<Vec<_>>();
+            let mut back = back;
+            crate::import::relink(&mut back, &slug.media);
+            assert_eq!(sig(&back), sig(&slug), "{f:?}");
+        }
+        assert!(crate::Format::Xmeml.render(&slug).contains("<effectid>Slug</effectid>"));
+        assert!(crate::Format::Edl.render(&slug).contains("001  BL       V     C        00:00:00:00 00:00:03:00 01:00:00:00 01:00:03:00
+* A001"));
     }
 
     #[test]

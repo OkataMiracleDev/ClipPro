@@ -51,6 +51,22 @@ pub fn export_edl(tl: &Timeline, long_reels: bool) -> String {
     let Some(track) = tl.video.first() else { return out };
     let mut n = 0;
     for (it, (rin, rout)) in track.items.iter().zip(tl.positions(track)) {
+        if let Item::Slug { title, .. } = it {
+            // Black for the slug's length, titled.
+            n += 1;
+            out.push_str(&format!(
+                "{n:03}  BL       V     C        {} {} {} {}
+* {}
+
+",
+                tc(0, tl),
+                tc(rout - rin, tl),
+                tc(tl.start_tc_frames + rin, tl),
+                tc(tl.start_tc_frames + rout, tl),
+                ascii(title)
+            ));
+            continue;
+        }
         let Item::Clip(c) = it else { continue };
         n += 1;
         let m = &tl.media[c.media];

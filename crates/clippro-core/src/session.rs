@@ -605,11 +605,19 @@ impl Session {
     /// Builds an export timeline from the current selects (SPEC §16). Exports always point at
     /// the original media, even when a proxy was analysed.
     pub fn export_timeline(&self, settings: &Settings, sort: SortOrder, opts: &ExportOptions) -> Result<Timeline> {
+        let (media, selects, _) = self.export_inputs(settings, sort)?;
+        Ok(clippro_interchange::build(media, &selects, opts))
+    }
+
+    /// The selects in `sort` order as export inputs, with the media they point at and, per
+    /// select, its clip and media metadata (for stringout grouping).
+    pub(crate) fn export_inputs(&self, settings: &Settings, sort: SortOrder) -> Result<(Vec<MediaRef>, Vec<SelectInput>, Vec<(ClipId, MediaInfo)>)> {
         let sel = self.score(settings)?;
         let annotations = self.annotations()?;
         let refs = sel.sorted(sort);
         let db = lock(&self.db);
         let mut media: Vec<MediaRef> = Vec::new();
+        let mut infos: Vec<MediaInfo> = Vec::new();
         let mut index: HashMap<ClipId, usize> = HashMap::new();
         let clips = db.clips()?;
         for r in &refs {
@@ -621,11 +629,14 @@ impl Session {
             let info: MediaInfo = serde_json::from_str(&m.probe_json).map_err(|e| SessionError::Other(e.to_string()))?;
             index.insert(r.clip, media.len());
             media.push(media_ref(&info, m.id.0, &c.name, PathBuf::from(&m.path)));
+            infos.push(info);
         }
         drop(db);
         let mut selects = Vec::new();
+        let mut meta = Vec::new();
         for r in &refs {
             let Some(&mi) = index.get(&r.clip) else { continue };
+            meta.push((r.clip, infos[mi].clone()));
             let flags = sel
                 .clips
                 .iter()
@@ -656,7 +667,7 @@ impl Session {
                 note: ann.map(|a| a.note.clone()).unwrap_or_default(),
             });
         }
-        Ok(clippro_interchange::build(media, &selects, opts))
+        Ok((media, selects, meta))
     }
 
     /// Renders and writes an export file; records it in the project's export history.

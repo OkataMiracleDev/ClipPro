@@ -104,8 +104,12 @@ pub fn export(tl: &Timeline) -> String {
     for (k, (it, (rin, _))) in primary.items.iter().zip(pos.iter().copied()).enumerate() {
         let offset = t(tl.start_tc_frames + rin, tl.rate);
         match it {
-            Item::Gap(n) => {
-                x.open("gap", &[("name", "Gap".into()), ("offset", offset), ("start", "0s".into()), ("duration", t(*n, tl.rate))]);
+            Item::Gap(n) | Item::Slug { len: n, .. } => {
+                let name = if let Item::Slug { title, .. } = it { title.clone() } else { "Gap".into() };
+                x.open("gap", &[("name", name.clone()), ("offset", offset), ("start", "0s".into()), ("duration", t(*n, tl.rate))]);
+                if matches!(it, Item::Slug { .. }) {
+                    x.empty("marker", &[("start", "0s".into()), ("duration", frame_duration(tl.rate)), ("value", name)]);
+                }
                 for (crin, lane, j) in &connected[k] {
                     connected_clip(&mut x, tl, *lane, *j, t(crin - rin, tl.rate));
                 }
@@ -182,7 +186,7 @@ pub fn export_multicam(tl: &Timeline) -> String {
         for (it, (rin, _)) in track.items.iter().zip(tl.positions(track)) {
             let offset = t(tl.start_tc_frames + rin, tl.rate);
             match it {
-                Item::Gap(n) => {
+                Item::Gap(n) | Item::Slug { len: n, .. } => {
                     x.empty("gap", &[("name", "Gap".into()), ("offset", offset), ("start", "0s".into()), ("duration", t(*n, tl.rate))]);
                 }
                 Item::Clip(c) => {

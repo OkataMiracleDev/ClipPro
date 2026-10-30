@@ -53,6 +53,22 @@ fn markers(x: &mut Xml, c: &ClipItem) {
     }
 }
 
+/// A Slug generator (black filler) titled with the stringout group.
+fn slug(x: &mut Xml, t: &Timeline, id: usize, title: &str, len: i64, rec_in: i64, rec_out: i64) {
+    x.open("generatoritem", &[("id", format!("clipitem-{id}"))]);
+    x.text("name", title);
+    x.text("enabled", "TRUE");
+    x.text("duration", len.to_string());
+    rate(x, t.rate);
+    x.text("start", rec_in.to_string()).text("end", rec_out.to_string());
+    x.text("in", "0").text("out", len.to_string());
+    x.open("effect", &[]);
+    x.text("name", "Slug").text("effectid", "Slug").text("effectcategory", "Matte").text("effecttype", "generator").text("mediatype", "video");
+    x.close();
+    x.open("marker", &[]).text("name", title).text("comment", "").text("in", "0").text("out", "-1").close();
+    x.close();
+}
+
 /// Renders the timeline as FCP7 XML.
 pub fn export(t: &Timeline) -> String {
     let mut x = Xml::new(Some("<!DOCTYPE xmeml>"));
@@ -78,6 +94,11 @@ pub fn export(t: &Timeline) -> String {
     for track in &t.video {
         x.open("track", &[]);
         for (it, (rec_in, rec_out)) in track.items.iter().zip(t.positions(track)) {
+            if let Item::Slug { len, title } = it {
+                clip_ids += 1;
+                slug(&mut x, t, clip_ids, title, *len, rec_in, rec_out);
+                continue;
+            }
             let Item::Clip(c) = it else { continue };
             clip_ids += 1;
             let m = &t.media[c.media];

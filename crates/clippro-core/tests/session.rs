@@ -376,6 +376,17 @@ fn imported_timeline_review_and_export_back() {
     let marks: Vec<_> = out.video[0].items.iter().filter_map(|i| if let clippro_interchange::model::Item::Clip(c) = i { c.markers.iter().find(|m| m.name.starts_with("ClipPro ")) } else { None }).collect();
     assert_eq!(marks.len(), rv2.items.len());
     assert_eq!(marks.last().unwrap().color, clippro_interchange::MarkerColor::Red);
+    // P11.6: a stringout by clip heads each clip's selects with a slug.
+    use clippro_core::stringout::{GroupBy, GroupOrder};
+    let so = s
+        .stringout_timeline(&settings, SortOrder::Timeline, &ex, GroupBy::Clip, GroupOrder::BestFirst, clippro_interchange::Separator::Slug { seconds: 2.0 })
+        .unwrap();
+    let items = &so.video[0].items;
+    let slugs = items.iter().filter(|i| matches!(i, clippro_interchange::model::Item::Slug { .. })).count();
+    let with_selects = sel.clips.iter().filter(|c| !c.segments.is_empty()).count();
+    assert_eq!(slugs, with_selects);
+    assert!(matches!(items[0], clippro_interchange::model::Item::Slug { .. }));
+    clippro_interchange::validate::well_formed(&clippro_interchange::Format::Xmeml.render(&so)).unwrap();
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
