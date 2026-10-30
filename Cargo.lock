@@ -625,6 +625,7 @@ version = "0.1.0"
 dependencies = [
  "ndarray",
  "ort",
+ "rustfft",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -833,6 +834,8 @@ dependencies = [
 name = "clippro-transcribe"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "whisper-rs",
 ]
 

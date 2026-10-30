@@ -5,3 +5,4 @@ pub mod clip;
 pub mod faces;
 pub mod models;
 pub mod runtime;
+pub mod speakers;
