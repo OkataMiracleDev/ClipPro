@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<xmeml version="4">
+  <sequence id="sequence-7" explodedTracks="true">
+    <uuid>2b6d1c64-1c8f-4f0e-9a52-7a1f0f3c9e11</uuid>
+    <duration>200</duration>
+    <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+    <name>Interview Cut v2</name>
+    <media>
+      <video>
+        <format>
+          <samplecharacteristics>
+            <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+            <width>3840</width><height>2160</height>
+          </samplecharacteristics>
+        </format>
+        <track>
+          <clipitem id="clipitem-1">
+            <masterclipid>masterclip-1</masterclipid>
+            <name>Sarah wide</name>
+            <enabled>TRUE</enabled>
+            <duration>2400</duration>
+            <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+            <start>0</start>
+            <end>-1</end>
+            <in>100</in>
+            <out>212</out>
+            <file id="file-1">
+              <name>A001_C004_0912XY.mov</name>
+              <pathurl>file://localhost/D%3a/Shoot/Day%202/A001_C004_0912XY.mov</pathurl>
+              <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+              <duration>2400</duration>
+              <timecode>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <string>14:22:20:00</string>
+                <frame>1241760</frame>
+                <displayformat>NDF</displayformat>
+                <reel><name>A001</name></reel>
+              </timecode>
+              <media>
+                <video><samplecharacteristics><width>3840</width><height>2160</height></samplecharacteristics></video>
+                <audio><channelcount>2</channelcount></audio>
+              </media>
+            </file>
+            <marker><name>Good line</name><comment>use this</comment><in>130</in><out>-1</out></marker>
+          </clipitem>
+          <transitionitem>
+            <start>100</start><end>124</end><alignment>center</alignment>
+            <effect><name>Cross Dissolve</name></effect>
+          </transitionitem>
+          <clipitem id="clipitem-2">
+            <name>Sarah close</name>
+            <enabled>TRUE</enabled>
+            <duration>1800</duration>
+            <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+            <start>-1</start>
+            <end>200</end>
+            <in>40</in>
+            <out>128</out>
+            <file id="file-2">
+              <name>B001_C002_0912AB.mov</name>
+              <pathurl>file://localhost/D%3a/Shoot/Day%202/B001_C002_0912AB.mov</pathurl>
+              <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+              <duration>1800</duration>
+              <timecode><string>14:22:12:00</string><displayformat>NDF</displayformat></timecode>
+            </file>
+          </clipitem>
+          <clipitem id="clipitem-3">
+            <name>Disabled B-roll</name>
+            <enabled>FALSE</enabled>
+            <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+            <start>200</start><end>248</end><in>0</in><out>48</out>
+            <file id="file-1"/>
+          </clipitem>
+        </track>
+        <track>
+          <clipitem id="clipitem-4">
+            <name>Sarah wide</name>
+            <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+            <start>50</start><end>74</end><in>500</in><out>524</out>
+            <file id="file-1"/>
+          </clipitem>
+        </track>
+      </video>
+      <audio><track/></audio>
+    </media>
+  </sequence>
+</xmeml>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.9">
+  <resources>
+    <format id="r0" name="FFVideoFormat1080p2997" frameDuration="1001/30000s" width="1920" height="1080"/>
+    <format id="r1" frameDuration="1/25s" width="1920" height="1080"/>
+    <asset id="r2" name="Drone_0042" start="0s" duration="60060/1000s" hasVideo="1" format="r0" src="file:///Volumes/RAID/Drone_0042.MP4"/>
+    <asset id="r3" name="Cam &amp; B" start="36000s" duration="120s" hasVideo="1" hasAudio="1" audioChannels="4" format="r1">
+      <media-rep kind="original-media" src="file:///Volumes/RAID/Cam%20B/CamB_001.mxf"/>
+    </asset>
+  </resources>
+  <library>
+    <event name="Timeline 1 (Resolve)">
+      <project name="Drone Edit">
+        <sequence format="r0" tcStart="3600s" tcFormat="DF" duration="10010/1000s">
+          <spine>
+            <clip name="Drone_0042" offset="3600s" start="1001/1000s" duration="2002/1000s" format="r0" tcFormat="NDF">
+              <video ref="r2" offset="0s" start="0s" duration="60060/1000s"/>
+              <marker start="1502/1000s" duration="1001/30000s" value="Reveal"/>
+            </clip>
+            <gap name="Gap" offset="3602002/1000s" duration="1001/1000s" start="0s">
+              <asset-clip ref="r3" lane="1" name="Cam B insert" offset="0s" start="36010s" duration="2s"/>
+            </gap>
+            <asset-clip ref="r2" name="Drone_0042" offset="3603003/1000s" start="10010/1000s" duration="1001/1000s" format="r0">
+              <asset-clip ref="r3" lane="-1" offset="10010/1000s" start="36000s" duration="1s"/>
+            </asset-clip>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>

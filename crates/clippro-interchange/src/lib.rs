@@ -1,8 +1,9 @@
-//! Exporters (and later importers) for NLE interchange formats (SPEC §16).
+//! Exporters and importers for NLE interchange formats (SPEC §16, P11.1).
 
 pub mod edl;
 pub mod fcp7;
 pub mod fcpxml;
+pub mod import;
 pub mod model;
 pub mod otio;
 pub mod report;

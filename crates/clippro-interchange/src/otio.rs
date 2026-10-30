@@ -55,7 +55,8 @@ pub fn export(tl: &Timeline) -> String {
                             "name": m.name,
                             "target_url": file_url(&m.path),
                             "available_range": range(m.start_tc_frames, m.duration_frames, m.rate),
-                            "metadata": {}
+                            "metadata": { "clippro": { "id": m.id, "width": m.width, "height": m.height, "audio_channels": m.audio_channels,
+                                                       "reel": m.reel, "drop_frame": m.drop_frame } }
                         }},
                         "active_media_reference_key": "DEFAULT_MEDIA",
                         "effects": [],
@@ -75,7 +76,7 @@ pub fn export(tl: &Timeline) -> String {
         "global_start_time": rt(tl.start_tc_frames, tl.rate),
         "tracks": { "OTIO_SCHEMA": "Stack.1", "name": "tracks", "children": tracks, "source_range": null,
                     "effects": [], "markers": [], "enabled": true, "metadata": {} },
-        "metadata": { "clippro": { "version": env!("CARGO_PKG_VERSION") } }
+        "metadata": { "clippro": { "version": env!("CARGO_PKG_VERSION"), "width": tl.width, "height": tl.height, "drop_frame": tl.drop_frame } }
     });
     serde_json::to_string_pretty(&doc).unwrap_or_default()
 }
