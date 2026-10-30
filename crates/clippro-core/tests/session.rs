@@ -439,3 +439,46 @@ fn multicam_sync_groups() {
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// PLAN P13.2/P13.3 through the session: a proxy is made and linked; every select renders to a
+/// file named from the template, as long as the select.
+#[test]
+fn proxies_and_rendered_selects() {
+    use clippro_ingest::proxy::{ProxyCodec, ProxyOptions};
+    use clippro_ingest::render::{RenderCodec, RenderOptions};
+    let Some(dir) = corpus() else { return };
+    if clippro_ingest::ffmpeg::ffmpeg_exe().is_none() {
+        return;
+    }
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-ingest-test");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("media")).unwrap();
+    std::fs::copy(dir.join("prores_hq.mov"), tmp.join("media/prores_hq.mov")).unwrap();
+    let s = Session::create(&tmp.join("p.clippro"), "Ingest", SessionOptions { cache_path: None, ..opts(&tmp) }).unwrap();
+    s.import(&[tmp.join("media/prores_hq.mov"), dir.join("tripod_static.mp4")]).unwrap();
+    let st = s.clip_statuses().unwrap();
+    let prores = st.iter().find(|c| c.name == "prores_hq").unwrap().clip;
+    let out = s.make_proxy(prores, &ProxyOptions { codec: ProxyCodec::ProresProxy, max_height: 270, out_dir: None }, &std::sync::atomic::AtomicBool::new(false), |_| {}).unwrap();
+    assert!(out.ends_with("media/Proxy/prores_hq_Proxy.mov"), "{}", out.display());
+    s.queue_analysis().unwrap();
+    s.wait(|_| {});
+    let settings = Settings::from_preset(&builtin("Cleanup").unwrap()).unwrap();
+    let sel = s.score(&settings).unwrap();
+    let count: usize = sel.clips.iter().map(|c| c.segments.len()).sum();
+    assert!(count > 0);
+    let ro = RenderOptions { stream_copy: false, allow_nearest_keyframe: false, codec: RenderCodec::Prores422, out_dir: tmp.join("renders"), template: "{clip}_{index}".into() };
+    let mut calls = 0;
+    let r = s.render_selects(&settings, SortOrder::Timeline, &ro, false, &std::sync::atomic::AtomicBool::new(false), |_, _, _| calls += 1).unwrap();
+    assert_eq!(r.len(), count);
+    assert!(calls >= count);
+    for (o, seg) in r.iter().zip(sel.sorted(SortOrder::Timeline)) {
+        assert!(o.path.file_name().unwrap().to_string_lossy().ends_with(".mov"));
+        let info = clippro_media::probe(&o.path).unwrap();
+        let frames = info.video.unwrap().frames.unwrap_or(0) as i64;
+        let want = (seg.segment.end_us - seg.segment.start_us) as f64 / 40_000.0;
+        assert!((frames as f64 - want).abs() <= 1.0, "{} frames, want {want}", frames);
+    }
+    assert!(tmp.join("renders/prores_hq_001.mov").exists() || tmp.join("renders/tripod_static_001.mov").exists());
+    s.close().unwrap();
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

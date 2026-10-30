@@ -3,6 +3,7 @@
 
 pub mod annotate;
 pub mod import;
+pub mod ingest;
 pub mod inspect;
 pub mod multicam;
 pub mod report;

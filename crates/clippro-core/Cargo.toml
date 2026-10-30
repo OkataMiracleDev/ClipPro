@@ -24,3 +24,4 @@ image-webp = "0.2.4"
 base64 = "0.23.1"
 notify = "8.2.1"
 clippro-audio = { version = "0.1.0", path = "../clippro-audio" }
+clippro-ingest = { version = "0.1.0", path = "../clippro-ingest" }
