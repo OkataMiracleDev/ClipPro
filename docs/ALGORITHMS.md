@@ -286,21 +286,22 @@ Decode to 48 kHz f32 per channel. Make a mono mix as the mean of channels, for f
 | `rms_dbfs` | per block |
 | `true_peak_dbtp` | 4× polyphase oversampled peak (ITU-R BS.1770-4 Annex 2) |
 | `lufs_m`, `lufs_s` | momentary (400 ms) and short-term (3 s) loudness per BS.1770 via `ebur128` |
-| `clip_events` | count of runs of ≥ 3 consecutive samples with \|x\| ≥ 0.999 |
+| `clip_events` | count of runs of ≥ 3 consecutive samples with \|x\| ≥ 0.999, plus one per flat-top block (peak ≥ −1 dBFS and > 35 % of samples within 0.5 dB of it; catches clipping after lossy coding, ADR-004) |
 | `lf_ratio` | energy < 150 Hz / total energy (20 Hz–20 kHz) |
 | `flatness` | spectral flatness (geometric/arithmetic mean of power, 100 Hz–8 kHz) |
 | `flux_lf` | positive spectral flux in 20–150 Hz |
-| `hum_score` | for f0 ∈ {50, 60}: mean over harmonics h=1..5 of `smoothstep(6, 18, P(h·f0) − median P(h·f0 ± 4..20 Hz))` in dB; take the max over f0 |
+| `hum_score` | for f0 ∈ {50, 60}: mean over harmonics h=1..5 of `smoothstep(6, 18, P(h·f0) − median P(h·f0 ± 4..20 Hz))` in dB; take the max over f0. Computed on a 1 s window (64k FFT) every 500 ms, centred on the block (ADR-004) |
+| `lufs_b` | K-weighted loudness of the 100 ms block itself (silence boundaries) |
 | `speech_band` | energy 300–3400 Hz / total |
 | `zcr` | zero-crossing rate |
 
 **Derived (per 100 ms block, then aggregated to sample intervals):**
 - **Noise floor**: `P10` of `rms_dbfs` over a ±5 s window.
 - **VAD**: a block is speech if all of these hold: `rms_dbfs > noise_floor + 6`, `flatness < 0.5`, `speech_band > 0.5`, and `zcr ∈ [0.02, 0.35]`. Then apply a 300 ms hangover and a 3-of-5 majority smoothing.
-- **Wind score**: `smoothstep(0.45, 0.75, lf_ratio) · smoothstep(0.3, 0.8, normalised flux_lf variance over 1 s) · (1 − hum_score)`, with `rms_dbfs > −45`.
+- **Wind score**: `smoothstep(0.3, 0.55, lf_ratio) · smoothstep(0.1, 0.35, mean + std of normalised flux_lf over 1 s) · (1 − hum_score)`, with `rms_dbfs > −45` **(cal, ADR-004)**.
 - **Flags**:
   - Audio clipping: ≥ 1 clip event, or `true_peak > −0.1 dBTP` in the interval.
-  - Silence: `lufs_m < −50` for ≥ 1 s.
+  - Silence: `lufs_b < −50` for ≥ 1 s (ADR-004).
   - Wind: wind score > 0.5 for ≥ 0.5 s.
   - Hum: `hum_score > 0.5` for ≥ 2 s.
   - Dead channel: channel RMS < −80 dBFS over the whole clip while another channel is > −60 dBFS.
