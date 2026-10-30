@@ -10,3 +10,4 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+whisper-rs = "0.16"

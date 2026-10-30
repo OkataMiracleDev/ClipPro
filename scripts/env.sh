@@ -24,5 +24,9 @@ export RC="$(_w "$_sdk/bin/$_sdk_ver/x64/rc.exe")"
 export FXC="$(_w "$_sdk/bin/$_sdk_ver/x64/fxc.exe")"
 export FFMPEG_DIR="$(_w "$_tp/ffmpeg")"
 export LIBCLANG_PATH="$(_w "$_tp/llvm/bin")"
-export PATH="$HOME/.cargo/bin:$_vc/bin/Hostx64/x64:$_sdk/bin/$_sdk_ver/x64:$_tp/ffmpeg/bin:$_tp/llvm/bin:$PATH"
+export PATH="$HOME/.cargo/bin:$_vc/bin/Hostx64/x64:$_sdk/bin/$_sdk_ver/x64:$_tp/ffmpeg/bin:$_tp/llvm/bin:$_tp/cmake/bin:$_tp/tools/bin:$PATH"
+# CMake builds (whisper.cpp for P12.3) use Ninja with the portable MSVC above.
+export CMAKE_GENERATOR=Ninja
+export CMAKE_C_COMPILER="$(_w "$_vc/bin/Hostx64/x64/cl.exe")"
+export CMAKE_CXX_COMPILER="$(_w "$_vc/bin/Hostx64/x64/cl.exe")"
 unset _root _tp _msvc_ver _sdk_ver _vc _sdk

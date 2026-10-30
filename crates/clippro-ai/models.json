@@ -1,0 +1,123 @@
+[
+  {
+    "id": "yunet-2023mar",
+    "module": "faces",
+    "name": "YuNet face detector",
+    "file": "face_detection_yunet_2023mar.onnx",
+    "url": "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+    "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+    "size": 232589,
+    "licence": "MIT",
+    "source": "OpenCV Zoo"
+  },
+  {
+    "id": "sface-2021dec",
+    "module": "faces",
+    "name": "SFace face embeddings",
+    "file": "face_recognition_sface_2021dec.onnx",
+    "url": "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
+    "sha256": "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79",
+    "size": 38696353,
+    "licence": "Apache-2.0",
+    "source": "OpenCV Zoo"
+  },
+  {
+    "id": "clip-b32-vision",
+    "module": "clip",
+    "name": "CLIP ViT-B/32 image encoder (8-bit)",
+    "file": "clip-vit-b32-vision-q8.onnx",
+    "url": "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model_quantized.onnx",
+    "sha256": "583fd1110a514667812fee7d684952aaf82a99b959760c8d7dca7e0ab9839299",
+    "size": 89117001,
+    "licence": "MIT",
+    "source": "OpenAI CLIP, ONNX export by Xenova (Hugging Face)"
+  },
+  {
+    "id": "clip-b32-text",
+    "module": "clip",
+    "name": "CLIP ViT-B/32 text encoder (8-bit)",
+    "file": "clip-vit-b32-text-q8.onnx",
+    "url": "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/text_model_quantized.onnx",
+    "sha256": "73baab855d406190da9faa498cfedf65f15cf309f4cc7385b7b032e6d08e5c3a",
+    "size": 64504507,
+    "licence": "MIT",
+    "source": "OpenAI CLIP, ONNX export by Xenova (Hugging Face)"
+  },
+  {
+    "id": "clip-b32-tokenizer",
+    "module": "clip",
+    "name": "CLIP tokenizer",
+    "file": "clip-tokenizer.json",
+    "url": "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/tokenizer.json",
+    "sha256": "f7f3b7af117d467b58374797691a6438d3e6b9e9cef800dfd5dced7f697a90cd",
+    "size": 2224119,
+    "licence": "MIT",
+    "source": "OpenAI CLIP (Hugging Face)"
+  },
+  {
+    "id": "whisper-tiny",
+    "module": "transcripts",
+    "name": "Whisper tiny (multilingual)",
+    "file": "ggml-tiny.bin",
+    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
+    "sha256": "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+    "size": 77691713,
+    "licence": "MIT",
+    "source": "OpenAI Whisper, ggml conversion by whisper.cpp"
+  },
+  {
+    "id": "whisper-base",
+    "module": "transcripts",
+    "name": "Whisper base (multilingual)",
+    "file": "ggml-base.bin",
+    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+    "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+    "size": 147951465,
+    "licence": "MIT",
+    "source": "OpenAI Whisper, ggml conversion by whisper.cpp"
+  },
+  {
+    "id": "whisper-small",
+    "module": "transcripts",
+    "name": "Whisper small (multilingual, default)",
+    "file": "ggml-small.bin",
+    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+    "sha256": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+    "size": 487601967,
+    "licence": "MIT",
+    "source": "OpenAI Whisper, ggml conversion by whisper.cpp"
+  },
+  {
+    "id": "whisper-medium",
+    "module": "transcripts",
+    "name": "Whisper medium (multilingual)",
+    "file": "ggml-medium.bin",
+    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
+    "sha256": "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
+    "size": 1533763059,
+    "licence": "MIT",
+    "source": "OpenAI Whisper, ggml conversion by whisper.cpp"
+  },
+  {
+    "id": "whisper-large-v3-turbo",
+    "module": "transcripts",
+    "name": "Whisper large-v3 turbo (multilingual)",
+    "file": "ggml-large-v3-turbo.bin",
+    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
+    "sha256": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+    "size": 1624555275,
+    "licence": "MIT",
+    "source": "OpenAI Whisper, ggml conversion by whisper.cpp"
+  },
+  {
+    "id": "ecapa-voxceleb-512",
+    "module": "speakers",
+    "name": "ECAPA-TDNN speaker embeddings",
+    "file": "voxceleb_ECAPA512.onnx",
+    "url": "https://huggingface.co/Wespeaker/wespeaker-voxceleb-ECAPA-TDNN512/resolve/main/voxceleb_ECAPA512.onnx",
+    "sha256": "f901ae3571912bad4e11e157744cb8b7d77a0b46923b83c410bdbb6c77d69736",
+    "size": 24861931,
+    "licence": "Apache-2.0",
+    "source": "WeSpeaker (Hugging Face)"
+  }
+]
