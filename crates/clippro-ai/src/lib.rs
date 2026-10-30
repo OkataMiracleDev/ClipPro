@@ -2,5 +2,6 @@
 //! manager, CLIP, faces and speaker embeddings.
 
 pub mod clip;
+pub mod faces;
 pub mod models;
 pub mod runtime;
