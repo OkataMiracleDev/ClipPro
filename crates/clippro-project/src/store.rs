@@ -606,6 +606,19 @@ impl MeasureCache {
         Ok(())
     }
 
+    /// (entries, stored bytes).
+    pub fn stats(&self) -> Result<(u64, u64)> {
+        let (n, b): (i64, i64) = self.conn.query_row("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM cache", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok((n as u64, b as u64))
+    }
+
+    /// Removes every entry and compacts the file.
+    pub fn clear(&self) -> Result<u64> {
+        let n = self.conn.execute("DELETE FROM cache", [])?;
+        self.conn.execute_batch("VACUUM")?;
+        Ok(n as u64)
+    }
+
     /// Evicts least-recently-used entries until the cache is within `max_bytes`.
     pub fn evict_to(&self, max_bytes: u64) -> Result<usize> {
         let total: i64 = self.conn.query_row("SELECT COALESCE(SUM(size), 0) FROM cache", [], |r| r.get(0))?;
@@ -736,6 +749,9 @@ mod tests {
         assert_eq!(c.get("fp", "k").unwrap().unwrap().len(), 100);
         assert!(c.get("fp", "other").unwrap().is_none());
         assert_eq!(c.evict_to(150).unwrap(), 1);
+        assert_eq!(c.stats().unwrap(), (1, 100));
+        assert_eq!(c.clear().unwrap(), 1);
+        assert_eq!(c.stats().unwrap(), (0, 0));
         drop(c);
         std::fs::remove_dir_all(&d).unwrap();
         let _ = std::fs::remove_dir(d.parent().unwrap());

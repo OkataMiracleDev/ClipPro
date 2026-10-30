@@ -14,7 +14,7 @@ import { GlView, type Overlay, type ProfileColour } from "../lib/glview";
 import { useInspection } from "../lib/inspect";
 import { parseHeader, HEADER_BYTES } from "../lib/glview";
 import { rgbaToLuma, scopeBus, waveform } from "../lib/scope";
-import { actionFor, isTyping } from "../lib/keys";
+import { actionFor, isTyping, keyFor, type ActionId } from "../lib/keys";
 import { shuttle, type ShuttleKey } from "../lib/shuttle";
 import { WaveformScope } from "./WaveformScope";
 import { MeasureOverlay, type MeasureOverlayKind } from "./MeasureOverlay";
@@ -318,10 +318,10 @@ export function Viewer() {
   );
 }
 
-const OVERLAYS: { value: Overlay; label: string; key: string }[] = [
-  { value: "zebras", label: "Zebras", key: "Z" },
-  { value: "false_colour", label: "False colour", key: "C" },
-  { value: "peaking", label: "Focus peaking", key: "P" },
+const OVERLAYS: { value: Overlay; label: string; action: ActionId }[] = [
+  { value: "zebras", label: "Zebras", action: "zebras" },
+  { value: "false_colour", label: "False colour", action: "false_colour" },
+  { value: "peaking", label: "Focus peaking", action: "peaking" },
 ];
 
 /** Profile picker, viewer LUT and before/after split (SPEC VIE-6, P6.5/P6.6). */
@@ -400,9 +400,9 @@ function SplitHandle({ split }: { split: number }) {
   );
 }
 
-const MEASURE_OVERLAYS: { value: MeasureOverlayKind; label: string; key: string }[] = [
-  { value: "tiles", label: "Focus map", key: "T" },
-  { value: "motion", label: "Motion", key: "V" },
+const MEASURE_OVERLAYS: { value: MeasureOverlayKind; label: string; action: ActionId }[] = [
+  { value: "tiles", label: "Focus map", action: "focus_map" as ActionId },
+  { value: "motion", label: "Motion", action: "motion" as ActionId },
 ];
 
 function OverlayBar({ value, onToggle, measure, onMeasure, scope }: { value: Overlay; onToggle: (o: Overlay) => void; measure: MeasureOverlayKind; onMeasure: (o: MeasureOverlayKind) => void; scope: boolean }) {
@@ -410,7 +410,7 @@ function OverlayBar({ value, onToggle, measure, onMeasure, scope }: { value: Ove
     <div role="group" aria-label="Overlays" className="flex items-center rounded-md bg-black/45 p-0.5 backdrop-blur">
       <button
         aria-pressed={scope}
-        title="Luma waveform (W)"
+        title={`Luma waveform (${keyFor("waveform")})`}
         onClick={() => useApp.getState().toggleScope()}
         className={`rounded px-1.5 py-0.5 text-[10px] ${scope ? "bg-white/85 text-black" : "text-white/70 hover:text-white"}`}
       >
@@ -421,7 +421,7 @@ function OverlayBar({ value, onToggle, measure, onMeasure, scope }: { value: Ove
         <button
           key={o.value}
           aria-pressed={measure === o.value}
-          title={`${o.label} (${o.key})`}
+          title={`${o.label} (${keyFor(o.action)})`}
           onClick={() => onMeasure(o.value)}
           className={`rounded px-1.5 py-0.5 text-[10px] ${measure === o.value ? "bg-white/85 text-black" : "text-white/70 hover:text-white"}`}
         >
@@ -433,7 +433,7 @@ function OverlayBar({ value, onToggle, measure, onMeasure, scope }: { value: Ove
         <button
           key={o.value}
           aria-pressed={value === o.value}
-          title={`${o.label} (${o.key})`}
+          title={`${o.label} (${keyFor(o.action)})`}
           onClick={() => onToggle(o.value)}
           className={`rounded px-1.5 py-0.5 text-[10px] ${value === o.value ? "bg-white/85 text-black" : "text-white/70 hover:text-white"}`}
         >

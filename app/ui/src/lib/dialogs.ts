@@ -33,6 +33,18 @@ export async function pickExportPath(defaultName: string, ext: string, label: st
   return r.toLowerCase().endsWith(`.${ext}`) ? r : `${r}.${ext}`;
 }
 
+export async function pickSettingsFile(save: boolean): Promise<string | null> {
+  if (!isTauri) return "D:/clippro-settings.json";
+  const { open, save: saveDlg } = await import("@tauri-apps/plugin-dialog");
+  const filters = [{ name: "ClipPro settings", extensions: ["json"] }];
+  if (save) {
+    const r = await saveDlg({ title: "Export settings", defaultPath: "clippro-settings.json", filters });
+    return r ? (r.toLowerCase().endsWith(".json") ? r : `${r}.json`) : null;
+  }
+  const r = await open({ title: "Import settings", filters });
+  return typeof r === "string" ? r : null;
+}
+
 export async function pickPresetFile(): Promise<string | null> {
   if (!isTauri) return "D:/Presets/demo.toml";
   const { open } = await import("@tauri-apps/plugin-dialog");

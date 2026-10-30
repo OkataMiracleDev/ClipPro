@@ -231,3 +231,10 @@ body.has-material {
   background: #fff;
   box-shadow: 0 0 0 1px rgb(0 0 0 / 0.2), 0 1px 2px rgb(0 0 0 / 0.3);
 }
+
+/* Colour-blind-safe score scale (Settings → Compatibility): blue → neutral → orange. */
+:root[data-scores="cb"] {
+  --c-score-lo: oklch(0.6 0.13 255);
+  --c-score-mid: oklch(0.8 0.02 90);
+  --c-score-hi: oklch(0.74 0.15 60);
+}

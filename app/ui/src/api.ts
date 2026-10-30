@@ -190,6 +190,11 @@ export interface Backend {
   /** Clips best matching the camera-movement filter (live preview). */
   cameraMatches(settings: Settings, count: number): Promise<{ clip: number; name: string; score: number }[]>;
   getSettings(): Promise<AppSettings>;
+  /** Global measurement cache (Settings → Cache). */
+  cacheInfo(): Promise<{ path: string; entries: number; bytes: number }>;
+  cacheClear(): Promise<number>;
+  settingsExport(path: string): Promise<void>;
+  settingsImport(path: string): Promise<AppSettings>;
   setSettings(s: AppSettings): Promise<AppSettings>;
   openSettings(): Promise<void>;
   onSettings(cb: (s: AppSettings) => void): Promise<() => void>;
@@ -374,6 +379,13 @@ const tauriBackend: Backend = {
   linkProxy: async (clip, path) => void unwrap(await commands.clipLinkProxy(clip, path)),
   reveal: async (path) => void unwrap(await commands.revealInExplorer(path)),
   getSettings: async () => unwrap(await commands.settingsGet()),
+  cacheInfo: async () => {
+    const r = unwrap(await commands.cacheInfo());
+    return { path: r.path, entries: n(r.entries), bytes: n(r.bytes) };
+  },
+  cacheClear: async () => n(unwrap(await commands.cacheClear())),
+  settingsExport: async (path) => void unwrap(await commands.settingsExport(path)),
+  settingsImport: async (path) => unwrap(await commands.settingsImport(path)),
   submetrics: async () => unwrap(await commands.submetricsList()),
   cameraMatches: async (settings, count) => unwrap(await commands.cameraMatches(settings, count)).map((m) => ({ clip: n(m.clip), name: m.name, score: n(m.score) })),
   setSettings: async (s) => unwrap(await commands.settingsSet(s)),

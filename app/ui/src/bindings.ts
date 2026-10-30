@@ -47,6 +47,17 @@ export const commands = {
 	/**  Machine capabilities for the status bar. */
 	systemInfo: () => typedError<SystemInfo, string>(__TAURI_INVOKE("system_info")),
 	settingsGet: () => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_get")),
+	/**  The global measurement cache (Settings → Cache). */
+	cacheInfo: () => typedError<CacheInfo, string>(__TAURI_INVOKE("cache_info")),
+	/**  Empties the global measurement cache; projects keep their own measurements. */
+	cacheClear: () => typedError<number | null, string>(__TAURI_INVOKE("cache_clear")),
+	/**  Writes the app settings to a JSON file (Settings → General → Export). */
+	settingsExport: (path: string) => typedError<null, string>(__TAURI_INVOKE("settings_export", { path })),
+	/**
+	 *  Reads app settings from a JSON file, keeps this machine's recent projects, saves and
+	 *  broadcasts them.
+	 */
+	settingsImport: (path: string) => typedError<AppSettings_Serialize, string>(__TAURI_INVOKE("settings_import", { path })),
 	watchFoldersGet: () => typedError<WatchFolderDto[], string>(__TAURI_INVOKE("watch_folders_get")),
 	snapshotsList: () => typedError<Snapshot[], string>(__TAURI_INVOKE("snapshots_list")),
 	overridesList: () => typedError<OverrideDto[], string>(__TAURI_INVOKE("overrides_list")),
@@ -237,6 +248,12 @@ export type BinDto_Serialize = {
 	kind: string,
 	/**  Smart collections: the UI's query document. */
 	query: string | null,
+};
+
+export type CacheInfo = {
+	path: string,
+	entries: number | null,
+	bytes: number | null,
 };
 
 export type CameraFilter = {

@@ -710,6 +710,8 @@ export const useApp = create<AppState>((set, get) => ({
     set({ appSettings });
     applyTheme(appSettings.theme);
     setBindings(appSettings.keybindings);
+    if (appSettings.colour_blind_scores) document.documentElement.dataset.scores = "cb";
+    else delete document.documentElement.dataset.scores;
   },
   setUserLut: (userLut) => set({ userLut }),
   setSplit: (split) => set({ split }),

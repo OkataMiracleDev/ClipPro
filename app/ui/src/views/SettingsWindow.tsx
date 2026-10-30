@@ -2,18 +2,24 @@
 // separate window with an icon toolbar of tabs (the macOS Preferences pattern, SPEC §14.4).
 // Every change saves immediately; analysis and performance values apply to projects opened next.
 
-import { Gauge, ScanLine, SlidersHorizontal } from "lucide-react";
+import { Accessibility, Database, Gauge, Keyboard, ScanLine, SlidersHorizontal, Sparkles } from "lucide-react";
+import { KeyboardTab } from "./KeyboardTab";
+import { pickSettingsFile } from "../lib/dialogs";
 import { useEffect, useState } from "react";
 import { api, isTauri, type AppSettings } from "../api";
 import { cx, Segmented, Switch } from "../components/ui";
 import { CaptionButtons, TrafficLights } from "./TitleBar";
 
-type Tab = "general" | "performance" | "analysis";
+type Tab = "general" | "performance" | "analysis" | "keyboard" | "cache" | "compatibility" | "ai";
 
 const TABS: { value: Tab; label: string; icon: typeof Gauge }[] = [
   { value: "general", label: "General", icon: SlidersHorizontal },
   { value: "performance", label: "Performance", icon: Gauge },
   { value: "analysis", label: "Analysis", icon: ScanLine },
+  { value: "keyboard", label: "Keyboard", icon: Keyboard },
+  { value: "cache", label: "Cache", icon: Database },
+  { value: "compatibility", label: "Compatibility", icon: Accessibility },
+  { value: "ai", label: "AI Models", icon: Sparkles },
 ];
 
 const RATES: { value: string; label: string; hint: string }[] = [
@@ -40,7 +46,11 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 const select = "h-7 w-60 rounded-(--radius-control) border border-separator-strong bg-control px-2 text-[13px]";
 
 export function SettingsWindow() {
-  const [tab, setTab] = useState<Tab>("general");
+  // `?tab=` opens a given page (screenshots, deep links from the main window).
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = new URLSearchParams(location.search).get("tab") as Tab | null;
+    return t && TABS.some((x) => x.value === t) ? t : "general";
+  });
   const [s, setS] = useState<AppSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -50,10 +60,12 @@ export function SettingsWindow() {
     return () => off?.();
   }, []);
   useEffect(() => {
+    if (s?.colour_blind_scores) document.documentElement.dataset.scores = "cb";
+    else delete document.documentElement.dataset.scores;
     if (!s || new URLSearchParams(location.search).has("theme")) return;
     if (s.theme === "light" || s.theme === "dark") document.documentElement.dataset.theme = s.theme;
     else delete document.documentElement.dataset.theme;
-  }, [s?.theme]);
+  }, [s?.theme, s?.colour_blind_scores]);
 
   const update = (patch: Partial<AppSettings>) => {
     if (!s) return;
@@ -80,7 +92,7 @@ export function SettingsWindow() {
               role="tab"
               aria-selected={tab === t.value}
               onClick={() => setTab(t.value)}
-              className={cx("flex w-24 flex-col items-center gap-1 rounded-md py-1.5 text-[11px]", tab === t.value ? "bg-accent-soft text-accent" : "text-text-2 hover:bg-control-hover")}
+              className={cx("flex w-[78px] flex-col items-center gap-1 rounded-md py-1.5 text-[11px]", tab === t.value ? "bg-accent-soft text-accent" : "text-text-2 hover:bg-control-hover")}
             >
               <t.icon size={20} strokeWidth={1.6} />
               {t.label}
@@ -148,7 +160,7 @@ export function SettingsWindow() {
               </label>
             </Row>
           </>
-        ) : (
+        ) : tab === "analysis" ? (
           <>
             <Row label="Sample rate" hint={RATES.find((r) => r.value === s.sample_rate)?.hint || "How many moments per second are measured."}>
               <select aria-label="Sample rate" className={select} value={s.sample_rate} onChange={(e) => update({ sample_rate: e.target.value })}>
@@ -166,11 +178,90 @@ export function SettingsWindow() {
               </label>
             </Row>
           </>
+        ) : null}
+        {s && tab === "general" && (
+          <Row label="Settings file" hint="Move your settings and shortcuts to another PC. Recent projects stay on this one.">
+            <div className="flex gap-2">
+              <button
+                className="h-7 rounded-(--radius-control) px-3 text-[13px] ring-1 ring-separator-strong hover:bg-control-hover"
+                onClick={async () => {
+                  const p = await pickSettingsFile(true);
+                  if (p) await api.settingsExport(p).catch((e) => setError(`Couldn't export: ${e}`));
+                }}
+              >
+                Export…
+              </button>
+              <button
+                className="h-7 rounded-(--radius-control) px-3 text-[13px] ring-1 ring-separator-strong hover:bg-control-hover"
+                onClick={async () => {
+                  const p = await pickSettingsFile(false);
+                  if (p) await api.settingsImport(p).then(setS, (e) => setError(`Couldn't import: ${e}`));
+                }}
+              >
+                Import…
+              </button>
+            </div>
+          </Row>
         )}
-        {s && tab !== "general" && <p className="mt-4 text-center text-[11px] text-text-3">Changes apply to projects you open or create from now on.</p>}
+        {s && tab === "keyboard" && <KeyboardTab s={s} update={update} />}
+        {s && tab === "cache" && <CacheTab />}
+        {s && tab === "compatibility" && (
+          <Row label="Score colours" hint="Blue → orange instead of red → green, for red–green colour blindness.">
+            <label className="flex items-center gap-2 text-[13px]">
+              <Switch label="Colour-blind-safe score colours" checked={s.colour_blind_scores} onChange={(colour_blind_scores) => update({ colour_blind_scores })} />
+              Colour-blind-safe score colours
+            </label>
+            <div className="mt-1 h-2 w-60 rounded-full" style={{ background: "linear-gradient(90deg, var(--c-score-lo), var(--c-score-mid), var(--c-score-hi))" }} />
+          </Row>
+        )}
+        {s && tab === "ai" && (
+          <div className="px-4 py-6 text-center text-[13px] text-text-2">
+            Local AI modules (faces, transcripts, shot types) arrive in a later update. Models are downloaded only after you approve them here, and everything
+            runs on this PC.
+          </div>
+        )}
+        {s && ["performance", "analysis"].includes(tab) && <p className="mt-4 text-center text-[11px] text-text-3">Changes apply to projects you open or create from now on.</p>}
         {error && s && <p className="mt-2 text-center text-[11px] text-danger">{error}</p>}
         {!isTauri && <p className="mt-6 text-center text-[11px] text-text-3">Browser preview — settings aren't saved.</p>}
       </main>
     </div>
+  );
+}
+
+function formatBytes(b: number) {
+  if (b < 1e6) return `${Math.round(b / 1e3)} KB`;
+  if (b < 1e9) return `${(b / 1e6).toFixed(0)} MB`;
+  return `${(b / 1e9).toFixed(2)} GB`;
+}
+
+function CacheTab() {
+  const [info, setInfo] = useState<{ path: string; entries: number; bytes: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.cacheInfo().then(setInfo, () => setInfo(null));
+  }, []);
+  return (
+    <>
+      <Row label="Measurement cache" hint="Analysis results reused when the same footage is imported again, in any project.">
+        <div className="text-[13px]">{info ? `${info.entries} clip${info.entries === 1 ? "" : "s"} · ${formatBytes(info.bytes)}` : "…"}</div>
+        <div className="max-w-80 truncate text-[11px] text-text-3" title={info?.path}>
+          {info?.path}
+        </div>
+      </Row>
+      <Row label="" hint="Projects keep their own measurements; only re-imports into new projects get slower.">
+        <button
+          disabled={busy || !info || info.entries === 0}
+          className="h-7 rounded-(--radius-control) px-3 text-[13px] ring-1 ring-separator-strong hover:bg-control-hover disabled:opacity-40"
+          onClick={async () => {
+            setBusy(true);
+            await api.cacheClear().catch(() => 0);
+            setInfo(await api.cacheInfo());
+            setBusy(false);
+          }}
+        >
+          {busy ? "Clearing…" : "Clear cache"}
+        </button>
+      </Row>
+    </>
   );
 }

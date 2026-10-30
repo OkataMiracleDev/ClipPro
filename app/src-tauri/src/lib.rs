@@ -999,6 +999,76 @@ async fn watch_folders_set(state: State<'_, AppState>, folders: Vec<WatchFolderD
     Ok(())
 }
 
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct CacheInfo {
+    pub path: String,
+    pub entries: f64,
+    pub bytes: f64,
+}
+
+/// The global measurement cache (Settings → Cache).
+#[tauri::command]
+#[specta::specta]
+async fn cache_info() -> Result<CacheInfo, String> {
+    blocking(|| {
+        let path = clippro_project::MeasureCache::default_path();
+        if !path.exists() {
+            return Ok(CacheInfo { path: path.to_string_lossy().into_owned(), entries: 0.0, bytes: 0.0 });
+        }
+        let c = clippro_project::MeasureCache::open(&path).map_err(|e| e.to_string())?;
+        let (n, b) = c.stats().map_err(|e| e.to_string())?;
+        Ok(CacheInfo { path: path.to_string_lossy().into_owned(), entries: n as f64, bytes: b as f64 })
+    })
+    .await
+}
+
+/// Empties the global measurement cache; projects keep their own measurements.
+#[tauri::command]
+#[specta::specta]
+async fn cache_clear() -> Result<f64, String> {
+    blocking(|| {
+        let path = clippro_project::MeasureCache::default_path();
+        if !path.exists() {
+            return Ok(0.0);
+        }
+        let c = clippro_project::MeasureCache::open(&path).map_err(|e| e.to_string())?;
+        c.clear().map(|n| n as f64).map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// Writes the app settings to a JSON file (Settings → General → Export).
+#[tauri::command]
+#[specta::specta]
+async fn settings_export(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    let mut s = lock(&state.settings).clone();
+    // Machine-specific: not part of a portable settings file.
+    s.last_project = None;
+    s.recent_projects.clear();
+    std::fs::write(path, serde_json::to_string_pretty(&s).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+}
+
+/// Reads app settings from a JSON file, keeps this machine's recent projects, saves and
+/// broadcasts them.
+#[tauri::command]
+#[specta::specta]
+async fn settings_import(app: tauri::AppHandle, state: State<'_, AppState>, path: String) -> Result<settings::AppSettings, String> {
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut s: settings::AppSettings = serde_json::from_str(&text).map_err(|e| format!("Not a ClipPro settings file: {e}"))?;
+    {
+        let cur = lock(&state.settings);
+        s.last_project = cur.last_project.clone();
+        s.recent_projects = cur.recent_projects.clone();
+    }
+    let s = s.sanitised();
+    if let Some(p) = lock(&state.settings_path).as_ref() {
+        s.save(p)?;
+    }
+    *lock(&state.settings) = s.clone();
+    let _ = s.emit(&app);
+    Ok(s)
+}
+
 #[tauri::command]
 #[specta::specta]
 async fn settings_get(state: State<'_, AppState>) -> Result<settings::AppSettings, String> {
@@ -1297,6 +1367,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             clip_retry,
             system_info,
             settings_get,
+            cache_info,
+            cache_clear,
+            settings_export,
+            settings_import,
             watch_folders_get,
             snapshots_list,
             overrides_list,
