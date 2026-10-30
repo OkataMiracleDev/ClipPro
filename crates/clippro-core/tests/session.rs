@@ -321,3 +321,61 @@ fn audio_drives_scoring() {
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// PLAN P11.3/P11.4: a timeline exported from the selects comes back through FCP7 XML, relinks
+/// to the project, scores like the selects it came from, and exports back with score markers.
+#[test]
+fn imported_timeline_review_and_export_back() {
+    use clippro_core::review::{export_back, ReviewOptions};
+    let Some(dir) = corpus() else { return };
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-review-test");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let s = Session::create(&tmp.join("p.clippro"), "Review", SessionOptions { cache_path: None, ..opts(&tmp) }).unwrap();
+    s.import(&[dir.join("tripod_static.mp4"), dir.join("handheld_shake.mp4"), dir.join("blur_ramp.mp4")]).unwrap();
+    s.queue_analysis().unwrap();
+    s.wait(|_| {});
+    let settings = Settings::from_preset(&builtin("Cleanup").unwrap()).unwrap();
+    let ex = clippro_interchange::ExportOptions { handles: false, ..Default::default() };
+    let tl = s.export_timeline(&settings, SortOrder::Timeline, &ex).unwrap();
+    let xml = clippro_interchange::Format::Xmeml.render(&tl);
+    let back = clippro_interchange::import::import(&xml, clippro_types::FrameRate::new(25, 1)).unwrap();
+    let (rv, clips) = s.review_timeline(back, &settings, &ReviewOptions::default()).unwrap();
+    assert!(rv.relink.missing.is_empty(), "{:?}", rv.relink);
+    assert!(!rv.items.is_empty());
+    let sel = s.score(&settings).unwrap();
+    for (it, r) in rv.items.iter().zip(sel.sorted(SortOrder::Timeline)) {
+        assert_eq!(it.clip, Some(r.clip));
+        let mean = it.mean.unwrap();
+        assert!((mean - r.segment.mean).abs() < 0.05, "{} vs {}", mean, r.segment.mean);
+        assert!(!it.bars.is_empty());
+    }
+    // A deliberately poor item: the blurriest stretch of blur_ramp, as an editor might cut it.
+    let blur = clips.iter().find(|c| c.name == "blur_ramp").unwrap();
+    let worst = (0..blur.scores.score.len()).min_by(|a, b| blur.scores.score[*a].total_cmp(&blur.scores.score[*b])).unwrap();
+    let t = blur.ms.time_us[worst];
+    let mut cut = rv.timeline.clone();
+    let mi = cut.media.iter().position(|m| m.path == blur.media.path).unwrap_or_else(|| {
+        cut.media.push(blur.media.clone());
+        cut.media.len() - 1
+    });
+    let f = cut.media[mi].rate.us_to_frames(t).saturating_sub(5).max(0);
+    cut.video[0].items.push(clippro_interchange::model::Item::Clip(clippro_interchange::model::ClipItem {
+        media: mi,
+        name: "blur_ramp".into(),
+        src_in: f,
+        src_out: f + 10,
+        markers: vec![],
+        select_index: None,
+        score: None,
+    }));
+    let (rv2, clips2) = s.review_timeline(cut, &settings, &ReviewOptions::default()).unwrap();
+    let last = rv2.items.last().unwrap();
+    assert!(last.weak, "{last:?}");
+    let out = export_back(&rv2, &clips2, &[], true);
+    let marks: Vec<_> = out.video[0].items.iter().filter_map(|i| if let clippro_interchange::model::Item::Clip(c) = i { c.markers.iter().find(|m| m.name.starts_with("ClipPro ")) } else { None }).collect();
+    assert_eq!(marks.len(), rv2.items.len());
+    assert_eq!(marks.last().unwrap().color, clippro_interchange::MarkerColor::Red);
+    s.close().unwrap();
+    std::fs::remove_dir_all(&tmp).unwrap();
+}
