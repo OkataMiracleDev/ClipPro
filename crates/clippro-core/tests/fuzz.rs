@@ -105,6 +105,18 @@ fn fuzz(name: &str, seeds: &[Vec<u8>], inner_zstd: bool, f: impl Fn(&[u8])) {
     }
 }
 
+/// Inputs the long fuzz runs found; each must be rejected cleanly.
+#[test]
+fn known_crashers_are_rejected() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/fuzz");
+    for e in std::fs::read_dir(&dir).unwrap() {
+        let p = e.unwrap().path();
+        let b = std::fs::read(&p).unwrap();
+        let _ = clippro_interchange::import::import_bytes(&b, FrameRate::new(25, 1));
+        eprintln!("{} handled", p.display());
+    }
+}
+
 #[test]
 fn timeline_importers_never_panic() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/interchange");

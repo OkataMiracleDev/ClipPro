@@ -443,8 +443,13 @@ impl RObj {
     fn string(&self, pid: u16) -> Option<String> {
         self.get(pid).map(from_utf16z)
     }
+    /// A positive rational (edit and sample rates); anything else counts as missing (fuzzing found
+    /// a zero numerator reaching frame maths).
     fn rational(&self, pid: u16) -> Option<(i64, i64)> {
-        self.get(pid).filter(|b| b.len() >= 8).map(|b| (i32::from_le_bytes(b[..4].try_into().unwrap_or([0; 4])) as i64, i32::from_le_bytes(b[4..8].try_into().unwrap_or([0; 4])) as i64))
+        self.get(pid)
+            .filter(|b| b.len() >= 8)
+            .map(|b| (i32::from_le_bytes(b[..4].try_into().unwrap_or([0; 4])) as i64, i32::from_le_bytes(b[4..8].try_into().unwrap_or([0; 4])) as i64))
+            .filter(|(n, d)| *n > 0 && *d > 0)
     }
     fn is(&self, class: &str) -> bool {
         self.class == auid(class)

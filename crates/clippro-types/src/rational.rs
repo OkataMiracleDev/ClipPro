@@ -195,6 +195,10 @@ impl FrameRate {
 
     /// Frame index → time in µs (floor).
     pub fn frames_to_us(self, frames: i64) -> i64 {
+        // A zero rate (only from a malformed file) has no frame duration.
+        if self.0.num == 0 {
+            return 0;
+        }
         ((frames as i128 * 1_000_000 * self.0.den as i128) / self.0.num as i128) as i64
     }
 

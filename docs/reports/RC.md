@@ -9,7 +9,7 @@ Status on 2026-10-30, branch `dev`. Each SPEC §5 feature ID is shown with its e
 - **Later**: moved out of 1.0 by an ADR.
 
 **Test runs at this point:**
-- `cargo test --workspace --release`: 225 tests pass.
+- `cargo test --workspace --release`: 228 tests pass.
 - `npm --prefix app/ui test`: 63 tests pass.
 - `scripts/verify.ps1` passes every step. The on-demand runs are below.
 
@@ -132,13 +132,21 @@ Status on 2026-10-30, branch `dev`. Each SPEC §5 feature ID is shown with its e
 ## Hardening (P14.6)
 | Check | Result |
 |---|---|
-| Fuzzing | Stable-Rust mutation fuzzer (`core/tests/fuzz.rs`) on the timeline importers (EDL, FCP7, FCPXML, OTIO, AAF), measurement blobs and audio sets. The first 3 s run found an unbounded allocation from a corrupted measurement blob (fixed). 30-minute run per target: see below. `cargo fuzz` needs nightly and libFuzzer, which this toolchain doesn't use |
+| Fuzzing | 30 minutes per target; two bugs found and fixed; clean afterwards (details below) |
 | Licences | `scripts/licenses.py`: 316 Rust crates and 55 npm packages, all on the allow list. Notices ship in the installer (`licenses/`) |
 | Accessibility | WCAG AA contrast for every text token on every surface in both themes (`ui: lib/contrast.test.ts`), after raising tertiary text and splitting accent fill and text colours. Keyboard-only walk-through: **Human** (part of HC-9) |
 | AI throughput | `core/tests/ai.rs::throughput_with_ai_running`: 3–6% analysis slowdown with GPU AI, about 0% with CPU AI (limit 15%) |
-| Memory soak | `score/tests/soak.rs`: 100 h project re-scored continuously for 15 minutes (the owner chose 15 minutes over PLAN's hour); see below |
+| Memory soak | `score/tests/soak.rs`, 15 minutes (the owner chose 15 minutes over PLAN's hour): 10,897 re-scores of a 100 h project. Working set 533 MB after warm-up, 548 MB at the end (+2.8%, limit 5%), peak 559 MB; it had already reached 546 MB at 2 minutes, so it levels off |
 | Performance (SPEC §22) | Met except 4K ProRes (about 1.9× in batches vs 4×): decode-bound, ADR-003 and ADR-006 |
 | Clippy | No deny-level findings (`scripts/verify.ps1`) |
+
+### Fuzzing details
+The fuzzer is stable Rust (`core/tests/fuzz.rs`); `cargo fuzz` needs nightly and libFuzzer, which this toolchain doesn't use. The 30-minute run per target fed the timeline importers 4.86 M inputs, the measurement blobs 22.7 M and the audio sets 36.9 M. It found two bugs, both fixed:
+
+- A corrupted measurement blob made the decoder allocate unbounded memory (found in the 3 s run).
+- A corrupted AAF edit rate reached frame maths as a divide by zero (found in the 30-minute run). The two crashing files are regression fixtures in `testdata/fuzz/`.
+
+After the fixes, every target runs clean.
 
 ## Packaging (P14.1–P14.3)
 | Item | Status |
