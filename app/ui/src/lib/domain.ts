@@ -25,6 +25,8 @@ export const FLAGS: { key: string; label: string; hint: string }[] = [
 ];
 
 /** Flags whose detectors run today (audio and AI flags arrive in later phases). */
+/** Flags the AI modules raise (P12): shown when local AI is on. */
+export const AI_FLAGS = new Set(["no_face", "flub"]);
 export const ACTIVE_FLAGS = new Set(["clipping", "duplicate", "solid_colour", "hard_cut", "motion_blur", "shaky", "low_light", "focus_hunting", "colour_bars", "horizon_tilt"]);
 
 export const PROFILES: { value: import("../bindings").ColourProfile; label: string }[] = [

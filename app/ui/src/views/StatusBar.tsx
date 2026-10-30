@@ -8,6 +8,7 @@ import { Spinner } from "../components/ui";
 import { formatDuration } from "../lib/typed";
 import { useApp } from "../store";
 import { JobStatus } from "./Jobs";
+import { AiStatus } from "./Ai";
 
 let info: Promise<{ hwDecode: boolean; version: string }> | null = null;
 
@@ -59,6 +60,7 @@ export function StatusBar() {
             : `${done} of ${total} analysed${failed ? ` · ${failed} failed` : ""}`}
       </span>
       <JobStatus />
+      <AiStatus />
       {scoring && (
         <span className="flex items-center gap-1">
           <Spinner size={10} /> Scoring…

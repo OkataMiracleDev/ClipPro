@@ -76,7 +76,7 @@ function makeDemo(): DemoClip[] {
 }
 
 const demo = makeDemo();
-let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, recent_projects: ["D:/Projects/Coast Doc.clippro", "D:/Projects/Sarah Interview.clippro", "E:/Weddings/Okafor.clippro"], workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true, keybindings: {}, colour_blind_scores: false, tour_done: !new URLSearchParams(location.search).has("tour") };
+let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, recent_projects: ["D:/Projects/Coast Doc.clippro", "D:/Projects/Sarah Interview.clippro", "E:/Weddings/Okafor.clippro"], workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true, keybindings: {}, colour_blind_scores: false, tour_done: !new URLSearchParams(location.search).has("tour"), ai_consent: true, ai_faces: true, ai_shots: true, ai_transcripts: true, ai_speakers: true, whisper_model: "whisper-small", ai_language: "", ai_deterministic: false };
 const settingsListeners = new Set<(s: AppSettings) => void>();
 const mockBins: { id: number; name: string; kind: string; query: string | null }[] = [
   { id: 1, name: "Interviews", kind: "manual", query: null },
@@ -110,6 +110,44 @@ function mockJob(job: "proxy" | "render", count: number, dir = "D:/Footage/Proxy
   };
   setTimeout(tick, 200);
 }
+// AI (P12): demo People, shot types and two interview transcripts.
+const aiListeners = new Set<(p: import("./api").AiProgress) => void>();
+const mockModels: import("./api").AiModel[] = [
+  ["yunet-2023mar", "faces", "YuNet face detector", 232_589, "MIT"],
+  ["sface-2021dec", "faces", "SFace face recogniser", 38_696_353, "Apache-2.0"],
+  ["clip-b32-vision", "clip", "CLIP ViT-B/32 image encoder (8-bit)", 88_224_011, "MIT"],
+  ["clip-b32-text", "clip", "CLIP ViT-B/32 text encoder (8-bit)", 64_177_617, "MIT"],
+  ["clip-b32-tokenizer", "clip", "CLIP tokenizer", 2_224_041, "MIT"],
+  ["whisper-tiny", "transcripts", "Whisper tiny", 77_691_713, "MIT"],
+  ["whisper-base", "transcripts", "Whisper base", 147_951_465, "MIT"],
+  ["whisper-small", "transcripts", "Whisper small", 487_601_967, "MIT"],
+  ["whisper-medium", "transcripts", "Whisper medium", 1_533_763_059, "MIT"],
+  ["whisper-large-v3-turbo", "transcripts", "Whisper large-v3 turbo", 1_624_555_275, "MIT"],
+  ["ecapa-voxceleb-512", "speakers", "ECAPA-TDNN speaker embeddings", 24_948_830, "Apache-2.0"],
+].map(([id, module, name, size, licence]) => ({ id: id as string, module: module as import("./api").AiModel["module"], name: name as string, size: size as number, licence: licence as string, source: "", installed: id !== "whisper-medium" && id !== "whisper-large-v3-turbo", downloading: false }));
+const mockPeople: import("./api").Person[] = [
+  { id: 1, name: "Sarah", clips: [6, 7], cover: { clip: 7, us: 4e6, box: [0.38, 0.18, 0.24, 0.42] } },
+  { id: 2, name: "Person 2", clips: [10], cover: { clip: 10, us: 2e6, box: [0.55, 0.25, 0.12, 0.2] } },
+];
+const SHOTS: Record<string, import("./api").ShotType> = { INTERVIEW_SARAH_WIDE: "medium", INTERVIEW_SARAH_CU: "close_up", DRONE_COAST_01: "aerial", DRONE_COAST_02: "aerial", BROLL_HANDS_05: "insert", BROLL_STREET_11: "wide", GIMBAL_MARKET_03: "medium", TIMELAPSE_DUSK: "wide" };
+const LINES = [
+  "So we started the project about three years ago.",
+  "Um, at the time nobody really believed it would work.",
+  "The first prototype was, the first prototype was built in a garage.",
+  "And honestly that's where most of the good ideas came from.",
+  "Today we ship to forty countries.",
+];
+function mockTranscript(clip: number): import("./api").Transcript | null {
+  if (clip !== 6 && clip !== 7) return null;
+  const lines = LINES.map((text, i) => ({ startUs: i * 4.2e6 + 0.5e6, endUs: i * 4.2e6 + 4e6, text, speaker: i === 4 && clip === 6 ? 1 : 0 }));
+  const words = lines.flatMap((l) => {
+    const ws = l.text.split(" ");
+    const step = (l.endUs - l.startUs) / ws.length;
+    return ws.map((w, k) => ({ startUs: l.startUs + k * step, endUs: l.startUs + (k + 1) * step, text: w, prob: 0.9, filler: /^um,?$/i.test(w) }));
+  });
+  return { language: "en", words, lines, flubs: [[lines[2]!.startUs, lines[2]!.startUs + 1.6e6]] };
+}
+
 const offloadListeners = new Set<(p: import("./api").OffloadProgress) => void>();
 let mockOffloadCancel = false;
 let mockSyncId = 0;
@@ -142,6 +180,7 @@ function defaultSettings(name: string): Settings {
     handles_samples: 3,
     long_mode: "split",
     snap_to_sentences: false,
+    best_take_only: false,
     switches: { metrics: true, flags: true, camera_filter: true },
     shot_types: [],
   };
@@ -569,6 +608,76 @@ export const mockBackend: Backend = {
   diagnosticsOpenFolder: async () => {},
   jobCancel: async () => {
     mockJobCancel = true;
+  },
+  aiModels: async () => ({ models: mockModels.map((m) => ({ ...m })), dir: "C:/Users/you/AppData/Local/ClipPro/models", bytes: mockModels.filter((m) => m.installed).reduce((a, m) => a + m.size, 0) }),
+  aiModelDownload: async (ids) => {
+    for (const id of ids) {
+      const m = mockModels.find((x) => x.id === id);
+      if (!m || m.installed) continue;
+      m.downloading = true;
+      let f = 0;
+      const tick = () => {
+        f += 0.1;
+        if (f >= 1) {
+          m.downloading = false;
+          m.installed = true;
+          aiListeners.forEach((l) => l({ kind: "downloaded", model: id, clip: null, stage: null, fraction: 1, index: 0, count: 0, message: null }));
+          return;
+        }
+        aiListeners.forEach((l) => l({ kind: "download", model: id, clip: null, stage: null, fraction: f, index: 0, count: 0, message: null }));
+        setTimeout(tick, 150);
+      };
+      setTimeout(tick, 150);
+    }
+  },
+  aiDownloadCancel: async () => {},
+  aiModelDelete: async (id) => {
+    const m = mockModels.find((x) => x.id === id);
+    if (m) m.installed = false;
+  },
+  aiRun: async () => 0,
+  aiCancel: async () => {},
+  aiRunning: async () => false,
+  aiClipInfo: async () =>
+    demo.map((d) => ({
+      clip: d.clip.clip,
+      people: mockPeople.filter((p) => p.clips.includes(d.clip.clip)).map((p) => p.id),
+      shot: SHOTS[d.clip.name] ?? (d.clip.name.startsWith("A") || d.clip.name.startsWith("B") ? "wide" : null),
+      transcript: mockTranscript(d.clip.clip) !== null,
+      language: mockTranscript(d.clip.clip) ? "en" : null,
+      speakers: d.clip.clip === 6 ? 2 : d.clip.clip === 7 ? 1 : 0,
+      facesDone: true,
+      clipDone: true,
+    })),
+  peopleList: async () => mockPeople.map((p) => ({ ...p })),
+  personRename: async (id, name) => {
+    const p = mockPeople.find((x) => x.id === id);
+    if (p) p.name = name;
+  },
+  personMerge: async (into, from) => {
+    const a = mockPeople.find((x) => x.id === into);
+    const i = mockPeople.findIndex((x) => x.id === from);
+    if (a && i >= 0) {
+      a.clips = [...new Set([...a.clips, ...mockPeople[i]!.clips])];
+      mockPeople.splice(i, 1);
+    }
+  },
+  transcriptGet: async (clip) => mockTranscript(clip),
+  aiSearch: async (query, visual) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    if (visual)
+      return demo
+        .map((d, i) => ({ clip: d.clip.clip, startUs: 2e6, endUs: 6e6, text: d.clip.name, score: 0.3 - ((i * 7) % 10) / 100 + (q.split(" ").some((w) => d.clip.name.toLowerCase().includes(w)) ? 0.1 : 0) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 6);
+    return [6, 7].flatMap((c) => mockTranscript(c)!.lines.filter((l) => q.split(/\s+/).every((w) => l.text.toLowerCase().includes(w))).map((l) => ({ clip: c, startUs: l.startUs, endUs: l.endUs, text: l.text, score: 1 })));
+  },
+  transcriptExport: async () => {},
+  aiClear: async () => {},
+  onAi: async (cb) => {
+    aiListeners.add(cb);
+    return () => aiListeners.delete(cb);
   },
   onJob: async (cb) => {
     jobListeners.add(cb);

@@ -16,6 +16,7 @@ import { TitleBar } from "./views/TitleBar";
 import { FramePanel } from "./views/FramePanel";
 import { TuningPanel } from "./views/TuningPanel";
 import { Viewer } from "./views/Viewer";
+import { TranscriptPanel } from "./views/Ai";
 
 function Toasts() {
   const { toasts, dismissToast } = useApp();
@@ -228,10 +229,11 @@ export function App() {
                   options={[
                     { value: "tuning", label: "Tuning" },
                     { value: "frame", label: "Frame", title: "Frame inspector (Ctrl+I)" },
+                    { value: "transcript", label: "Transcript", title: "Transcript and search" },
                   ]}
                 />
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto">{rightTab === "tuning" ? <TuningPanel /> : <FramePanel />}</div>
+              <div className="min-h-0 flex-1 overflow-y-auto">{rightTab === "tuning" ? <TuningPanel /> : rightTab === "frame" ? <FramePanel /> : <TranscriptPanel />}</div>
             </aside>
             <section className="col-start-2 min-h-0 border-t border-separator bg-window" data-tour="timeline">
               <Timeline />

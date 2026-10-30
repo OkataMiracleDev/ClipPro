@@ -162,10 +162,34 @@ export const commands = {
 	benchConfig: () => typedError<BenchClip[] | null, string>(__TAURI_INVOKE("bench_config")),
 	/**  Writes the benchmark report and exits. */
 	benchReport: (report: string) => typedError<null, string>(__TAURI_INVOKE("bench_report", { report })),
+	aiModels: () => __TAURI_INVOKE<AiModels>("ai_models"),
+	/**  Downloads models one after another in the background (`AiProgress` download events). */
+	aiModelDownload: (ids: string[]) => typedError<null, string>(__TAURI_INVOKE("ai_model_download", { ids })),
+	aiDownloadCancel: (id: string) => __TAURI_INVOKE<void>("ai_download_cancel", { id }),
+	aiModelDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("ai_model_delete", { id })),
+	/**  Starts the AI queue over every clip that still needs a module; returns how many clips. */
+	aiRun: () => typedError<number, string>(__TAURI_INVOKE("ai_run")),
+	aiCancel: () => __TAURI_INVOKE<void>("ai_cancel"),
+	aiRunning: () => __TAURI_INVOKE<boolean>("ai_running"),
+	aiClipInfo: () => typedError<ClipAiRow_Serialize[], string>(__TAURI_INVOKE("ai_clip_info")),
+	peopleList: () => typedError<PersonRow_Serialize[], string>(__TAURI_INVOKE("people_list")),
+	personRename: (id: number | null, name: string) => typedError<null, string>(__TAURI_INVOKE("person_rename", { id, name })),
+	personMerge: (into: number | null, from: number | null) => typedError<null, string>(__TAURI_INVOKE("person_merge", { into, from })),
+	transcriptGet: (clip: number | null) => typedError<TranscriptRow_Serialize | null, string>(__TAURI_INVOKE("transcript_get", { clip })),
+	/**  Transcript search (full text) or visual search (CLIP), best first. */
+	aiSearch: (query: string, visual: boolean) => typedError<SearchRow[], string>(__TAURI_INVOKE("ai_search", { query, visual })),
+	/**
+	 *  Writes a clip's transcript (or the part within `start_us`–`end_us`) as SRT or WebVTT, by
+	 *  the file extension.
+	 */
+	transcriptExport: (clip: number | null, path: string, startUs: number | null, endUs: number | null) => typedError<null, string>(__TAURI_INVOKE("transcript_export", { clip, path, startUs, endUs })),
+	/**  Drops a clip's AI results so the next run redoes them. */
+	aiClear: (clip: number | null) => typedError<null, string>(__TAURI_INVOKE("ai_clear", { clip })),
 };
 
 /** Events */
 export const events = {
+	aiProgress: makeEvent<AiProgress_Serialize, AiProgress_Deserialize>("ai-progress"),
 	analysisEvent: makeEvent<AnalysisEvent_Serialize, AnalysisEvent_Deserialize>("analysis-event"),
 	appSettings: makeEvent<AppSettings_Serialize, AppSettings_Deserialize>("app-settings"),
 	jobProgress: makeEvent<JobProgress_Serialize, JobProgress_Deserialize>("job-progress"),
@@ -174,6 +198,55 @@ export const events = {
 };
 
 /* Types */
+export type AiModelRow = {
+	id: string,
+	/**  faces | clip | transcripts | speakers */
+	module: string,
+	name: string,
+	size: number | null,
+	licence: string,
+	source: string,
+	installed: boolean,
+	downloading: boolean,
+};
+
+export type AiModels = {
+	models: AiModelRow[],
+	dir: string,
+	bytes: number | null,
+};
+
+/**  Model downloads and the AI queue. Progress is sent at most every 150 ms. */
+export type AiProgress = AiProgress_Serialize | AiProgress_Deserialize;
+
+/**  Model downloads and the AI queue. Progress is sent at most every 150 ms. */
+export type AiProgress_Deserialize = {
+	/**  download | downloaded | download_failed | progress | finished | failed | cancelled */
+	kind: string,
+	model?: string | null,
+	clip?: number | null,
+	/**  vision | transcript | speakers */
+	stage?: string | null,
+	fraction: number | null,
+	index: number,
+	count: number,
+	message?: string | null,
+};
+
+/**  Model downloads and the AI queue. Progress is sent at most every 150 ms. */
+export type AiProgress_Serialize = {
+	/**  download | downloaded | download_failed | progress | finished | failed | cancelled */
+	kind: string,
+	model: string | null,
+	clip: number | null,
+	/**  vision | transcript | speakers */
+	stage: string | null,
+	fraction: number | null,
+	index: number,
+	count: number,
+	message: string | null,
+};
+
 export type AnalysisEvent = AnalysisEvent_Serialize | AnalysisEvent_Deserialize;
 
 export type AnalysisEvent_Deserialize = {
@@ -244,6 +317,20 @@ export type AppSettings_Deserialize = {
 	colour_blind_scores?: boolean,
 	/**  The first-run tour has been seen (P14.4). */
 	tour_done?: boolean,
+	/**  Local AI is allowed: models may be downloaded and run on this PC (SPEC §18). */
+	ai_consent?: boolean,
+	/**  Faces and People. */
+	ai_faces?: boolean,
+	/**  Shot types, aesthetics and visual search (CLIP). */
+	ai_shots?: boolean,
+	ai_transcripts?: boolean,
+	ai_speakers?: boolean,
+	/**  Whisper model id: whisper-tiny | whisper-base | whisper-small | whisper-medium | whisper-large-v3-turbo */
+	whisper_model?: string,
+	/**  Transcript language (ISO 639-1); empty = detect. */
+	ai_language?: string,
+	/**  CPU only, repeatable results. */
+	ai_deterministic?: boolean,
 };
 
 export type AppSettings_Serialize = {
@@ -272,6 +359,20 @@ export type AppSettings_Serialize = {
 	colour_blind_scores: boolean,
 	/**  The first-run tour has been seen (P14.4). */
 	tour_done: boolean,
+	/**  Local AI is allowed: models may be downloaded and run on this PC (SPEC §18). */
+	ai_consent: boolean,
+	/**  Faces and People. */
+	ai_faces: boolean,
+	/**  Shot types, aesthetics and visual search (CLIP). */
+	ai_shots: boolean,
+	ai_transcripts: boolean,
+	ai_speakers: boolean,
+	/**  Whisper model id: whisper-tiny | whisper-base | whisper-small | whisper-medium | whisper-large-v3-turbo */
+	whisper_model: string,
+	/**  Transcript language (ISO 639-1); empty = detect. */
+	ai_language: string,
+	/**  CPU only, repeatable results. */
+	ai_deterministic: boolean,
 };
 
 export type AudioLevels = {
@@ -353,6 +454,32 @@ export type CameraMatch = {
 	name: string,
 	/**  Mean camera-filter factor over the clip (0–1). */
 	score: number | null,
+};
+
+export type ClipAiRow = ClipAiRow_Serialize | ClipAiRow_Deserialize;
+
+export type ClipAiRow_Deserialize = {
+	clip: number | null,
+	people: (number | null)[],
+	/**  wide | medium | close_up | extreme_close_up | insert | aerial | over_the_shoulder */
+	shot?: string | null,
+	transcript: boolean,
+	language?: string | null,
+	speakers: number,
+	faces_done: boolean,
+	clip_done: boolean,
+};
+
+export type ClipAiRow_Serialize = {
+	clip: number | null,
+	people: (number | null)[],
+	/**  wide | medium | close_up | extreme_close_up | insert | aerial | over_the_shoulder */
+	shot: string | null,
+	transcript: boolean,
+	language: string | null,
+	speakers: number,
+	faces_done: boolean,
+	clip_done: boolean,
 };
 
 export type ClipId = number | null;
@@ -604,6 +731,22 @@ export type JobProgress_Serialize = {
 	outputs: string[],
 };
 
+export type LineRow = LineRow_Serialize | LineRow_Deserialize;
+
+export type LineRow_Deserialize = {
+	start_us: number | null,
+	end_us: number | null,
+	text: string,
+	speaker?: number | null,
+};
+
+export type LineRow_Serialize = {
+	start_us: number | null,
+	end_us: number | null,
+	text: string,
+	speaker: number | null,
+};
+
 export type LongSegmentMode = "split" | "trim_best";
 
 export type MasterSwitches = {
@@ -704,6 +847,28 @@ export type OverrideDto = {
 	kind: string,
 	start_us: number | null,
 	end_us: number | null,
+};
+
+export type PersonRow = PersonRow_Serialize | PersonRow_Deserialize;
+
+export type PersonRow_Deserialize = {
+	id: number | null,
+	name: string,
+	clips: (number | null)[],
+	cover_clip?: number | null,
+	cover_us?: number | null,
+	/**  x, y, w, h as fractions of the frame. */
+	cover_box?: (number | null)[] | null,
+};
+
+export type PersonRow_Serialize = {
+	id: number | null,
+	name: string,
+	clips: (number | null)[],
+	cover_clip: number | null,
+	cover_us: number | null,
+	/**  x, y, w, h as fractions of the frame. */
+	cover_box: (number | null)[] | null,
 };
 
 export type PresetInfo = {
@@ -836,6 +1001,14 @@ export type ScoreResult = {
 	summary: Summary,
 };
 
+export type SearchRow = {
+	clip: number | null,
+	start_us: number | null,
+	end_us: number | null,
+	text: string,
+	score: number | null,
+};
+
 /**  One select. */
 export type Segment = {
 	/**  Core span (µs from clip start), used for length rules and totals. */
@@ -888,6 +1061,8 @@ export type Settings_Deserialize = {
 	switches: MasterSwitches,
 	/**  Shot types rewarded by the Shot-type match sub-metric. */
 	shot_types: string[],
+	/**  Keep only the best select of each take group (TUN-13; needs the AI modules). */
+	best_take_only?: boolean,
 };
 
 export type Settings_Serialize = {
@@ -913,6 +1088,8 @@ export type Settings_Serialize = {
 	switches: MasterSwitches,
 	/**  Shot types rewarded by the Shot-type match sub-metric. */
 	shot_types: string[],
+	/**  Keep only the best select of each take group (TUN-13; needs the AI modules). */
+	best_take_only: boolean,
 };
 
 export type Snapshot = {
@@ -1006,6 +1183,22 @@ export type SystemInfo = {
 /**  What a flag does to scoring (ALGORITHMS §6.4). */
 export type Tier = "force_exclude" | "disfavour" | "neutral" | "favour" | "force_include";
 
+export type TranscriptRow = TranscriptRow_Serialize | TranscriptRow_Deserialize;
+
+export type TranscriptRow_Deserialize = {
+	language: string,
+	words: WordRow[],
+	lines: LineRow_Deserialize[],
+	flubs: ([number | null, number | null])[],
+};
+
+export type TranscriptRow_Serialize = {
+	language: string,
+	words: WordRow[],
+	lines: LineRow_Serialize[],
+	flubs: ([number | null, number | null])[],
+};
+
 export type WatchFolderDto = {
 	path: string,
 	subfolders: boolean,
@@ -1031,6 +1224,14 @@ export type Waveform_Serialize = {
 	peaks: string,
 	/**  Integrated loudness of the whole clip (LUFS), if not silent. */
 	lufs: number | null,
+};
+
+export type WordRow = {
+	start_us: number | null,
+	end_us: number | null,
+	text: string,
+	prob: number | null,
+	filler: boolean,
 };
 
 /* Tauri Specta runtime */

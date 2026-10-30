@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 use tauri_specta::{collect_commands, collect_events, Builder, Event};
 
+pub mod ai;
 pub mod audio_out;
 pub mod diag;
 pub mod presets;
@@ -38,6 +39,12 @@ pub struct AppState {
     offload: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
     /// Cancel flag of the running proxy or render job (P13.2/P13.3), if any.
     job: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
+    /// Cancel flag of the running AI queue (P12.7), if any.
+    ai: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
+    /// Model downloads in progress: id → cancel flag.
+    ai_downloads: Mutex<std::collections::HashMap<String, Arc<std::sync::atomic::AtomicBool>>>,
+    /// Clips whose AI pass failed this run; the automatic queue skips them until "Run now".
+    ai_failed: Mutex<std::collections::HashSet<i64>>,
 }
 
 /// Self-test runs. `--bench-preview <out.json> <clip>...` measures the preview transports;
@@ -2184,8 +2191,23 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             audio_clock,
             bench_config,
             bench_report,
+            ai::ai_models,
+            ai::ai_model_download,
+            ai::ai_download_cancel,
+            ai::ai_model_delete,
+            ai::ai_run,
+            ai::ai_cancel,
+            ai::ai_running,
+            ai::ai_clip_info,
+            ai::people_list,
+            ai::person_rename,
+            ai::person_merge,
+            ai::transcript_get,
+            ai::ai_search,
+            ai::transcript_export,
+            ai::ai_clear,
         ])
-        .events(collect_events![AnalysisEvent, settings::AppSettings, MediaAdded, OffloadProgress, JobProgress])
+        .events(collect_events![AnalysisEvent, settings::AppSettings, MediaAdded, OffloadProgress, JobProgress, ai::AiProgress])
 }
 
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../ui/src/bindings.ts");
@@ -2211,10 +2233,16 @@ fn apply_material(window: &tauri::WebviewWindow) -> bool {
 }
 
 fn pump_events(app: tauri::AppHandle) {
+    let mut tick = 0u32;
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(100));
         let Some(state) = app.try_state::<AppState>() else { continue };
         let Some(s) = lock(&state.session).clone() else { continue };
+        // Every 2 s: once analysis is idle, the AI queue picks up clips that need it.
+        tick = tick.wrapping_add(1);
+        if tick % 20 == 0 && s.scheduler().is_idle() && lock(&state.ai).is_none() && lock(&state.bench_out).is_none() {
+            let _ = ai::start_queue(&app, &state);
+        }
         for e in s.poll_events() {
             use clippro_analysis::jobs::Event as E;
             let ev = match e {

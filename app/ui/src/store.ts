@@ -31,7 +31,11 @@ interface AppState {
   bins: import("./api").Bin[];
   waveforms: Map<number, { startUs: number; peaks: Float32Array; lufs: number | null }>;
   /** What the clip list shows (sidebar selection). */
-  library: { kind: "all" } | { kind: "bin"; id: number } | { kind: "smart"; id: number };
+  library: { kind: "all" } | { kind: "bin"; id: number } | { kind: "smart"; id: number } | { kind: "person"; id: number };
+  /** AI results per clip (P12), People, and the running AI pass. */
+  ai: Map<number, import("./api").ClipAi>;
+  people: import("./api").Person[];
+  aiJob: { clip: number | null; stage: import("./api").AiProgress["stage"]; fraction: number; index: number; count: number } | null;
   annotations: import("./api").Annotation[];
   /** In/out marks for a manual segment (I / O). */
   marks: { clip: number; inUs: number | null; outUs: number | null } | null;
@@ -60,7 +64,7 @@ interface AppState {
   /** A/B compare (P6.6): a second select shown beside the current one, synced from `anchorUs`. */
   compare: { clip: number; startUs: number; endUs: number; anchorUs: number } | null;
   measureOverlay: MeasureOverlayKind;
-  rightTab: "tuning" | "frame";
+  rightTab: "tuning" | "frame" | "transcript";
   toasts: Toast[];
 
   init(): Promise<void>;
@@ -134,7 +138,10 @@ interface AppState {
   setCompare(c: AppState["compare"]): void;
   setClipProfile(media: number, profile: import("./api").ColourProfile): Promise<void>;
   toggleMeasureOverlay(o: MeasureOverlayKind): void;
-  setRightTab(t: "tuning" | "frame"): void;
+  setRightTab(t: "tuning" | "frame" | "transcript"): void;
+  refreshAi(): Promise<void>;
+  renamePerson(id: number, name: string): Promise<void>;
+  mergePeople(into: number, from: number): Promise<void>;
   toast(text: string, tone?: Toast["tone"]): void;
   dismissToast(id: number): void;
 }
@@ -207,6 +214,9 @@ export const useApp = create<AppState>((set, get) => ({
   bins: [],
   waveforms: new Map(),
   library: { kind: "all" },
+  ai: new Map(),
+  people: [],
+  aiJob: null,
   annotations: [],
   marks: null,
   modified: false,
@@ -237,7 +247,10 @@ export const useApp = create<AppState>((set, get) => ({
       const presets = await api.presetsList();
       set({ presets });
       await get().setPreset(get().presetName);
-      if (!unlisten) unlisten = await api.onAnalysis((e) => onAnalysisEvent(e, set, get));
+      if (!unlisten) {
+        unlisten = await api.onAnalysis((e) => onAnalysisEvent(e, set, get));
+        void api.onAi((e) => onAiEvent(e, set, get));
+      }
       const st = await api.getSettings();
       get().applySettings(st);
       void api.onSettings((s) => get().applySettings(s));
@@ -280,8 +293,9 @@ export const useApp = create<AppState>((set, get) => ({
       void get().refreshSnapshots();
       void get().refreshOverrides();
       void get().refreshBins();
-      set({ marks: null, library: { kind: "all" } });
+      set({ marks: null, library: { kind: "all" }, ai: new Map(), people: [], aiJob: null });
       await get().refreshClips();
+      void get().refreshAi();
       get().rescore(true);
       await get().startAnalysis();
     } catch (e) {
@@ -495,7 +509,7 @@ export const useApp = create<AppState>((set, get) => ({
   async deleteBin(id) {
     await api.binDelete(id);
     const l = get().library;
-    if (l.kind !== "all" && l.id === id) set({ library: { kind: "all" } });
+    if ((l.kind === "bin" || l.kind === "smart") && l.id === id) set({ library: { kind: "all" } });
     await get().refreshBins();
     await get().refreshClips();
   },
@@ -786,6 +800,34 @@ export const useApp = create<AppState>((set, get) => ({
   },
   toggleMeasureOverlay: (o) => set((s) => ({ measureOverlay: s.measureOverlay === o ? "none" : o })),
   setRightTab: (rightTab) => set({ rightTab, inspectorOpen: true }),
+  async refreshAi() {
+    if (!get().project) return;
+    try {
+      const [info, people] = await Promise.all([api.aiClipInfo(), api.peopleList()]);
+      set({ ai: new Map(info.map((c) => [c.clip, c])), people });
+    } catch {
+      /* AI results are optional */
+    }
+  },
+  async renamePerson(id, name) {
+    try {
+      await api.personRename(id, name);
+      await get().refreshAi();
+    } catch (e) {
+      get().toast(`Couldn't rename: ${e}`, "error");
+    }
+  },
+  async mergePeople(into, from) {
+    try {
+      await api.personMerge(into, from);
+      const l = get().library;
+      if (l.kind === "person" && l.id === from) set({ library: { kind: "person", id: into } });
+      await get().refreshAi();
+      get().rescore();
+    } catch (e) {
+      get().toast(`Couldn't merge: ${e}`, "error");
+    }
+  },
   toast(text, tone = "info") {
     const id = ++toastId;
     set((s) => ({ toasts: [...s.toasts, { id, text, tone }] }));
@@ -793,6 +835,23 @@ export const useApp = create<AppState>((set, get) => ({
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 }));
+
+function onAiEvent(e: import("./api").AiProgress, set: (p: Partial<AppState>) => void, get: () => AppState) {
+  if (e.kind === "progress") {
+    const prev = get().aiJob;
+    set({ aiJob: { clip: e.clip, stage: e.stage, fraction: e.fraction, index: e.index, count: e.count } });
+    // A clip finished: its results change scoring, People and search.
+    if (prev && prev.clip !== e.clip) {
+      void get().refreshAi();
+      get().rescore();
+    }
+  } else if (e.kind === "finished" || e.kind === "failed" || e.kind === "cancelled") {
+    set({ aiJob: null });
+    void get().refreshAi();
+    get().rescore();
+    if (e.kind === "failed" && e.message) get().toast(`AI analysis: ${e.message}`, "error");
+  }
+}
 
 function onAnalysisEvent(e: AnalysisEvent, set: (p: Partial<AppState>) => void, get: () => AppState) {
   const a = get().analysis;

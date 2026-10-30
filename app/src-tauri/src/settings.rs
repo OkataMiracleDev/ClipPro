@@ -37,6 +37,20 @@ pub struct AppSettings {
     pub colour_blind_scores: bool,
     /// The first-run tour has been seen (P14.4).
     pub tour_done: bool,
+    /// Local AI is allowed: models may be downloaded and run on this PC (SPEC §18).
+    pub ai_consent: bool,
+    /// Faces and People.
+    pub ai_faces: bool,
+    /// Shot types, aesthetics and visual search (CLIP).
+    pub ai_shots: bool,
+    pub ai_transcripts: bool,
+    pub ai_speakers: bool,
+    /// Whisper model id: whisper-tiny | whisper-base | whisper-small | whisper-medium | whisper-large-v3-turbo
+    pub whisper_model: String,
+    /// Transcript language (ISO 639-1); empty = detect.
+    pub ai_language: String,
+    /// CPU only, repeatable results.
+    pub ai_deterministic: bool,
 }
 
 impl Default for AppSettings {
@@ -55,6 +69,14 @@ impl Default for AppSettings {
             keybindings: Default::default(),
             colour_blind_scores: false,
             tour_done: false,
+            ai_consent: false,
+            ai_faces: true,
+            ai_shots: true,
+            ai_transcripts: true,
+            ai_speakers: true,
+            whisper_model: "whisper-small".into(),
+            ai_language: String::new(),
+            ai_deterministic: false,
         }
     }
 }
@@ -84,6 +106,12 @@ impl AppSettings {
         }
         if SampleRate::parse(&self.sample_rate).is_none() {
             self.sample_rate = d.sample_rate;
+        }
+        if !self.whisper_model.starts_with("whisper-") || clippro_ai::models::model(&self.whisper_model).is_none() {
+            self.whisper_model = d.whisper_model;
+        }
+        if self.ai_language.len() > 3 || !self.ai_language.chars().all(|c| c.is_ascii_lowercase()) {
+            self.ai_language = String::new();
         }
         self.workers = self.workers.min(64);
         self.recent_projects.truncate(10);

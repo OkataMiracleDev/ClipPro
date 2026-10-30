@@ -1,5 +1,6 @@
 // Source list + clip table (SPEC §14.1, P5.3).
 
+import { PeopleSection } from "./Ai";
 import * as CM from "@radix-ui/react-context-menu";
 import { AlertCircle, CircleDashed, Film, ListChecks } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -49,6 +50,7 @@ export function Sidebar() {
         </button>
       </div>
       <BinsSection item={item} />
+      <PeopleSection item={item} />
       <SyncGroupsSection />
       <WatchFolders />
       <SyncSheet />

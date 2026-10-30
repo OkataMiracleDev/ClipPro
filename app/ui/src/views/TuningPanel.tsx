@@ -3,7 +3,7 @@ import { useState } from "react";
 import { n } from "../api";
 import { linearScale, RangeSlider, SingleSlider, stopScale } from "../components/TypedSlider";
 import { cx, Segmented, Switch } from "../components/ui";
-import { ACTIVE_FLAGS, FLAGS, TIERS } from "../lib/domain";
+import { ACTIVE_FLAGS, AI_FLAGS, FLAGS, TIERS } from "../lib/domain";
 import { formatDuration, parseCount, parseDuration, parseScore } from "../lib/typed";
 import { nextRun } from "../lib/flagRuns";
 import { useApp } from "../store";
@@ -45,6 +45,7 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
 
 export function TuningPanel() {
   const { settings, updateSettings, scored } = useApp();
+  const aiOn = useApp((s) => s.appSettings?.ai_consent ?? false);
   if (!settings) return null;
   const runs = new Map(scored?.summary.flagRuns ?? []);
   const jumpToRun = (i: number) => {
@@ -87,6 +88,18 @@ export function TuningPanel() {
           value={settings.max_per_clip ?? null}
           onChange={(v) => updateSettings((s) => ({ ...s, max_per_clip: v }))}
         />
+        {aiOn && (
+          <>
+            <label className="flex items-center justify-between" title="Move select edges to the nearest sentence start or end (needs transcripts)">
+              <span className="text-[12px] text-text-2">Snap to sentences</span>
+              <Switch label="Snap to sentences" checked={settings.snap_to_sentences} onChange={(v) => updateSettings((s) => ({ ...s, snap_to_sentences: v }))} />
+            </label>
+            <label className="flex items-center justify-between" title="Of several takes of the same shot or line, keep only the best one">
+              <span className="text-[12px] text-text-2">Best take only</span>
+              <Switch label="Best take only" checked={settings.best_take_only} onChange={(v) => updateSettings((s) => ({ ...s, best_take_only: v }))} />
+            </label>
+          </>
+        )}
       </Section>
 
       <Section title="Weighting">
@@ -119,7 +132,7 @@ export function TuningPanel() {
       <Section title="Flags">
         <div className={cx("flex flex-col gap-1.5", !settings.switches.flags && "opacity-40")}>
           {FLAGS.map((f, i) =>
-            ACTIVE_FLAGS.has(f.key) ? (
+            ACTIVE_FLAGS.has(f.key) || (aiOn && AI_FLAGS.has(f.key)) ? (
               <div key={f.key} className="flex items-center justify-between gap-2" title={f.hint}>
                 <span className="flex min-w-0 items-center gap-1 truncate text-[12px] text-text-2">
                   {f.label}

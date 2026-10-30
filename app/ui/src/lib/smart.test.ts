@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Annotation, Clip, ClipScore } from "../api";
-import { factsFor, matches, type SmartQuery } from "./smart";
+import type { Annotation, Clip, ClipAi, ClipScore } from "../api";
+import { describeRule, factsFor, matches, type SmartQuery } from "./smart";
 
 const clip = (id: number, over: Partial<Clip> = {}): Clip => ({
   clip: id,
@@ -55,5 +55,26 @@ describe("smart collections", () => {
     expect(pick({ match: "all", rules })).toEqual([]);
     expect(pick({ match: "any", rules })).toEqual([1, 2]);
     expect(pick({ match: "all", rules: [] })).toEqual([1, 2, 3]);
+  });
+});
+
+describe("AI smart rules", () => {
+  const clips = [clip(1), clip(2), clip(3)];
+  const info = (c: number, people: number[], shot: ClipAi["shot"], facesDone = true): ClipAi => ({ clip: c, people, shot, transcript: false, language: null, speakers: 0, facesDone, clipDone: shot !== null });
+  const ai = new Map([
+    [1, info(1, [7], "close_up")],
+    [2, info(2, [], "wide")],
+    [3, info(3, [], null, false)],
+  ]);
+  const facts = factsFor(clips, null, [], ai);
+  const pick = (q: SmartQuery) => facts.filter((f) => matches(q, f)).map((f) => f.clip.clip);
+
+  it("matches people and shot types, skipping clips the AI hasn't seen", () => {
+    expect(pick({ match: "all", rules: [{ field: "person", op: "is", value: 7, name: "Sarah" }] })).toEqual([1]);
+    expect(pick({ match: "all", rules: [{ field: "person", op: "not", value: 7, name: "Sarah" }] })).toEqual([2]);
+    expect(pick({ match: "all", rules: [{ field: "shot", op: "is", value: "wide" }] })).toEqual([2]);
+    expect(pick({ match: "all", rules: [{ field: "shot", op: "not", value: "wide" }] })).toEqual([1]);
+    expect(describeRule({ field: "person", op: "is", value: 7, name: "Sarah" })).toBe("Sarah appears");
+    expect(describeRule({ field: "shot", op: "is", value: "close_up" })).toBe("Shot is close-up");
   });
 });

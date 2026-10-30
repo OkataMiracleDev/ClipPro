@@ -1,7 +1,7 @@
 // Smart collections (SPEC P9.8): saved queries over clips — flags, score range, duration, camera,
 // date, rating, label, name, codec — matched all-or-any.
 
-import type { Annotation, Clip, ClipScore } from "../api";
+import type { Annotation, Clip, ClipAi, ClipScore, ShotType } from "../api";
 import { FLAGS } from "./domain";
 
 export type Rule =
@@ -9,7 +9,19 @@ export type Rule =
   | { field: "score" | "duration" | "selects" | "rating"; op: ">=" | "<="; value: number }
   | { field: "camera" | "name"; op: "contains"; value: string }
   | { field: "codec" | "label"; op: "is"; value: string }
-  | { field: "date"; op: "after" | "before"; value: string };
+  | { field: "date"; op: "after" | "before"; value: string }
+  | { field: "person"; op: "is" | "not"; value: number; name: string }
+  | { field: "shot"; op: "is" | "not"; value: ShotType };
+
+export const SHOT_TYPES: { value: ShotType; label: string }[] = [
+  { value: "wide", label: "Wide" },
+  { value: "medium", label: "Medium" },
+  { value: "close_up", label: "Close-up" },
+  { value: "extreme_close_up", label: "Extreme close-up" },
+  { value: "insert", label: "Insert" },
+  { value: "aerial", label: "Aerial" },
+  { value: "over_the_shoulder", label: "Over the shoulder" },
+];
 
 export interface SmartQuery {
   match: "all" | "any";
@@ -20,11 +32,13 @@ export interface ClipFacts {
   clip: Clip;
   score?: ClipScore;
   annotations: Annotation[];
+  /** AI results, when the AI modules have run on the clip. */
+  ai?: ClipAi;
 }
 
-export function factsFor(clips: Clip[], scored: { clips: ClipScore[] } | null, annotations: Annotation[]): ClipFacts[] {
+export function factsFor(clips: Clip[], scored: { clips: ClipScore[] } | null, annotations: Annotation[], ai?: Map<number, ClipAi>): ClipFacts[] {
   const sc = new Map(scored?.clips.map((c) => [c.clip, c]) ?? []);
-  return clips.map((clip) => ({ clip, score: sc.get(clip.clip), annotations: annotations.filter((a) => a.clip === clip.clip) }));
+  return clips.map((clip) => ({ clip, score: sc.get(clip.clip), annotations: annotations.filter((a) => a.clip === clip.clip), ai: ai?.get(clip.clip) }));
 }
 
 function flagBits(sc: ClipScore | undefined): number {
@@ -67,6 +81,16 @@ export function matchRule(r: Rule, f: ClipFacts): boolean {
       const d = f.clip.created.slice(0, 10);
       return r.op === "after" ? d >= r.value : d <= r.value;
     }
+    case "person": {
+      // Clips the faces module hasn't seen match neither condition.
+      if (!f.ai?.facesDone) return false;
+      const has = f.ai.people.includes(r.value);
+      return r.op === "is" ? has : !has;
+    }
+    case "shot": {
+      if (!f.ai?.shot) return false;
+      return r.op === "is" ? f.ai.shot === r.value : f.ai.shot !== r.value;
+    }
   }
 }
 
@@ -97,5 +121,9 @@ export function describeRule(r: Rule): string {
       return `Labelled ${r.value}`;
     case "date":
       return `Recorded ${r.op} ${r.value}`;
+    case "person":
+      return `${r.name || "Person"} ${r.op === "is" ? "appears" : "doesn't appear"}`;
+    case "shot":
+      return `Shot ${r.op === "is" ? "is" : "isn't"} ${SHOT_TYPES.find((s) => s.value === r.value)?.label.toLowerCase() ?? r.value}`;
   }
 }

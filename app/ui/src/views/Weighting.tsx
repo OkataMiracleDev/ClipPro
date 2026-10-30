@@ -8,6 +8,7 @@ import { api, n, type Settings } from "../api";
 import { cx, Switch } from "../components/ui";
 import { amberGroups, ENDS, GROUPS, setWeight, snapPref, TARGETS, type SubMetricInfo } from "../lib/submetrics";
 import { useApp } from "../store";
+import { SHOT_TYPES } from "../lib/smart";
 
 let infoCache: Promise<SubMetricInfo[]> | null = null;
 
@@ -211,13 +212,14 @@ export function Weighting() {
   const settings = useApp((s) => s.settings);
   const updateSettings = useApp((s) => s.updateSettings);
   const infos = useSubMetrics();
+  const aiOn = useApp((s) => s.appSettings?.ai_consent ?? false);
   const [open, setOpen] = useState<string | null>(null);
   if (!settings) return null;
   const weights = settings.weights.map((w) => n(w));
   const subs = settings.subs.map((s) => ({ ...s, pref: n(s.pref), target: n(s.target), tol: n(s.tol), strength: n(s.strength) }));
   const amber = amberGroups(weights, subs, infos);
-  // Content is an AI group: shown once AI modules exist (P12) or when a preset weights it.
-  const axes = GROUPS.map((_, i) => i).filter((i) => !GROUPS[i]!.ai || weights[i]! > 0);
+  // Content is an AI group: shown when local AI is on (P12) or when a preset weights it.
+  const axes = GROUPS.map((_, i) => i).filter((i) => !GROUPS[i]!.ai || aiOn || weights[i]! > 0);
   const setSub = (i: number, patch: Partial<Settings["subs"][number]>) => updateSettings((s) => ({ ...s, subs: s.subs.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
 
   return (
@@ -226,7 +228,8 @@ export function Weighting() {
       <p className="text-center text-[10.5px] text-text-3">Drag a corner; the centre turns a group off. Ctrl+drag keeps the others.</p>
       {axes.map((gi) => {
         const g = GROUPS[gi]!;
-        const members = infos.map((m, i) => ({ m, i })).filter((x) => x.m.group === g.key);
+        // Eyes open needs a model with a permissive licence; it stays hidden until one ships.
+        const members = infos.map((m, i) => ({ m, i })).filter((x) => x.m.group === g.key && x.m.key !== "eyes_open");
         const isOpen = open === g.key;
         return (
           <div key={g.key} className="flex flex-col gap-2">
@@ -252,6 +255,24 @@ export function Weighting() {
                         <TargetSlider k={m.key} target={s.target} tol={s.tol} disabled={!s.enabled} onChange={(target, tol) => setSub(i, { target, tol })} />
                       ) : (
                         <BipolarSlider label={m.label} value={s.pref} ends={ENDS[m.key] ?? ["Low", "High"]} disabled={!s.enabled} onChange={(pref) => setSub(i, { pref })} />
+                      )}
+                      {m.key === "shot_type_match" && (
+                        <div className={cx("flex flex-wrap gap-1", !s.enabled && "opacity-50")} role="group" aria-label="Shot types to favour">
+                          {SHOT_TYPES.map((t) => {
+                            const on = settings.shot_types.includes(t.value);
+                            return (
+                              <button
+                                key={t.value}
+                                aria-pressed={on}
+                                disabled={!s.enabled}
+                                onClick={() => updateSettings((x) => ({ ...x, shot_types: on ? x.shot_types.filter((v) => v !== t.value) : [...x.shot_types, t.value] }))}
+                                className={cx("rounded-full px-2 py-0.5 text-[11px] ring-1", on ? "bg-accent text-accent-fg ring-accent" : "text-text-2 ring-separator-strong hover:bg-control-hover")}
+                              >
+                                {t.label}
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   );

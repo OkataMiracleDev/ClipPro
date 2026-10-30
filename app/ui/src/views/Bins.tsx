@@ -5,7 +5,8 @@ import { Folder, FolderPlus, Plus, Sparkles, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button, cx, Segmented, Sheet } from "../components/ui";
 import { FLAGS, ACTIVE_FLAGS } from "../lib/domain";
-import { describeRule, factsFor, matches, type Rule, type SmartQuery } from "../lib/smart";
+import { describeRule, factsFor, matches, SHOT_TYPES, type Rule, type SmartQuery } from "../lib/smart";
+import type { ShotType } from "../api";
 import { useApp } from "../store";
 import { LABELS } from "./SelectEditor";
 
@@ -21,16 +22,17 @@ export function parseQuery(q: string | null): SmartQuery {
 
 /** Clips the sidebar selection shows. */
 export function useLibraryClips() {
-  const { clips, scored, annotations, library, bins } = useApp();
+  const { clips, scored, annotations, library, bins, ai } = useApp();
   return useMemo(() => {
     if (library.kind === "all") return clips;
     if (library.kind === "bin") return clips.filter((c) => c.bin === library.id);
+    if (library.kind === "person") return clips.filter((c) => ai.get(c.clip)?.people.includes(library.id));
     const bin = bins.find((b) => b.id === library.id);
     const q = parseQuery(bin?.query ?? null);
-    return factsFor(clips, scored, annotations)
+    return factsFor(clips, scored, annotations, ai)
       .filter((f) => matches(q, f))
       .map((f) => f.clip);
-  }, [clips, scored, annotations, library, bins]);
+  }, [clips, scored, annotations, library, bins, ai]);
 }
 
 const FIELDS: { value: Rule["field"]; label: string }[] = [
@@ -44,6 +46,8 @@ const FIELDS: { value: Rule["field"]; label: string }[] = [
   { value: "name", label: "Name" },
   { value: "codec", label: "Codec" },
   { value: "date", label: "Recorded" },
+  { value: "person", label: "Person" },
+  { value: "shot", label: "Shot type" },
 ];
 
 function defaultRule(field: Rule["field"]): Rule {
@@ -67,6 +71,12 @@ function defaultRule(field: Rule["field"]): Rule {
       return { field, op: "is", value: "prores" };
     case "date":
       return { field, op: "after", value: new Date().toISOString().slice(0, 10) };
+    case "person": {
+      const p = useApp.getState().people[0];
+      return { field, op: "is", value: p?.id ?? 0, name: p?.name ?? "" };
+    }
+    case "shot":
+      return { field, op: "is", value: "close_up" };
   }
 }
 
@@ -128,6 +138,22 @@ function RuleRow({ r, onChange, onRemove }: { r: Rule; onChange: (r: Rule) => vo
           <input aria-label="Date" type="date" className={ctl} value={r.value} onChange={(e) => onChange({ ...r, value: e.target.value })} />
         </>
       )}
+      {r.field === "person" && <PersonPicker r={r} onChange={onChange} />}
+      {r.field === "shot" && (
+        <>
+          <select aria-label="Condition" className={ctl} value={r.op} onChange={(e) => onChange({ ...r, op: e.target.value as "is" | "not" })}>
+            <option value="is">is</option>
+            <option value="not">is not</option>
+          </select>
+          <select aria-label="Shot type" className={cx(ctl, "min-w-0 flex-1")} value={r.value} onChange={(e) => onChange({ ...r, value: e.target.value as ShotType })}>
+            {SHOT_TYPES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
       <button aria-label="Remove condition" className="rounded p-0.5 text-text-3 hover:text-text" onClick={onRemove}>
         <X size={12} />
       </button>
@@ -135,11 +161,39 @@ function RuleRow({ r, onChange, onRemove }: { r: Rule; onChange: (r: Rule) => vo
   );
 }
 
+function PersonPicker({ r, onChange }: { r: Extract<Rule, { field: "person" }>; onChange: (r: Rule) => void }) {
+  const people = useApp((s) => s.people);
+  return (
+    <>
+      <select aria-label="Condition" className={ctl} value={r.op} onChange={(e) => onChange({ ...r, op: e.target.value as "is" | "not" })}>
+        <option value="is">appears</option>
+        <option value="not">doesn't appear</option>
+      </select>
+      <select
+        aria-label="Person"
+        className={cx(ctl, "min-w-0 flex-1")}
+        value={r.value}
+        onChange={(e) => {
+          const p = people.find((x) => x.id === Number(e.target.value));
+          onChange({ ...r, value: Number(e.target.value), name: p?.name ?? "" });
+        }}
+      >
+        {people.length === 0 && <option value={0}>No people found yet</option>}
+        {people.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+    </>
+  );
+}
+
 export function SmartEditor({ open, edit, onClose }: { open: boolean; edit: { id: number; name: string; query: SmartQuery } | null; onClose: () => void }) {
-  const { addBin, updateBin, clips, scored, annotations } = useApp();
+  const { addBin, updateBin, clips, scored, annotations, ai } = useApp();
   const [name, setName] = useState(edit?.name ?? "");
   const [q, setQ] = useState<SmartQuery>(edit?.query ?? { match: "all", rules: [defaultRule("score")] });
-  const count = factsFor(clips, scored, annotations).filter((f) => matches(q, f)).length;
+  const count = factsFor(clips, scored, annotations, ai).filter((f) => matches(q, f)).length;
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()} title={edit ? "Edit smart collection" : "New smart collection"}>
       <div className="flex flex-col gap-3">
@@ -236,7 +290,7 @@ export function BinsSection({ item }: { item: (active: boolean) => string }) {
         />
       )}
       {bins.map((b) => {
-        const active = library.kind !== "all" && library.id === b.id;
+        const active = (library.kind === "bin" || library.kind === "smart") && library.id === b.id;
         const isSmart = b.kind === "smart";
         return (
           <CM.Root key={b.id}>

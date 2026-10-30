@@ -4,6 +4,7 @@
 
 import { Accessibility, Database, Gauge, Keyboard, ScanLine, SlidersHorizontal, Sparkles } from "lucide-react";
 import { KeyboardTab } from "./KeyboardTab";
+import { AiTab } from "./Ai";
 import { pickSettingsFile } from "../lib/dialogs";
 import { useEffect, useState } from "react";
 import { api, isTauri, type AppSettings } from "../api";
@@ -214,12 +215,7 @@ export function SettingsWindow() {
             <div className="mt-1 h-2 w-60 rounded-full" style={{ background: "linear-gradient(90deg, var(--c-score-lo), var(--c-score-mid), var(--c-score-hi))" }} />
           </Row>
         )}
-        {s && tab === "ai" && (
-          <div className="px-4 py-6 text-center text-[13px] text-text-2">
-            Local AI modules (faces, transcripts, shot types) arrive in a later update. Models are downloaded only after you approve them here, and everything
-            runs on this PC.
-          </div>
-        )}
+        {s && tab === "ai" && <AiTab s={s} update={update} Row={Row} />}
         {s && ["performance", "analysis"].includes(tab) && <p className="mt-4 text-center text-[11px] text-text-3">Changes apply to projects you open or create from now on.</p>}
         {error && s && <p className="mt-2 text-center text-[11px] text-danger">{error}</p>}
         {!isTauri && <p className="mt-6 text-center text-[11px] text-text-3">Browser preview — settings aren't saved.</p>}

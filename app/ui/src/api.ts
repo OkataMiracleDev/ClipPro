@@ -96,6 +96,64 @@ export interface JobProgress {
   outputs: string[];
 }
 
+/** Local AI (P12): models, the AI queue, People, transcripts and search. */
+export interface AiModel {
+  id: string;
+  module: "faces" | "clip" | "transcripts" | "speakers";
+  name: string;
+  size: number;
+  licence: string;
+  source: string;
+  installed: boolean;
+  downloading: boolean;
+}
+
+export interface AiProgress {
+  kind: "download" | "downloaded" | "download_failed" | "progress" | "finished" | "failed" | "cancelled";
+  model: string | null;
+  clip: number | null;
+  stage: "vision" | "transcript" | "speakers" | null;
+  fraction: number;
+  index: number;
+  count: number;
+  message: string | null;
+}
+
+export type ShotType = "wide" | "medium" | "close_up" | "extreme_close_up" | "insert" | "aerial" | "over_the_shoulder";
+
+export interface ClipAi {
+  clip: number;
+  people: number[];
+  shot: ShotType | null;
+  transcript: boolean;
+  language: string | null;
+  speakers: number;
+  facesDone: boolean;
+  clipDone: boolean;
+}
+
+export interface Person {
+  id: number;
+  name: string;
+  clips: number[];
+  cover: { clip: number; us: number; box: [number, number, number, number] | null } | null;
+}
+
+export interface Transcript {
+  language: string;
+  words: { startUs: number; endUs: number; text: string; prob: number; filler: boolean }[];
+  lines: { startUs: number; endUs: number; text: string; speaker: number | null }[];
+  flubs: [number, number][];
+}
+
+export interface SearchHit {
+  clip: number;
+  startUs: number;
+  endUs: number;
+  text: string;
+  score: number;
+}
+
 export interface OffloadSummary {
   files: number;
   bytes: number;
@@ -363,6 +421,24 @@ export interface Backend {
   diagnosticsSave(path: string): Promise<void>;
   diagnosticsOpenFolder(): Promise<void>;
   onJob(cb: (e: JobProgress) => void): Promise<() => void>;
+  aiModels(): Promise<{ models: AiModel[]; dir: string; bytes: number }>;
+  aiModelDownload(ids: string[]): Promise<void>;
+  aiDownloadCancel(id: string): Promise<void>;
+  aiModelDelete(id: string): Promise<void>;
+  /** Starts the AI queue now; resolves with the number of clips queued. */
+  aiRun(): Promise<number>;
+  aiCancel(): Promise<void>;
+  aiRunning(): Promise<boolean>;
+  aiClipInfo(): Promise<ClipAi[]>;
+  peopleList(): Promise<Person[]>;
+  personRename(id: number, name: string): Promise<void>;
+  personMerge(into: number, from: number): Promise<void>;
+  transcriptGet(clip: number): Promise<Transcript | null>;
+  aiSearch(query: string, visual: boolean): Promise<SearchHit[]>;
+  /** SRT or WebVTT by the file extension; a span exports just that part. */
+  transcriptExport(clip: number, path: string, startUs: number | null, endUs: number | null): Promise<void>;
+  aiClear(clip: number): Promise<void>;
+  onAi(cb: (e: AiProgress) => void): Promise<() => void>;
   /** URL of a decoded preview frame (JPEG) at `us`, at most `width` pixels wide. */
   frameUrl(media: number, us: number, width: number): string;
 }
@@ -664,6 +740,58 @@ const tauriBackend: Backend = {
         message: p.message ?? null,
         summary: sm ? { ...sm, bytes: n(sm.bytes), seconds: n(sm.seconds) } : null,
       });
+    }),
+  aiModels: async () => {
+    const r = await commands.aiModels();
+    return { models: r.models.map((m) => ({ ...m, module: m.module as AiModel["module"], size: n(m.size) })), dir: r.dir, bytes: n(r.bytes) };
+  },
+  aiModelDownload: async (ids) => void unwrap(await commands.aiModelDownload(ids)),
+  aiDownloadCancel: async (id) => void (await commands.aiDownloadCancel(id)),
+  aiModelDelete: async (id) => void unwrap(await commands.aiModelDelete(id)),
+  aiRun: async () => unwrap(await commands.aiRun()),
+  aiCancel: async () => void (await commands.aiCancel()),
+  aiRunning: async () => await commands.aiRunning(),
+  aiClipInfo: async () =>
+    unwrap(await commands.aiClipInfo()).map((c) => ({
+      clip: n(c.clip),
+      people: c.people.map((p) => n(p)),
+      shot: (c.shot ?? null) as ShotType | null,
+      transcript: c.transcript,
+      language: c.language ?? null,
+      speakers: c.speakers,
+      facesDone: c.faces_done,
+      clipDone: c.clip_done,
+    })),
+  peopleList: async () =>
+    unwrap(await commands.peopleList()).map((p) => ({
+      id: n(p.id),
+      name: p.name,
+      clips: p.clips.map((c) => n(c)),
+      cover:
+        p.cover_clip === null || p.cover_clip === undefined
+          ? null
+          : { clip: n(p.cover_clip), us: n(p.cover_us), box: p.cover_box && p.cover_box.length === 4 ? (p.cover_box.map((v) => n(v)) as [number, number, number, number]) : null },
+    })),
+  personRename: async (id, name) => void unwrap(await commands.personRename(id, name)),
+  personMerge: async (into, from) => void unwrap(await commands.personMerge(into, from)),
+  transcriptGet: async (clip) => {
+    const t = unwrap(await commands.transcriptGet(clip));
+    if (!t) return null;
+    return {
+      language: t.language,
+      words: t.words.map((w) => ({ startUs: n(w.start_us), endUs: n(w.end_us), text: w.text, prob: n(w.prob), filler: w.filler })),
+      lines: t.lines.map((l) => ({ startUs: n(l.start_us), endUs: n(l.end_us), text: l.text, speaker: l.speaker ?? null })),
+      flubs: t.flubs.map(([a, b]) => [n(a), n(b)] as [number, number]),
+    };
+  },
+  aiSearch: async (query, visual) =>
+    unwrap(await commands.aiSearch(query, visual)).map((h) => ({ clip: n(h.clip), startUs: n(h.start_us), endUs: n(h.end_us), text: h.text, score: n(h.score) })),
+  transcriptExport: async (clip, path, startUs, endUs) => void unwrap(await commands.transcriptExport(clip, path, startUs, endUs)),
+  aiClear: async (clip) => void unwrap(await commands.aiClear(clip)),
+  onAi: async (cb) =>
+    events.aiProgress.listen((e) => {
+      const p = e.payload;
+      cb({ kind: p.kind as AiProgress["kind"], model: p.model ?? null, clip: p.clip ?? null, stage: (p.stage ?? null) as AiProgress["stage"], fraction: n(p.fraction), index: p.index, count: p.count, message: p.message ?? null });
     }),
   systemInfo: async () => {
     const r = unwrap(await commands.systemInfo());
