@@ -264,7 +264,7 @@ impl AudioSet {
         let take = |pos: &mut usize| -> Option<Vec<f32>> {
             let s = b.get(*pos..*pos + n * 4)?;
             *pos += n * 4;
-            Some(s.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect())
+            Some(s.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect())
         };
         let mut cols = Cols::default();
         for c in cols.all_mut() {
@@ -274,7 +274,7 @@ impl AudioSet {
         let noise_floor = take(&mut pos)?;
         let vad = take(&mut pos)?;
         let wind = take(&mut pos)?;
-        let flags = b.get(pos..pos + n * 4)?.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+        let flags = b.get(pos..pos + n * 4)?.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
         Some(AudioSet { start_us, cols, ch_rms, noise_floor, vad, wind, flags })
     }
 }

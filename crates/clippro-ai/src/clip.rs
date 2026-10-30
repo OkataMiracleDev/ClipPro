@@ -14,7 +14,7 @@ const SIZE: usize = 224;
 const MEAN: [f32; 3] = [0.481_454_66, 0.457_827_5, 0.408_210_73];
 /// Image batch size (fixed, see `embed_images`).
 pub const BATCH: usize = 8;
-const STD: [f32; 3] = [0.268_629_54, 0.261_302_58, 0.275_777_1];
+const STD: [f32; 3] = [0.268_629_54, 0.261_302_6, 0.275_777_1];
 
 /// Shot classes (ALGORITHMS §8.6), in the order of `SHOT_PROMPTS`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -279,8 +279,8 @@ impl Clip {
         let mut flat = Vec::with_capacity(ids.len() * len);
         let mut mask = Vec::with_capacity(ids.len() * len);
         for v in &ids {
-            flat.extend(v.iter().copied().chain(std::iter::repeat(self.tok.eos).take(len - v.len())));
-            mask.extend(std::iter::repeat(1i64).take(v.len()).chain(std::iter::repeat(0).take(len - v.len())));
+            flat.extend(v.iter().copied().chain(std::iter::repeat_n(self.tok.eos, len - v.len())));
+            mask.extend(std::iter::repeat_n(1i64, v.len()).chain(std::iter::repeat_n(0, len - v.len())));
         }
         let input = Tensor::from_array(Array2::from_shape_vec((ids.len(), len), flat).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         let wants_mask = self.text.inputs().iter().any(|i| i.name() == "attention_mask");

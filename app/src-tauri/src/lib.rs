@@ -75,9 +75,7 @@ impl AppState {
     }
 }
 
-fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> impl std::future::Future<Output = Result<T, String>> {
-    async move { tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())? }
-}
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> { tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())? }
 
 // ---------- DTOs ----------
 
@@ -892,12 +890,11 @@ fn offload_start(app: tauri::AppHandle, state: State<'_, AppState>, source: Stri
                 index = *i as u32;
                 file = rel.to_string();
             }
-            OffloadEvent::Progress { done, total } => {
-                if last.elapsed().as_millis() >= 100 || done == total {
+            OffloadEvent::Progress { done, total }
+                if (last.elapsed().as_millis() >= 100 || done == total) => {
                     last = std::time::Instant::now();
                     let _ = OffloadProgress { done: *done as f64, total: *total as f64, files, index, file: Some(file.clone()), ..blank("progress") }.emit(&app);
                 }
-            }
             _ => {}
         });
         let app_state = app.state::<AppState>();
@@ -2263,7 +2260,7 @@ fn pump_events(app: tauri::AppHandle) {
         let Some(s) = lock(&state.session).clone() else { continue };
         // Every 2 s: once analysis is idle, the AI queue picks up clips that need it.
         tick = tick.wrapping_add(1);
-        if tick % 20 == 0 && s.scheduler().is_idle() && lock(&state.ai).is_none() && lock(&state.bench_out).is_none() {
+        if tick.is_multiple_of(20) && s.scheduler().is_idle() && lock(&state.ai).is_none() && lock(&state.bench_out).is_none() {
             let _ = ai::start_queue(&app, &state);
         }
         for e in s.poll_events() {

@@ -169,7 +169,7 @@ impl AudioAnalyzer {
         // The 1 s window ends at this block; its score belongs to the block 0.5 s back, so earlier
         // rows are filled in as later audio arrives (and the tail in `finish`).
         let idx = self.cols.rms_dbfs.len();
-        if self.hum_buf.len() == RATE && idx % HUM_EVERY == 0 {
+        if self.hum_buf.len() == RATE && idx.is_multiple_of(HUM_EVERY) {
             self.last_hum = self.hum_score();
             let centre = idx.saturating_sub(5);
             for k in self.hum_filled..=centre.min(idx.saturating_sub(1)) {

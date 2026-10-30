@@ -97,7 +97,7 @@ impl Input {
     pub fn seek(&mut self, stream: usize, ts: i64) -> Result<()> {
         let r = unsafe { ff::avformat_seek_file(self.ctx, stream as i32, i64::MIN, ts, ts, 0) };
         if r < 0 {
-            let r2 = unsafe { ff::av_seek_frame(self.ctx, stream as i32, ts, ff::AVSEEK_FLAG_BACKWARD as i32) };
+            let r2 = unsafe { ff::av_seek_frame(self.ctx, stream as i32, ts, ff::AVSEEK_FLAG_BACKWARD) };
             check(r2)?;
         }
         Ok(())
@@ -141,7 +141,7 @@ impl Packet {
         unsafe { (*self.ptr).stream_index as usize }
     }
     pub fn is_key(&self) -> bool {
-        unsafe { (*self.ptr).flags & ff::AV_PKT_FLAG_KEY as i32 != 0 }
+        unsafe { (*self.ptr).flags & ff::AV_PKT_FLAG_KEY != 0 }
     }
     pub fn pts(&self) -> i64 {
         unsafe {
@@ -234,7 +234,7 @@ impl Decoder {
             let dec = Decoder { ctx };
             check(ff::avcodec_parameters_to_context(ctx, par))?;
             (*ctx).thread_count = threads;
-            (*ctx).thread_type = (ff::FF_THREAD_FRAME | ff::FF_THREAD_SLICE) as i32;
+            (*ctx).thread_type = (ff::FF_THREAD_FRAME | ff::FF_THREAD_SLICE);
             setup(ctx);
             check(ff::avcodec_open2(ctx, codec, ptr::null_mut()))?;
             Ok(dec)
@@ -291,7 +291,7 @@ pub unsafe fn dict_entries(d: *const ff::AVDictionary) -> Vec<(String, String)> 
     let empty = c"";
     let mut e: *const ff::AVDictionaryEntry = ptr::null();
     loop {
-        e = unsafe { ff::av_dict_get(d, empty.as_ptr(), e, ff::AV_DICT_IGNORE_SUFFIX as i32) };
+        e = unsafe { ff::av_dict_get(d, empty.as_ptr(), e, ff::AV_DICT_IGNORE_SUFFIX) };
         if e.is_null() {
             break;
         }

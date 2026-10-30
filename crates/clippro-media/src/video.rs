@@ -245,7 +245,7 @@ impl VideoDecoder {
             // Sampled decoding seeks between frames, which drains a frame-threading pipeline
             // every time. Intra codecs (ProRes, DNx) parallelise within a frame instead.
             if intra_only {
-                (*ctx).thread_type = ff::FF_THREAD_SLICE as i32;
+                (*ctx).thread_type = ff::FF_THREAD_SLICE;
             }
         }) }?;
         let fps = info.fps();
@@ -290,7 +290,7 @@ impl VideoDecoder {
     fn keyframe_before(&self, rel_us: i64) -> Option<i64> {
         let st = self.input.streams()[self.stream];
         let ts = self.start_ts + us_to_ts(rel_us, self.tb);
-        let e = unsafe { ff::avformat_index_get_entry_from_timestamp(st, ts, ff::AVSEEK_FLAG_BACKWARD as i32) };
+        let e = unsafe { ff::avformat_index_get_entry_from_timestamp(st, ts, ff::AVSEEK_FLAG_BACKWARD) };
         if e.is_null() {
             None
         } else {
@@ -799,7 +799,7 @@ pub fn keyframes(path: &Path) -> Result<Vec<i64>> {
         }
         let (ts, flags) = unsafe { ((*e).timestamp, (*e).flags() as i32) };
         let base = *first.get_or_insert(ts);
-        if flags & ff::AVINDEX_KEYFRAME as i32 != 0 {
+        if flags & ff::AVINDEX_KEYFRAME != 0 {
             out.push(ts_to_us(ts - base, tb));
         }
     }

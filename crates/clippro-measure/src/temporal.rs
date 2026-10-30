@@ -80,12 +80,12 @@ pub fn temporal_pass(
         if s.mvs.len() == mv_len {
             ms.mvs.extend_from_slice(&s.mvs);
         } else {
-            ms.mvs.extend(std::iter::repeat([i8::MIN, i8::MIN]).take(mv_len));
+            ms.mvs.extend(std::iter::repeat_n([i8::MIN, i8::MIN], mv_len));
         }
         ms.phash.push(s.phash);
         ms.hist64.extend(s.hist64.iter().map(|h| (h * 255.0).round().clamp(0.0, 255.0) as u8));
         if s.hist64.len() < 64 {
-            ms.hist64.extend(std::iter::repeat(0).take(64 - s.hist64.len()));
+            ms.hist64.extend(std::iter::repeat_n(0, 64 - s.hist64.len()));
         }
     }
     let r = rate_hz;

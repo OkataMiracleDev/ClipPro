@@ -175,11 +175,11 @@ pub fn decode(blob: &[u8]) -> Result<MeasurementSet, CodecError> {
     ms.working = (r.u32()?, r.u32()?);
     ms.groups = GroupMask(r.u8()?);
     let mut t = 0i64;
-    for c in r.take(8 * n)?.chunks_exact(8) {
+    for c in r.take(8 * n)?.as_chunks::<8>().0 {
         t += i64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]);
         ms.time_us.push(t);
     }
-    ms.flags.extend(r.take(4 * n)?.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])));
+    ms.flags.extend(r.take(4 * n)?.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])));
     let bits = r.take(n.div_ceil(8))?;
     ms.cut_before = (0..n).map(|k| bits[k / 8] & (1 << (k % 8)) != 0).collect();
     let ncols = r.u16()? as usize;
@@ -189,18 +189,18 @@ pub fn decode(blob: &[u8]) -> Result<MeasurementSet, CodecError> {
         let range = [r.f32()?, r.f32()?];
         let bytes = r.take(2 * n)?;
         if let Some(c) = Col::from_key(&key) {
-            ms.cols[c as usize] = bytes.chunks_exact(2).map(|b| dequantise(u16::from_le_bytes([b[0], b[1]]), range)).collect();
+            ms.cols[c as usize] = bytes.as_chunks::<2>().0.iter().map(|b| dequantise(u16::from_le_bytes([b[0], b[1]]), range)).collect();
         }
     }
     ms.tile_dims = (r.u8()?, r.u8()?);
     let nt = r.u32()? as usize;
-    ms.tiles = r.take(2 * nt)?.chunks_exact(2).map(|b| dequantise(u16::from_le_bytes([b[0], b[1]]), TILE_RANGE)).collect();
+    ms.tiles = r.take(2 * nt)?.as_chunks::<2>().0.iter().map(|b| dequantise(u16::from_le_bytes([b[0], b[1]]), TILE_RANGE)).collect();
     ms.mv_dims = (r.u8()?, r.u8()?);
     let nm = r.u32()? as usize;
-    ms.mvs = r.take(2 * nm)?.chunks_exact(2).map(|b| [b[0] as i8, b[1] as i8]).collect();
+    ms.mvs = r.take(2 * nm)?.as_chunks::<2>().0.iter().map(|b| [b[0] as i8, b[1] as i8]).collect();
     ms.phash = r
         .take(8 * n)?
-        .chunks_exact(8)
+        .as_chunks::<8>().0.iter()
         .map(|c| u64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]))
         .collect();
     let nh = r.u32()? as usize;

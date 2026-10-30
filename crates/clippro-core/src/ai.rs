@@ -174,7 +174,7 @@ fn decode_embeddings(b: &[u8]) -> Vec<Vec<f32>> {
     if b.len() < 8 + n * d * 4 || d == 0 {
         return Vec::new();
     }
-    b[8..8 + n * d * 4].chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect::<Vec<_>>().chunks(d).map(<[f32]>::to_vec).collect()
+    b[8..8 + n * d * 4].as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect::<Vec<_>>().chunks(d).map(<[f32]>::to_vec).collect()
 }
 
 fn model_hash(id: &str) -> String {
@@ -474,7 +474,7 @@ impl Session {
         let embs: Vec<Vec<f32>> = data.iter().map(|d| d.embedding.clone()).collect();
         let labels = cluster(&embs, CLUSTER_DISTANCE);
         let people = db.people()?;
-        let pemb: Vec<(i64, String, Vec<f32>)> = people.iter().map(|p| (p.0, p.1.clone(), p.3.as_deref().map(|b| b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()).unwrap_or_default())).collect();
+        let pemb: Vec<(i64, String, Vec<f32>)> = people.iter().map(|p| (p.0, p.1.clone(), p.3.as_deref().map(|b| b.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()).unwrap_or_default())).collect();
         let n_clusters = labels.iter().max().map(|m| m + 1).unwrap_or(0);
         let mut used: Vec<i64> = Vec::new();
         let mut next_name = people.len() + 1;

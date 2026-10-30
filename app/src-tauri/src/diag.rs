@@ -119,7 +119,7 @@ pub fn scrub(s: &str) -> String {
         let starts = drive || rest.starts_with("\\\\") || rest.starts_with("/Users/") || rest.starts_with("/home/");
         let at_token = s[..i].chars().last().is_none_or(|c| !c.is_alphanumeric());
         if starts && at_token {
-            let end = rest.find(|c: char| matches!(c, '"' | '\'' | '\n' | ')' | ',' | '|')).unwrap_or(rest.len());
+            let end = rest.find(['"', '\'', '\n', ')', ',', '|']).unwrap_or(rest.len());
             out.push_str("<path>");
             i += end;
         } else if let Some(c) = rest.chars().next() {

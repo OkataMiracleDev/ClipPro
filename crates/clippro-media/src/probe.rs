@@ -198,7 +198,7 @@ fn video_info(i: usize, st: &ff::AVStream, par: &ff::AVCodecParameters) -> Video
     let vfr = avg > 0.0 && rfr > 0.0 && (avg - rfr).abs() / rfr > 0.01;
     let profile = unsafe { cstr(ff::avcodec_profile_name(par.codec_id, par.profile)) };
     let cdesc = unsafe { ff::avcodec_descriptor_get(par.codec_id) };
-    let intra_only = !cdesc.is_null() && unsafe { (*cdesc).props } & ff::AV_CODEC_PROP_INTRA_ONLY as i32 != 0;
+    let intra_only = !cdesc.is_null() && unsafe { (*cdesc).props } & ff::AV_CODEC_PROP_INTRA_ONLY != 0;
     let rotation = display_rotation(par);
     VideoInfo {
         index: i,

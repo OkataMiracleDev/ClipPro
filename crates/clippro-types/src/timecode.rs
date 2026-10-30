@@ -32,7 +32,7 @@ impl Timecode {
     }
 
     pub fn with_base(frames: i64, base: u32, drop: bool) -> Self {
-        Timecode { frames, base: base.max(1), drop: drop && base % 30 == 0 }
+        Timecode { frames, base: base.max(1), drop: drop && base.is_multiple_of(30) }
     }
 
     fn drop_per_minute(&self) -> i64 {

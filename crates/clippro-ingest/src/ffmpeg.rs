@@ -94,7 +94,7 @@ pub fn run(args: &[String], duration_us: i64, cancel: &AtomicBool, mut progress:
         return Err("cancelled".into());
     }
     if !status.success() {
-        let msg = err.lines().filter(|l| !l.trim().is_empty()).last().unwrap_or("ffmpeg failed").to_string();
+        let msg = err.lines().filter(|l| !l.trim().is_empty()).next_back().unwrap_or("ffmpeg failed").to_string();
         return Err(msg);
     }
     progress(1.0);

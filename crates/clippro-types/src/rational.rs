@@ -185,7 +185,7 @@ impl FrameRate {
 
     /// True for rates at which drop-frame timecode is defined (29.97, 59.94).
     pub fn supports_drop_frame(self) -> bool {
-        self.is_ntsc() && self.timecode_base() % 30 == 0
+        self.is_ntsc() && self.timecode_base().is_multiple_of(30)
     }
 
     /// Duration of one frame in microseconds (exact when representable, rounded otherwise).
