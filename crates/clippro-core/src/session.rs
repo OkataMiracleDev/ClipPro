@@ -98,6 +98,8 @@ pub struct Session {
     opts: SessionOptions,
     cal: Calibration,
     loaded: Mutex<HashMap<i64, Arc<MeasurementSet>>>,
+    /// Decoded audio sets by run id (None = the run has no audio).
+    loaded_audio: Mutex<HashMap<i64, Option<Arc<clippro_audio::AudioSet>>>>,
 }
 
 impl Session {
@@ -123,6 +125,7 @@ impl Session {
             opts,
             cal,
             loaded: Mutex::new(HashMap::new()),
+            loaded_audio: Mutex::new(HashMap::new()),
         }
     }
 
@@ -479,6 +482,30 @@ impl Session {
                     }
                 }
             };
+            // Audio (P10): aligned to this run's samples as the Audio sub-metrics and flags.
+            let audio = {
+                let mut cache = lock(&self.loaded_audio);
+                match cache.get(&run.id.0) {
+                    Some(a) => a.clone(),
+                    None => {
+                        let a = db.audio(run.id)?.and_then(|b| clippro_audio::AudioSet::decode(&b)).map(Arc::new);
+                        cache.insert(run.id.0, a.clone());
+                        a
+                    }
+                }
+            };
+            let mut extra = BTreeMap::new();
+            let mut extra_flags = None;
+            if let Some(a) = audio {
+                let al = a.align(&ms.time_us, ms.rate_hz);
+                extra.insert(clippro_score::SubMetric::Loudness, Arc::new(al.loudness));
+                extra.insert(clippro_score::SubMetric::Clean, Arc::new(al.clean));
+                extra.insert(clippro_score::SubMetric::NoiseFloor, Arc::new(al.noise_floor));
+                extra.insert(clippro_score::SubMetric::SpeechPresence, Arc::new(al.speech));
+                extra.insert(clippro_score::SubMetric::Wind, Arc::new(al.wind));
+                extra.insert(clippro_score::SubMetric::Hum, Arc::new(al.hum));
+                extra_flags = Some(Arc::new(al.flags));
+            }
             let profile: ColourProfile = serde_json::from_str(&format!("\"{}\"", m.profile)).unwrap_or_default();
             out.push(ClipInput {
                 id: c.id,
@@ -487,8 +514,8 @@ impl Session {
                 ms,
                 duration_us: m.duration_us,
                 profile,
-                extra: BTreeMap::new(),
-                extra_flags: None,
+                extra,
+                extra_flags,
             });
         }
         Ok(out)

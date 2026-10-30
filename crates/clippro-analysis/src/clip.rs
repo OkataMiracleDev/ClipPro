@@ -29,6 +29,19 @@ impl Default for AnalyzeOptions {
     }
 }
 
+/// Audio measurements for a clip's first audio stream (`None` if it can't be decoded).
+pub fn analyze_audio(path: &std::path::Path, info: &clippro_media::MediaInfo) -> Option<clippro_audio::AudioSet> {
+    let mut a: Option<clippro_audio::AudioAnalyzer> = None;
+    let st = clippro_media::audio::decode_audio(path, None, info.start_us, |block| {
+        a.get_or_insert_with(|| clippro_audio::AudioAnalyzer::new(block.len(), 0)).push(block);
+        true
+    })
+    .ok()?;
+    let mut set = a?.finish();
+    set.start_us = st.start_us;
+    Some(set)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AnalyzeError {
     #[error(transparent)]

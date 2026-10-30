@@ -403,6 +403,19 @@ impl Db {
         Ok(())
     }
 
+    /// Audio measurements of a run (stream 0 = the analysed audio stream).
+    pub fn save_audio(&self, run: RunId, blob: &[u8], summary_json: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO audio_set(run_id, stream_index, data, summary_json) VALUES (?1, 0, ?2, ?3)",
+            params![run.0, blob, summary_json],
+        )?;
+        Ok(())
+    }
+
+    pub fn audio(&self, run: RunId) -> Result<Option<Vec<u8>>> {
+        Ok(self.conn.query_row("SELECT data FROM audio_set WHERE run_id = ?1 AND stream_index = 0", params![run.0], |r| r.get(0)).optional()?)
+    }
+
     pub fn measurements(&self, run: RunId) -> Result<Option<Vec<u8>>> {
         Ok(self.conn.query_row("SELECT data FROM measurement_set WHERE run_id = ?1", params![run.0], |r| r.get(0)).optional()?)
     }

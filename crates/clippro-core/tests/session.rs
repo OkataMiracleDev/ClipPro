@@ -286,3 +286,38 @@ fn overrides_and_annotations() {
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// PLAN P10.1/P10.3: audio is analysed with the clip and drives scoring — Audio-First excludes
+/// the silence in `audio_mix` and keeps its clean tone; inspector sees the Audio sub-metrics.
+#[test]
+fn audio_drives_scoring() {
+    let Some(dir) = corpus() else { return };
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-audio-test");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let s = Session::create(&tmp.join("p.clippro"), "Audio", SessionOptions { cache_path: None, ..opts(&tmp) }).unwrap();
+    s.import(&[dir.join("audio_mix.mp4")]).unwrap();
+    s.queue_analysis().unwrap();
+    s.wait(|_| {});
+    let clip = s.clip_statuses().unwrap()[0].clip;
+    let input = s.clip_inputs().unwrap().into_iter().find(|c| c.id == clip).unwrap();
+    assert!(input.extra.contains_key(&clippro_score::SubMetric::Loudness), "audio columns reach scoring");
+    let mut settings = Settings::from_preset(&builtin("Audio-First").unwrap()).unwrap();
+    // The corpus clip is short (2 s tone, 1.5 s speech) over a frozen picture: allow short
+    // selects and ignore the video Duplicate flag so the audio decides.
+    settings.len_min_s = 1.0;
+    settings.tiers[clippro_types::FlagKind::Duplicate as usize] = clippro_types::Tier::Neutral;
+    let sel = s.score(&settings).unwrap();
+    let segs = &sel.clips[0].segments;
+    eprintln!("Audio-First selects: {:?}", segs.iter().map(|g| (g.start_us / 1000, g.end_us / 1000)).collect::<Vec<_>>());
+    assert!(!segs.is_empty(), "the tone or speech is selectable");
+    assert!(segs.iter().all(|g| g.end_us <= 3_200_000 || g.start_us >= 4_800_000), "no select inside the silence (3–5 s)");
+    assert!(segs.iter().any(|g| g.start_us <= 9_000_000 && g.end_us >= 9_500_000), "the speech is selected");
+    assert!(segs.iter().all(|g| !(g.start_us < 2_800_000 && g.end_us > 2_200_000)), "the clipped tone is not selected");
+    let k = input.ms.time_us.iter().position(|t| *t >= 4_000_000).unwrap();
+    let ins = s.inspect(clip, &settings, k).unwrap();
+    assert!(ins.breakdown.flags.contains(&clippro_types::FlagKind::Silence), "{:?}", ins.breakdown.flags);
+    assert!(ins.reasons.iter().any(|r| r.contains("Silence")), "{:?}", ins.reasons);
+    s.close().unwrap();
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

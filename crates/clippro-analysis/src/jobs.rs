@@ -27,6 +27,8 @@ pub trait RunStore: Send + Sync {
     fn save_active_area(&self, job: JobId, area: Rect);
     fn finished(&self, job: JobId, ms: &MeasurementSet);
     fn failed(&self, job: JobId, error: &str);
+    /// Audio measurements of the clip (P10), stored before `finished`. Default: ignored.
+    fn audio_finished(&self, _job: JobId, _audio: &clippro_audio::AudioSet) {}
 }
 
 /// What to analyse.
@@ -377,6 +379,13 @@ impl Inner {
                 let cal = &self.cal;
                 let res = std::panic::catch_unwind(AssertUnwindSafe(|| {
                     let ms = finish(samples, &ctx, effective_rate(spec.opts.rate, &spec.info), &spec.opts, cal);
+                    // Audio (P10): one decode of the audio stream; failures leave the clip without
+                    // audio data (the Audio group is then unavailable) rather than failing it.
+                    if spec.opts.groups.contains(clippro_types::MetricGroup::Audio) && !spec.info.audio.is_empty() {
+                        if let Some(a) = crate::clip::analyze_audio(&spec.path, &spec.info) {
+                            self.store.audio_finished(id, &a);
+                        }
+                    }
                     self.store.finished(id, &ms);
                 }));
                 let mut st = lock(&self.state);

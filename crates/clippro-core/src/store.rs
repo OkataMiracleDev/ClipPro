@@ -97,6 +97,16 @@ impl RunStore for ProjectStore {
         }
     }
 
+    fn audio_finished(&self, job: JobId, audio: &clippro_audio::AudioSet) {
+        let summary = serde_json::json!({
+            "blocks": audio.len(),
+            "integrated_lufs": audio.integrated_lufs(i64::MIN / 2, i64::MAX / 2),
+        })
+        .to_string();
+        let db = lock(&self.db);
+        self.note(db.save_audio(Self::run(job), &audio.encode(), &summary));
+    }
+
     fn failed(&self, job: JobId, error: &str) {
         let db = lock(&self.db);
         self.note(db.set_run_state(Self::run(job), RunState::Failed, Some(error)));

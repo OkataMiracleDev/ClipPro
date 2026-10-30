@@ -592,6 +592,7 @@ version = "0.1.0"
 name = "clippro-analysis"
 version = "0.1.0"
 dependencies = [
+ "clippro-audio",
  "clippro-measure",
  "clippro-media",
  "clippro-score",
@@ -665,6 +666,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "clippro-analysis",
+ "clippro-audio",
  "clippro-interchange",
  "clippro-measure",
  "clippro-media",
