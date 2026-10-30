@@ -75,6 +75,28 @@ export interface Review {
   missing: string[];
 }
 
+export type SyncMethod = "audio" | "timecode";
+
+export interface SyncMember {
+  clip: number;
+  name: string;
+  angle: string;
+  /** Start on the reference clip's clock (µs); null = not synced. */
+  offsetUs: number | null;
+  psr: number | null;
+  tcOffsetUs: number | null;
+  disagreementUs: number | null;
+}
+
+export interface SyncGroup {
+  id: number | null;
+  name: string;
+  method: SyncMethod;
+  reference: number;
+  members: SyncMember[];
+  warnings: string[];
+}
+
 export type ClipState = "queued" | "running" | "paused" | "done" | "failed";
 
 export interface Clip {
@@ -240,6 +262,12 @@ export interface Backend {
   /** Imported-timeline review (P11.3) and export back with swaps and score markers (P11.4). */
   timelineReview(settings: Settings, path: string, weakBelow: number): Promise<Review>;
   timelineExportBack(swaps: { item: number; alternative: number }[], markers: boolean, format: string, path: string): Promise<ExportResult>;
+  /** Multicam sync groups (P11.5). */
+  syncClips(name: string, clips: number[], method: SyncMethod): Promise<SyncGroup>;
+  syncGroups(): Promise<SyncGroup[]>;
+  syncGroupSave(group: SyncGroup): Promise<number>;
+  syncGroupDelete(id: number): Promise<void>;
+  multicamExport(group: SyncGroup, format: string, path: string): Promise<ExportResult>;
   audioLevels(): Promise<{ levels: number[]; sourceChannels: number }>;
   audioChannelGains(gains: number[]): Promise<void>;
   audioWaveforms(): Promise<{ clip: number; startUs: number; peaks: Float32Array; lufs: number | null }[]>;
@@ -283,6 +311,29 @@ export interface Backend {
 }
 
 export const n = (v: number | null | undefined, fallback = 0): number => (v === null || v === undefined || Number.isNaN(v) ? fallback : v);
+
+function adaptSync(g: import("./bindings").SyncGroupDto_Serialize): SyncGroup {
+  const opt = (v: number | null | undefined) => (v === null || v === undefined || Number.isNaN(v) ? null : v);
+  return {
+    id: opt(g.id),
+    name: g.name,
+    method: g.method === "timecode" ? "timecode" : "audio",
+    reference: n(g.reference),
+    warnings: g.warnings,
+    members: g.members.map((m) => ({ clip: n(m.clip), name: m.name, angle: m.angle, offsetUs: opt(m.offset_us), psr: opt(m.psr), tcOffsetUs: opt(m.tc_offset_us), disagreementUs: opt(m.disagreement_us) })),
+  };
+}
+
+function syncDto(g: SyncGroup): import("./bindings").SyncGroupDto_Deserialize {
+  return {
+    id: g.id,
+    name: g.name,
+    method: g.method,
+    reference: g.reference,
+    warnings: g.warnings,
+    members: g.members.map((m) => ({ clip: m.clip, name: m.name, angle: m.angle, offset_us: m.offsetUs, psr: m.psr, tc_offset_us: m.tcOffsetUs, disagreement_us: m.disagreementUs })),
+  };
+}
 
 function adaptReview(r: import("./bindings").ReviewResult_Serialize): Review {
   return {
@@ -483,6 +534,11 @@ const tauriBackend: Backend = {
   audioStreamSet: async (clip, stream) => void unwrap(await commands.audioStreamSet(clip, stream)),
   timelineReview: async (settings, path, weakBelow) => adaptReview(unwrap(await commands.timelineReview(settings, path, weakBelow))),
   timelineExportBack: async (swaps, markers, format, path) => unwrap(await commands.timelineExportBack(swaps, markers, format, path)),
+  syncClips: async (name, clips, method) => adaptSync(unwrap(await commands.syncClips(name, clips, method))),
+  syncGroups: async () => unwrap(await commands.syncGroupsList()).map(adaptSync),
+  syncGroupSave: async (group) => n(unwrap(await commands.syncGroupSave(syncDto(group)))),
+  syncGroupDelete: async (id) => void unwrap(await commands.syncGroupDelete(id)),
+  multicamExport: async (group, format, path) => unwrap(await commands.multicamExport(syncDto(group), format, path)),
   audioLevels: async () => {
     const r = unwrap(await commands.audioLevels());
     return { levels: r.levels.map((v) => n(v, -120)), sourceChannels: r.source_channels };

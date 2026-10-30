@@ -92,6 +92,8 @@ let mockSnapId = 0;
 let mockTuning: string | null = null;
 let mockWatch: { path: string; subfolders: boolean; extensions: string[] }[] = [{ path: "D:/Footage/Incoming", subfolders: true, extensions: ["mov", "mxf"] }];
 const listeners = new Set<(e: AnalysisEvent) => void>();
+const mockSyncGroups: import("./api").SyncGroup[] = [];
+let mockSyncId = 0;
 
 function defaultSettings(name: string): Settings {
   const lo: Record<string, number> = { Cleanup: 0.25, "Talking Head": 0.62, "Social Media": 0.6, "Whip Pans": 0.45 };
@@ -124,6 +126,35 @@ function defaultSettings(name: string): Settings {
     switches: { metrics: true, flags: true, camera_filter: true },
     shot_types: [],
   };
+}
+
+/** Demo sync: the longest clip is the reference; one clip without audio match (P11.5). */
+function mockSync(name: string, clips: number[], method: import("./api").SyncMethod): import("./api").SyncGroup {
+  const ds = clips.map((c) => demo.find((d) => d.clip.clip === c)!).filter(Boolean);
+  if (ds.length < 2) throw new Error("Choose at least two clips to sync.");
+  const ref = ds.reduce((a, b) => (b.durationUs > a.durationUs ? b : a));
+  const r = rng(clips.reduce((a, b) => a * 31 + b, 7));
+  const warnings: string[] = [];
+  const members = ds.map((d) => {
+    const isRef = d === ref;
+    const lost = !isRef && d.clip.name.startsWith("TIMELAPSE");
+    if (lost) warnings.push(`${d.clip.name} could not be synced (no confident audio match).`);
+    const off = isRef ? 0 : Math.round((r() - 0.35) * 0.6 * ref.durationUs / 40_000) * 40_000;
+    const tc = method === "timecode" || !isRef ? off + (r() < 0.2 ? 80_000 : 0) : 0;
+    return {
+      clip: d.clip.clip,
+      name: d.clip.name,
+      angle: d.clip.camera ?? d.clip.name,
+      offsetUs: lost ? null : off,
+      psr: isRef || method === "timecode" || lost ? null : 7 + r() * 14,
+      tcOffsetUs: lost ? null : tc,
+      disagreementUs: method === "audio" && !lost ? Math.abs(off - tc) : null,
+    };
+  });
+  for (const m of members) if ((m.disagreementUs ?? 0) > 40_000) warnings.push(`${m.name}: audio and timecode disagree by ${Math.round(m.disagreementUs! / 1000)} ms.`);
+  // Same camera twice: number the angles.
+  for (const m of members) if (members.filter((x) => x.angle === m.angle).length > 1) m.angle = `${m.angle} · ${m.name}`;
+  return { id: null, name, method, reference: ref.clip.clip, members, warnings };
 }
 
 /** A demo editor's cut over the demo clips, reviewed like the engine would (P11.3). */
@@ -370,6 +401,20 @@ export const mockBackend: Backend = {
     selected: null,
   }),
   audioStreamSet: async () => {},
+  syncClips: async (name, clips, method) => mockSync(name, clips, method),
+  syncGroups: async () => mockSyncGroups.map((g) => ({ ...g })),
+  syncGroupSave: async (group) => {
+    const id = group.id ?? ++mockSyncId;
+    const i = mockSyncGroups.findIndex((g) => g.id === id);
+    if (i >= 0) mockSyncGroups[i] = { ...group, id };
+    else mockSyncGroups.push({ ...group, id });
+    return id;
+  },
+  syncGroupDelete: async (id) => {
+    const i = mockSyncGroups.findIndex((g) => g.id === id);
+    if (i >= 0) mockSyncGroups.splice(i, 1);
+  },
+  multicamExport: async (group, _format, path) => ({ path, selects: group.members.filter((m) => m.offsetUs !== null).length }),
   timelineReview: async (_settings, path, weakBelow) => mockReview(path, weakBelow),
   timelineExportBack: async (_swaps, _markers, _format, path) => ({ path, selects: 9 }),
   audioLevels: async () => ({ levels: [-12 - Math.random() * 10, -13 - Math.random() * 10], sourceChannels: 2 }),

@@ -24,6 +24,13 @@ export const commands = {
 	timelineReview: (settings: Settings_Deserialize, path: string, weakBelow: number | null) => typedError<ReviewResult_Serialize, string>(__TAURI_INVOKE("timeline_review", { settings, path, weakBelow })),
 	/**  Writes the reviewed timeline back out (P11.4): same tracks, accepted swaps, score markers. */
 	timelineExportBack: (swaps: ReviewSwap[], markers: boolean, format: string, path: string) => typedError<ExportResult, string>(__TAURI_INVOKE("timeline_export_back", { swaps, markers, format, path })),
+	/**  Syncs clips by audio or start timecode (P11.5). Not saved until `sync_group_save`. */
+	syncClips: (name: string, clips: (number | null)[], method: string) => typedError<SyncGroupDto_Serialize, string>(__TAURI_INVOKE("sync_clips", { name, clips, method })),
+	syncGroupsList: () => typedError<SyncGroupDto_Serialize[], string>(__TAURI_INVOKE("sync_groups_list")),
+	syncGroupSave: (group: SyncGroupDto_Deserialize) => typedError<number | null, string>(__TAURI_INVOKE("sync_group_save", { group })),
+	syncGroupDelete: (id: number | null) => typedError<null, string>(__TAURI_INVOKE("sync_group_delete", { id })),
+	/**  Writes a sync group as a multicam: an FCPXML mc-clip, or stacked tracks in XML / OTIO. */
+	multicamExport: (group: SyncGroupDto_Deserialize, format: string, path: string) => typedError<ExportResult, string>(__TAURI_INVOKE("multicam_export", { group, format, path })),
 	/**
 	 *  How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
 	 *  when it can play natively.
@@ -815,6 +822,50 @@ export type Summary = {
 	percent: number | null,
 	/**  Runs of consecutive flagged samples across the project, per flag. */
 	flag_runs: ([FlagKind, number | null])[],
+};
+
+export type SyncGroupDto = SyncGroupDto_Serialize | SyncGroupDto_Deserialize;
+
+export type SyncGroupDto_Deserialize = {
+	id?: number | null,
+	name: string,
+	/**  "audio" | "timecode" */
+	method: string,
+	reference: number | null,
+	members: SyncMemberDto_Deserialize[],
+	warnings: string[],
+};
+
+export type SyncGroupDto_Serialize = {
+	id: number | null,
+	name: string,
+	/**  "audio" | "timecode" */
+	method: string,
+	reference: number | null,
+	members: SyncMemberDto_Serialize[],
+	warnings: string[],
+};
+
+export type SyncMemberDto = SyncMemberDto_Serialize | SyncMemberDto_Deserialize;
+
+export type SyncMemberDto_Deserialize = {
+	clip: number | null,
+	name: string,
+	angle: string,
+	offset_us?: number | null,
+	psr?: number | null,
+	tc_offset_us?: number | null,
+	disagreement_us?: number | null,
+};
+
+export type SyncMemberDto_Serialize = {
+	clip: number | null,
+	name: string,
+	angle: string,
+	offset_us: number | null,
+	psr: number | null,
+	tc_offset_us: number | null,
+	disagreement_us: number | null,
 };
 
 export type SystemInfo = {

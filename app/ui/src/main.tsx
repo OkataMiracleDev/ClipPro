@@ -43,6 +43,18 @@ if (isTauri) {
   mount();
 }
 
+// `?sync=1` syncs three demo clips and shows the result (screenshots).
+if (q.get("sync") === "1") {
+  const stop = useApp.subscribe((s) => {
+    if (s.clips.length < 8 || !s.scored) return;
+    stop();
+    const ids = s.clips.filter((c) => /INTERVIEW|A001C00[34]/.test(c.name)).map((c) => c.clip);
+    void import("./views/SyncGroups").then(({ useSync }) =>
+      import("./api").then(({ api }) => api.syncClips("Sarah interview", ids, "audio").then((g) => useSync.getState().show([], g))),
+    );
+  });
+}
+
 // `?compare=1` opens the A/B compare with the second select once scores arrive (screenshots).
 if (q.get("compare") === "1") {
   const stop = useApp.subscribe((s) => {

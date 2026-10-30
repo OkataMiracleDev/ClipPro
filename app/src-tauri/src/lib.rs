@@ -631,6 +631,128 @@ async fn timeline_export_back(state: State<'_, AppState>, swaps: Vec<ReviewSwap>
     .await
 }
 
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct SyncMemberDto {
+    pub clip: f64,
+    pub name: String,
+    pub angle: String,
+    pub offset_us: Option<f64>,
+    pub psr: Option<f32>,
+    pub tc_offset_us: Option<f64>,
+    pub disagreement_us: Option<f64>,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct SyncGroupDto {
+    pub id: Option<f64>,
+    pub name: String,
+    /// "audio" | "timecode"
+    pub method: String,
+    pub reference: f64,
+    pub members: Vec<SyncMemberDto>,
+    pub warnings: Vec<String>,
+}
+
+fn sync_dto(g: &clippro_core::multicam::SyncGroup) -> SyncGroupDto {
+    use clippro_core::multicam::SyncMethod;
+    SyncGroupDto {
+        id: g.id.map(|i| i as f64),
+        name: g.name.clone(),
+        method: if g.method == SyncMethod::Audio { "audio".into() } else { "timecode".into() },
+        reference: g.reference.0 as f64,
+        members: g
+            .members
+            .iter()
+            .map(|m| SyncMemberDto {
+                clip: m.clip.0 as f64,
+                name: m.name.clone(),
+                angle: m.angle.clone(),
+                offset_us: m.offset_us.map(|v| v as f64),
+                psr: m.psr,
+                tc_offset_us: m.tc_offset_us.map(|v| v as f64),
+                disagreement_us: m.disagreement_us.map(|v| v as f64),
+            })
+            .collect(),
+        warnings: g.warnings.clone(),
+    }
+}
+
+fn sync_from_dto(d: &SyncGroupDto) -> clippro_core::multicam::SyncGroup {
+    use clippro_core::multicam::{SyncGroup, SyncMember, SyncMethod};
+    SyncGroup {
+        id: d.id.map(|i| i as i64),
+        name: d.name.clone(),
+        method: if d.method == "timecode" { SyncMethod::Timecode } else { SyncMethod::Audio },
+        reference: clippro_types::ClipId(d.reference as i64),
+        members: d
+            .members
+            .iter()
+            .map(|m| SyncMember {
+                clip: clippro_types::ClipId(m.clip as i64),
+                name: m.name.clone(),
+                angle: m.angle.clone(),
+                offset_us: m.offset_us.map(|v| v as i64),
+                psr: m.psr,
+                tc_offset_us: m.tc_offset_us.map(|v| v as i64),
+                disagreement_us: m.disagreement_us.map(|v| v as i64),
+            })
+            .collect(),
+        warnings: d.warnings.clone(),
+    }
+}
+
+/// Syncs clips by audio or start timecode (P11.5). Not saved until `sync_group_save`.
+#[tauri::command]
+#[specta::specta]
+async fn sync_clips(state: State<'_, AppState>, name: String, clips: Vec<f64>, method: String) -> Result<SyncGroupDto, String> {
+    let s = state.session()?;
+    blocking(move || {
+        let ids: Vec<clippro_types::ClipId> = clips.iter().map(|c| clippro_types::ClipId(*c as i64)).collect();
+        let m = if method == "timecode" { clippro_core::multicam::SyncMethod::Timecode } else { clippro_core::multicam::SyncMethod::Audio };
+        let g = s.sync_clips(&name, &ids, m, &Default::default()).map_err(|e| e.to_string())?;
+        Ok(sync_dto(&g))
+    })
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+fn sync_groups_list(state: State<'_, AppState>) -> Result<Vec<SyncGroupDto>, String> {
+    let s = state.session()?;
+    Ok(s.sync_groups().map_err(|e| e.to_string())?.iter().map(sync_dto).collect())
+}
+
+#[tauri::command]
+#[specta::specta]
+fn sync_group_save(state: State<'_, AppState>, group: SyncGroupDto) -> Result<f64, String> {
+    let s = state.session()?;
+    Ok(s.save_sync_group(&sync_from_dto(&group)).map_err(|e| e.to_string())? as f64)
+}
+
+#[tauri::command]
+#[specta::specta]
+fn sync_group_delete(state: State<'_, AppState>, id: f64) -> Result<(), String> {
+    state.session()?.delete_sync_group(id as i64).map_err(|e| e.to_string())
+}
+
+/// Writes a sync group as a multicam: an FCPXML mc-clip, or stacked tracks in XML / OTIO.
+#[tauri::command]
+#[specta::specta]
+async fn multicam_export(state: State<'_, AppState>, group: SyncGroupDto, format: String, path: String) -> Result<ExportResult, String> {
+    let s = state.session()?;
+    blocking(move || {
+        let g = sync_from_dto(&group);
+        let tl = s.multicam_timeline(&g).map_err(|e| e.to_string())?;
+        let text = match format.as_str() {
+            "fcpxml" => clippro_interchange::fcpxml::export_multicam(&tl),
+            f => clippro_interchange::Format::parse(f).filter(|f| matches!(f, clippro_interchange::Format::Xmeml | clippro_interchange::Format::Otio)).ok_or_else(|| format!("Multicam can’t be written as “{f}”."))?.render(&tl),
+        };
+        std::fs::write(&path, text).map_err(|e| format!("{path}: {e}"))?;
+        Ok(ExportResult { path, selects: tl.video.len() as u32 })
+    })
+    .await
+}
+
 /// HTML report, or the contact sheet printed to PDF in a hidden WebView2 window (P7.6).
 async fn export_report(app: tauri::AppHandle, s: Arc<Session>, settings: Settings, sort: SortOrder, request: ExportRequest) -> Result<ExportResult, String> {
     use clippro_core::report::{render_contact_sheet, render_html, utc_now_string, ReportOptions};
@@ -1642,6 +1764,11 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             export_selects,
             timeline_review,
             timeline_export_back,
+            sync_clips,
+            sync_groups_list,
+            sync_group_save,
+            sync_group_delete,
+            multicam_export,
             media_source,
             preview_shared,
             inspect_sample,

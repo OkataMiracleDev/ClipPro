@@ -7,6 +7,7 @@ import { api, type Clip } from "../api";
 import { pickFolder, pickMedia, pickProxy } from "../lib/dialogs";
 import { BinsSection, useLibraryClips } from "./Bins";
 import { WatchFolders } from "./WatchFolders";
+import { SyncGroupsSection, SyncSheet, useSync } from "./SyncGroups";
 import { cx, scoreColor, Spinner } from "../components/ui";
 import { formatClock } from "../lib/typed";
 import { useApp } from "../store";
@@ -48,7 +49,9 @@ export function Sidebar() {
         </button>
       </div>
       <BinsSection item={item} />
+      <SyncGroupsSection />
       <WatchFolders />
+      <SyncSheet />
     </nav>
   );
 }
@@ -123,6 +126,9 @@ function ClipMenu({ c, children }: { c: Clip; children: React.ReactNode }) {
             Retry with CPU decoding
           </CM.Item>
           <CM.Separator className="my-1 h-px bg-separator" />
+          <CM.Item className={item} onSelect={() => useSync.getState().show([c.clip])}>
+            Sync with other clips…
+          </CM.Item>
           <CM.Sub>
             <CM.SubTrigger className={item}>Move to bin ›</CM.SubTrigger>
             <CM.Portal>
