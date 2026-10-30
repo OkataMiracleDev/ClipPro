@@ -171,6 +171,15 @@ enum Cmd {
         #[arg(long)]
         dir: Option<PathBuf>,
     },
+    /// Show the calibration in use; with --sweep, check the ALGORITHMS §10 anchors on synthetic
+    /// ramps and write an HTML report with proposed constants (never applied).
+    Calibrate {
+        #[arg(long)]
+        sweep: bool,
+        /// Report path (default: calibration-<date>.html).
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Generate test clips, analyse, score and export them, and report pass/fail.
     Selftest {
         /// Working folder (default: a temporary one).
@@ -231,6 +240,7 @@ fn run(cli: &Cli) -> Result<u8, Failure> {
         }
         Cmd::Bench { paths, rate, cpu_only, dir } => extra::bench(paths, rate, *cpu_only, dir.as_deref(), cli.json),
         Cmd::Selftest { dir, keep } => extra::selftest(dir.as_deref(), *keep, cli.json),
+        Cmd::Calibrate { sweep, out } => extra::calibrate(*sweep, out.as_deref(), cli.json),
         Cmd::Presets => {
             let names: Vec<String> = clippro_score::builtins().into_iter().map(|p| p.preset.name).collect();
             if cli.json {

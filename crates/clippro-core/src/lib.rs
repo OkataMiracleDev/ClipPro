@@ -2,6 +2,7 @@
 //! analysis orchestration and scoring.
 
 pub mod annotate;
+pub mod calibrate;
 pub mod import;
 pub mod ingest;
 pub mod inspect;

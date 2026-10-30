@@ -6,7 +6,7 @@
 mod audio;
 mod clips;
 mod encode;
-mod scene;
+use clippro_testgen::scene;
 
 use std::path::PathBuf;
 

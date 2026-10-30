@@ -1,9 +1,9 @@
 # ClipPro calibration constants (ALGORITHMS.md, values marked "(cal)").
 # Changing any value here bumps `version`. Code changes to the maths bump engine_version instead.
-version = 2
+version = 3
 
 [focus]
-sharp_s0 = -3.6          # logistic centre for Sharpness (log10 Laplacian energy)
+sharp_s0 = -3.38         # logistic centre for Sharpness (log10 Laplacian energy); v3: P2.9 sweep
 sharp_k = 0.35           # logistic width
 stab_mad_scale = 0.30    # focus stability: MAD (decades) that drives the score to 0
 stab_osc_weight = 1.5

@@ -685,6 +685,7 @@ dependencies = [
  "clippro-media",
  "clippro-project",
  "clippro-score",
+ "clippro-testgen",
  "clippro-types",
  "image-webp",
  "notify",

@@ -2,7 +2,7 @@
 
 use crate::audio;
 use crate::encode::{s, write_wav, Ffmpeg, Pipe};
-use crate::scene::{rgb_to_ycbcr, Frame, Pose, Texture};
+use clippro_testgen::scene::{rgb_to_ycbcr, Frame, Pose, Texture};
 use serde_json::{json, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;

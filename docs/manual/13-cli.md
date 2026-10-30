@@ -14,6 +14,7 @@
 | `render <project> --out DIR` | Renders the selects; `--copy`, `--nearest-keyframe`, `--codec`, `--template` |
 | `bench <files…>` | Measures analysis speed, as a multiple of real time |
 | `selftest` | Makes test clips, analyses and exports them, and reports pass or fail |
+| `calibrate --sweep` | Checks the measurement calibration on synthetic ramps and writes an HTML report with suggested constants (nothing is changed) |
 
 ## Exit codes
 

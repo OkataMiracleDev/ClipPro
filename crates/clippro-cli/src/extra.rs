@@ -241,3 +241,34 @@ fn run_selftest(dir: &Path) -> Result<Vec<Check>, Failure> {
     s.close().map_err(|e| fail(4, e.to_string()))?;
     Ok(checks)
 }
+
+/// `calibrate [--sweep]` (PLAN P2.9).
+pub fn calibrate(sweep: bool, out: Option<&Path>, json_out: bool) -> Result<u8, Failure> {
+    let cal = clippro_measure::calibration::Calibration::embedded();
+    if !sweep {
+        if json_out {
+            println!("{}", json!({ "version": cal.version }));
+        } else {
+            println!("calibration version {} (built in; run with --sweep to check the anchors)", cal.version);
+        }
+        return Ok(0);
+    }
+    progress_line(json_out, "calibration sweep: rendering and measuring ramps…");
+    let r = clippro_core::calibrate::sweep(cal);
+    let generated = clippro_core::report::utc_now_string();
+    let out = out.map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from(format!("calibration-{}.html", generated.chars().take(10).collect::<String>())));
+    std::fs::write(&out, clippro_core::calibrate::report_html(&r, &generated)).map_err(|e| fail(4, format!("{}: {e}", out.display())))?;
+    if json_out {
+        println!("{}", json!({ "report": out, "passed": r.passed(), "anchors": r.anchors, "proposals": r.proposals }));
+    } else {
+        eprintln!();
+        for a in &r.anchors {
+            println!("{} {:<45} {:.3} (want {})", if a.pass { "PASS" } else { "FAIL" }, a.name, a.measured, a.want);
+        }
+        for p in &r.proposals {
+            println!("proposed {} = {:.4} (now {:.4}): {}", p.key, p.proposed, p.current, p.why);
+        }
+        println!("report: {}", out.display());
+    }
+    Ok(if r.passed() { 0 } else { 3 })
+}
