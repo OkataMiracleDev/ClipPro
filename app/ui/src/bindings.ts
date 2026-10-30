@@ -234,6 +234,8 @@ export type AppSettings_Deserialize = {
 	keybindings?: { [key in string]: string },
 	/**  Score colours: oklch red→green, or blue→orange for colour-blind viewers. */
 	colour_blind_scores?: boolean,
+	/**  The first-run tour has been seen (P14.4). */
+	tour_done?: boolean,
 };
 
 export type AppSettings_Serialize = {
@@ -260,6 +262,8 @@ export type AppSettings_Serialize = {
 	keybindings: { [key in string]: string },
 	/**  Score colours: oklch red→green, or blue→orange for colour-blind viewers. */
 	colour_blind_scores: boolean,
+	/**  The first-run tour has been seen (P14.4). */
+	tour_done: boolean,
 };
 
 export type AudioLevels = {

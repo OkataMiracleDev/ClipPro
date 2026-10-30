@@ -238,3 +238,28 @@ body.has-material {
   --c-score-mid: oklch(0.8 0.02 90);
   --c-score-hi: oklch(0.74 0.15 60);
 }
+
+/* In-app manual (Help, P14.4). */
+.manual {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--c-text);
+  max-width: 68ch;
+}
+.manual h1 { font-size: 20px; font-weight: 650; margin: 0 0 12px; letter-spacing: -0.01em; }
+.manual h2 { font-size: 15px; font-weight: 600; margin: 22px 0 8px; scroll-margin-top: 12px; }
+.manual h3 { font-size: 13px; font-weight: 600; margin: 16px 0 6px; scroll-margin-top: 12px; }
+.manual p { margin: 0 0 10px; }
+.manual ul, .manual ol { margin: 0 0 10px; padding-left: 20px; }
+.manual ul { list-style: disc; }
+.manual ol { list-style: decimal; }
+.manual li { margin: 3px 0; }
+.manual a { color: var(--c-accent); text-decoration: none; }
+.manual a:hover { text-decoration: underline; }
+.manual code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; padding: 1px 4px; border-radius: 4px; background: var(--c-control-hover); }
+.manual pre { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; padding: 10px 12px; border-radius: 6px; background: var(--c-control-hover); overflow-x: auto; margin: 0 0 12px; }
+.manual mark { background: color-mix(in oklch, var(--c-accent) 30%, transparent); color: inherit; border-radius: 2px; }
+.manual .md-table { overflow-x: auto; margin: 0 0 12px; }
+.manual table { border-collapse: collapse; font-size: 12.5px; }
+.manual th { text-align: left; font-weight: 600; color: var(--c-text-2); }
+.manual th, .manual td { padding: 5px 14px 5px 0; border-bottom: 1px solid var(--c-separator); vertical-align: top; }

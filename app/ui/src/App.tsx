@@ -1,3 +1,5 @@
+import { Help } from "./views/Help";
+import { Tour } from "./views/Tour";
 import * as RTooltip from "@radix-ui/react-tooltip";
 import { FilePlus2, FolderOpen, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -198,11 +200,11 @@ export function App() {
           >
             <aside className="row-span-2 flex min-h-0 flex-col border-r border-separator bg-sidebar">
               <Sidebar />
-              <div className="min-h-0 flex-1 border-t border-separator">
+              <div className="min-h-0 flex-1 border-t border-separator" data-tour="clips">
                 <ClipList />
               </div>
             </aside>
-            <main className="grid min-h-0 grid-rows-[1fr_190px] bg-window">
+            <main className="grid min-h-0 grid-rows-[1fr_190px] bg-window" data-tour="viewer">
               {clips.length ? (
                 <>
                   <Viewer />
@@ -216,7 +218,7 @@ export function App() {
                 </div>
               )}
             </main>
-            <aside className={cx("row-span-2 flex min-h-0 flex-col border-l border-separator bg-sidebar", !inspectorOpen && "hidden")}>
+            <aside className={cx("row-span-2 flex min-h-0 flex-col border-l border-separator bg-sidebar", !inspectorOpen && "hidden")} data-tour="inspector">
               <div className="flex justify-center border-b border-separator px-4 py-2">
                 <Segmented
                   label="Panel"
@@ -231,7 +233,7 @@ export function App() {
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto">{rightTab === "tuning" ? <TuningPanel /> : <FramePanel />}</div>
             </aside>
-            <section className="col-start-2 min-h-0 border-t border-separator bg-window">
+            <section className="col-start-2 min-h-0 border-t border-separator bg-window" data-tour="timeline">
               <Timeline />
             </section>
           </div>
@@ -243,6 +245,8 @@ export function App() {
           </div>
         )}
         <Toasts />
+        <Help />
+        <Tour />
       </div>
     </RTooltip.Provider>
   );

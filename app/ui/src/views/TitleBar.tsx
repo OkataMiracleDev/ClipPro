@@ -1,8 +1,9 @@
-import { ArrowDownUp, Check, ClipboardCheck, FolderOpen, HardDriveDownload, ListFilter, Minus, PanelRight, Pause, Play, Plus, Settings, Share, Square, X } from "lucide-react";
+import { ArrowDownUp, Check, CircleHelp, ClipboardCheck, FolderOpen, HardDriveDownload, ListFilter, Minus, PanelRight, Pause, Play, Plus, Settings, Share, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ExportSheet } from "./ExportSheet";
 import { TimelineReview } from "./TimelineReview";
 import { OffloadSheet, useOffload } from "./OffloadSheet";
+import { useHelp } from "./Help";
 import { api, isTauri, type SortOrder } from "../api";
 import { cx, IconButton, Popover, PopoverClose, Spinner } from "../components/ui";
 import { actionFor } from "../lib/keys";
@@ -111,6 +112,9 @@ export function TitleBar() {
       } else if (a === "settings") {
         e.preventDefault();
         void api.openSettings();
+      } else if (a === "help") {
+        e.preventDefault();
+        useHelp.getState().show();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -132,7 +136,7 @@ export function TitleBar() {
         }}>
           <FolderOpen size={16} />
         </IconButton>
-        <IconButton label="Add media…" disabled={!project} onClick={async () => {
+        <IconButton label="Add media…" disabled={!project} data-tour="add" onClick={async () => {
           const paths = await pickMedia();
           if (paths.length) await importPaths(paths);
         }}>
@@ -174,7 +178,7 @@ export function TitleBar() {
         <IconButton label="Review a timeline…" disabled={!project} onClick={() => setReviewOpen(true)}>
           <ClipboardCheck size={16} />
         </IconButton>
-        <IconButton label="Export selects… (Ctrl+E)" disabled={!project} onClick={() => setExportOpen(true)}>
+        <IconButton label="Export selects… (Ctrl+E)" disabled={!project} data-tour="export" onClick={() => setExportOpen(true)}>
           <Share size={16} />
         </IconButton>
         <IconButton label={inspectorOpen ? "Hide inspector" : "Show inspector"} active={inspectorOpen} onClick={toggleInspector}>
@@ -182,6 +186,9 @@ export function TitleBar() {
         </IconButton>
         <IconButton label="Settings (Ctrl+,)" onClick={() => void api.openSettings()}>
           <Settings size={16} />
+        </IconButton>
+        <IconButton label="Help (F1)" onClick={() => useHelp.getState().show()}>
+          <CircleHelp size={16} />
         </IconButton>
       </div>
       {windowsControls && <CaptionButtons />}

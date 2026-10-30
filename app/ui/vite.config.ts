@@ -8,7 +8,8 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
   clearScreen: false,
-  server: { port: 1420, strictPort: true, watch: { ignored: ["**/src-tauri/**"] } },
+  // The in-app manual is bundled from docs/manual (P14.4).
+  server: { port: 1420, strictPort: true, watch: { ignored: ["**/src-tauri/**"] }, fs: { allow: [".", "../../docs/manual"] } },
   envPrefix: ["VITE_", "TAURI_ENV_"],
   build:
     mode === "preview"

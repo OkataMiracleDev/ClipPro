@@ -32,7 +32,8 @@ export type ActionId =
   | "redo"
   | "export"
   | "save_as"
-  | "settings";
+  | "settings"
+  | "help";
 
 export const ACTIONS: { id: ActionId; label: string; group: string; key: string }[] = [
   { id: "play_pause", label: "Play / pause", group: "Playback", key: "Space" },
@@ -66,6 +67,7 @@ export const ACTIONS: { id: ActionId; label: string; group: string; key: string 
   { id: "export", label: "Export…", group: "General", key: "Ctrl+E" },
   { id: "save_as", label: "Save project as…", group: "General", key: "Ctrl+Shift+S" },
   { id: "settings", label: "Settings", group: "General", key: "Ctrl+," },
+  { id: "help", label: "Help", group: "General", key: "F1" },
 ];
 
 const DEFAULTS = Object.fromEntries(ACTIONS.map((a) => [a.id, a.key])) as Record<ActionId, string>;

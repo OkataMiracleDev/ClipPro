@@ -35,6 +35,8 @@ pub struct AppSettings {
     pub keybindings: std::collections::BTreeMap<String, String>,
     /// Score colours: oklch red→green, or blue→orange for colour-blind viewers.
     pub colour_blind_scores: bool,
+    /// The first-run tour has been seen (P14.4).
+    pub tour_done: bool,
 }
 
 impl Default for AppSettings {
@@ -52,6 +54,7 @@ impl Default for AppSettings {
             pair_sampling: true,
             keybindings: Default::default(),
             colour_blind_scores: false,
+            tour_done: false,
         }
     }
 }

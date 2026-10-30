@@ -55,6 +55,9 @@ if (q.get("sync") === "1") {
   });
 }
 
+// `?help=<page>` opens the manual; `?tour=1` (with the mock's tour_done false) runs the tour.
+if (q.has("help")) void import("./views/Help").then(({ useHelp }) => useHelp.getState().show(q.get("help") || undefined));
+
 // `?compare=1` opens the A/B compare with the second select once scores arrive (screenshots).
 if (q.get("compare") === "1") {
   const stop = useApp.subscribe((s) => {
