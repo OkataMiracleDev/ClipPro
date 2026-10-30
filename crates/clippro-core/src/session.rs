@@ -238,6 +238,10 @@ impl Session {
             if let Ok(Some(blob)) = hit {
                 if codec::decode(&blob).is_ok() {
                     let run = db.run_for(id, params)?;
+                    // Audio first: a run with measurements counts as done.
+                    if let Ok(Some(audio)) = lock(cache).get(&p.cfp, &crate::store::audio_key(&params.key())) {
+                        db.save_audio(run.id, &audio, "{\"from_cache\":true}")?;
+                    }
                     db.save_measurements(run.id, &blob, "{\"from_cache\":true}")?;
                     rep.cache_hits += 1;
                 }

@@ -23,6 +23,11 @@ pub struct CacheKey {
     pub run_key: String,
 }
 
+/// Cache key for a run's audio measurements (beside the video measurements' key).
+pub fn audio_key(run_key: &str) -> String {
+    format!("{run_key}#audio")
+}
+
 pub struct ProjectStore {
     pub db: Arc<Mutex<Db>>,
     pub cache: Option<Arc<Mutex<MeasureCache>>>,
@@ -103,8 +108,14 @@ impl RunStore for ProjectStore {
             "integrated_lufs": audio.integrated_lufs(i64::MIN / 2, i64::MAX / 2),
         })
         .to_string();
-        let db = lock(&self.db);
-        self.note(db.save_audio(Self::run(job), &audio.encode(), &summary));
+        let blob = audio.encode();
+        {
+            let db = lock(&self.db);
+            self.note(db.save_audio(Self::run(job), &blob, &summary));
+        }
+        if let (Some(cache), Some(key)) = (&self.cache, lock(&self.keys).get(&job).cloned()) {
+            self.note(lock(cache).put(&key.content_fingerprint, &audio_key(&key.run_key), &blob));
+        }
     }
 
     fn failed(&self, job: JobId, error: &str) {
