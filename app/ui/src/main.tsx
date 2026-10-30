@@ -36,6 +36,15 @@ function mount() {
   }
 }
 
+// End-to-end runs (P5.7, CLIPPRO_E2E=1) drive the app through its store.
+if (isTauri) {
+  void import("./bindings").then(({ commands }) =>
+    commands.e2eEnabled().then((on) => {
+      if (on) (window as unknown as { __clippro: unknown }).__clippro = { store: useApp };
+    }),
+  );
+}
+
 // `ClipPro --bench-preview` runs the transport benchmark instead of the app (ADR-002).
 if (isTauri) {
   void import("./bench").then((b) => b.maybeRunBench()).then((ran) => ran || mount(), mount);

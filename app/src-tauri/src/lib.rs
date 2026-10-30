@@ -1854,6 +1854,18 @@ pub struct SystemInfo {
     pub version: String,
 }
 
+/// `CLIPPRO_E2E=1`: the WebDriver end-to-end test is driving the app (P5.7).
+fn e2e_mode() -> bool {
+    std::env::var("CLIPPRO_E2E").is_ok_and(|v| v == "1")
+}
+
+/// Whether the end-to-end test is driving the app; the UI then exposes its store to it.
+#[tauri::command]
+#[specta::specta]
+fn e2e_enabled() -> bool {
+    e2e_mode()
+}
+
 /// Machine capabilities for the status bar.
 #[tauri::command]
 #[specta::specta]
@@ -2113,6 +2125,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             diagnostics_log,
             diagnostics_save,
             diagnostics_open_folder,
+            e2e_enabled,
             media_source,
             preview_shared,
             inspect_sample,
@@ -2254,7 +2267,10 @@ pub fn run(bench: Option<Bench>) {
             if let (true, Ok(dir)) = (bench.is_none(), app.path().app_log_dir()) {
                 diag::init(dir);
             }
-            if let (true, Ok(dir)) = (bench.is_none(), app.path().app_config_dir()) {
+            if e2e_mode() {
+                // End-to-end runs (P5.7) leave the user's settings alone and skip the tour.
+                *lock(&app.state::<AppState>().settings) = settings::AppSettings { tour_done: true, reopen_last: false, ..Default::default() };
+            } else if let (true, Ok(dir)) = (bench.is_none(), app.path().app_config_dir()) {
                 let p = settings::settings_path(dir);
                 let state = app.state::<AppState>();
                 *lock(&state.settings) = settings::AppSettings::load(&p);

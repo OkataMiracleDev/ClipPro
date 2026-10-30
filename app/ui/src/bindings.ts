@@ -50,6 +50,8 @@ export const commands = {
 	diagnosticsSave: (path: string) => typedError<null, string>(__TAURI_INVOKE("diagnostics_save", { path })),
 	/**  Opens the log folder in Explorer. */
 	diagnosticsOpenFolder: () => typedError<null, string>(__TAURI_INVOKE("diagnostics_open_folder")),
+	/**  Whether the end-to-end test is driving the app; the UI then exposes its store to it. */
+	e2eEnabled: () => __TAURI_INVOKE<boolean>("e2e_enabled"),
 	/**
 	 *  How to show `media` in the viewer (ADR-002). Grants the asset protocol access to the file
 	 *  when it can play natively.
