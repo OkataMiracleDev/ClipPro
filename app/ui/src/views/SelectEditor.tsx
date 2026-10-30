@@ -22,7 +22,7 @@ export const LABELS: { name: string; colour: string }[] = [
 const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
 
 export function SelectEditor() {
-  const { scored, selectedClip, playheadUs, annotations, overrides, setAnnotation, removeOverride, toggleForce, marks } = useApp();
+  const { scored, selectedClip, playheadUs, annotations, overrides, setAnnotation, removeOverride, toggleForce, marks, setPlayhead } = useApp();
   const sc = scored?.clips.find((c) => c.clip === selectedClip);
   const idx = sc?.segments.findIndex((g) => playheadUs >= g.startUs && playheadUs < g.endUs) ?? -1;
   const seg = idx >= 0 ? sc!.segments[idx]! : null;
@@ -57,6 +57,8 @@ export function SelectEditor() {
   const save = (patch: Partial<{ rating: number; label: string | null; note: string }>) =>
     void setAnnotation({ clip: selectedClip, startUs: seg.startUs, endUs: seg.endUs, rating: ann?.rating ?? 0, label: ann?.label ?? null, note: ann?.note ?? "", ...patch });
   const rating = ann?.rating ?? 0;
+  const take = scored?.takes.find((t) => t.clip === selectedClip && t.startUs === seg.startUs);
+  const others = take ? scored!.takes.filter((t) => t.group === take.group && t !== take) : [];
 
   return (
     <div className="flex flex-col gap-2">
@@ -66,6 +68,19 @@ export function SelectEditor() {
         </span>
         {seg.kind !== "auto" && <span className="rounded bg-control px-1 text-[10px]">{seg.kind === "manual" ? "edited" : "forced"}</span>}
       </div>
+      {take && (
+        <div className="flex flex-wrap items-center gap-1 text-[11px] text-text-2">
+          <span className={cx("rounded px-1.5 py-0.5", take.rank === 1 ? "bg-accent-soft text-accent" : "bg-control")}>
+            Take {take.rank} of {take.size}
+            {take.rank === 1 ? " · best" : ""}
+          </span>
+          {others.map((o) => (
+            <button key={`${o.clip}-${o.startUs}`} className="rounded px-1 text-text-3 hover:bg-control-hover hover:text-text" title="Jump to this take" onClick={() => setPlayhead(o.clip, o.startUs)}>
+              #{o.rank}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex items-center gap-0.5" role="radiogroup" aria-label="Rating">
         {[1, 2, 3, 4, 5].map((n) => (
           <button key={n} role="radio" aria-checked={rating === n} aria-label={`${n} star${n > 1 ? "s" : ""}`} onClick={() => save({ rating: rating === n ? 0 : n })} className="p-0.5">

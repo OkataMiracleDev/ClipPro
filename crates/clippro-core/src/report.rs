@@ -95,7 +95,7 @@ impl Session {
         let sel = self.score(settings)?;
         let refs = sel.sorted(sort);
         let annotations = self.annotations()?;
-        let inputs = self.clip_inputs()?;
+        let inputs = self.clip_inputs_for(&settings.shot_types)?;
         // Clip id → (name, original path, probe, media id).
         let mut meta: HashMap<ClipId, (String, String, MediaInfo, i64)> = HashMap::new();
         {
@@ -115,7 +115,10 @@ impl Session {
             let cs = sel.clips.iter().find(|c| c.clip == r.clip);
             let scores = cs.map(|c| &c.scores.score[..]).unwrap_or(&[]);
             let (a, b) = (r.segment.first_sample.min(scores.len()), (r.segment.last_sample + 1).min(scores.len()));
-            let (best_k, best) = (a..b).map(|k| (k, scores[k])).filter(|(_, v)| v.is_finite()).fold((a, f32::NAN), |acc, x| if acc.1.is_nan() || x.1 > acc.1 { x } else { acc });
+            let best = (a..b).map(|k| scores[k]).filter(|v| v.is_finite()).fold(f32::NAN, |m, v| if m.is_nan() || v > m { v } else { m });
+            let flags_all = cs.map(|c| &c.scores.flags[..]).unwrap_or(&[]);
+            let face = inputs.iter().find(|c| c.id == r.clip).and_then(|c| c.extra.get(&clippro_score::SubMetric::FaceFocus)).map(|v| &v[..]);
+            let best_k = crate::ai::best_thumbnail(scores, flags_all, face, a, b);
             let at_us = inputs.iter().find(|c| c.id == r.clip).and_then(|c| c.ms.time_us.get(best_k).copied()).unwrap_or(r.segment.start_us);
             thumbs_at.entry(r.clip).or_default().push((rows.len(), at_us));
             let mr = media_ref(info, 0, name, path.into());

@@ -300,6 +300,11 @@ function scoreAll(s: Settings): Scored {
     clips: clips.map(({ ci: _ci, ...c }) => c),
     selects,
     summary: { count: selects.length, selectsUs, footageUs, percent: (100 * selectsUs) / footageUs, flagRuns: [["shaky", 12], ["solid_colour", 1]] },
+    // The two interview angles' first selects are takes of the same answer.
+    takes: [6, 7].flatMap((c, i) => {
+      const seg = clips.find((x) => x.clip === c)?.segments[0];
+      return seg ? [{ clip: c, startUs: seg.startUs, group: 0, rank: i + 1, size: 2 }] : [];
+    }),
   };
 }
 

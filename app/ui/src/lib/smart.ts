@@ -6,7 +6,7 @@ import { FLAGS } from "./domain";
 
 export type Rule =
   | { field: "flag"; op: "has" | "lacks"; value: string }
-  | { field: "score" | "duration" | "selects" | "rating"; op: ">=" | "<="; value: number }
+  | { field: "score" | "duration" | "selects" | "rating" | "speakers"; op: ">=" | "<="; value: number }
   | { field: "camera" | "name"; op: "contains"; value: string }
   | { field: "codec" | "label"; op: "is"; value: string }
   | { field: "date"; op: "after" | "before"; value: string }
@@ -68,6 +68,9 @@ export function matchRule(r: Rule, f: ClipFacts): boolean {
       const best = f.annotations.reduce((a, x) => Math.max(a, x.rating), 0);
       return cmp(best, r.op, r.value);
     }
+    case "speakers":
+      // Only clips with speaker turns (the speakers module ran and heard speech).
+      return f.ai !== undefined && f.ai.speakers > 0 && cmp(f.ai.speakers, r.op, r.value);
     case "camera":
       return (f.clip.camera ?? "").toLowerCase().includes(r.value.trim().toLowerCase());
     case "name":
@@ -111,6 +114,8 @@ export function describeRule(r: Rule): string {
       return `Selects ${r.op === ">=" ? "≥" : "≤"} ${r.value}`;
     case "rating":
       return `Rating ${r.op === ">=" ? "≥" : "≤"} ${r.value}★`;
+    case "speakers":
+      return `Speakers ${r.op === ">=" ? "≥" : "≤"} ${r.value}`;
     case "camera":
       return `Camera contains “${r.value}”`;
     case "name":

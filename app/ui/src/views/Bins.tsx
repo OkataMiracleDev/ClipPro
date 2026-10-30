@@ -48,6 +48,7 @@ const FIELDS: { value: Rule["field"]; label: string }[] = [
   { value: "date", label: "Recorded" },
   { value: "person", label: "Person" },
   { value: "shot", label: "Shot type" },
+  { value: "speakers", label: "Speakers" },
 ];
 
 function defaultRule(field: Rule["field"]): Rule {
@@ -77,6 +78,8 @@ function defaultRule(field: Rule["field"]): Rule {
     }
     case "shot":
       return { field, op: "is", value: "close_up" };
+    case "speakers":
+      return { field, op: ">=", value: 2 };
   }
 }
 
@@ -107,7 +110,7 @@ function RuleRow({ r, onChange, onRemove }: { r: Rule; onChange: (r: Rule) => vo
           </select>
         </>
       )}
-      {(r.field === "score" || r.field === "duration" || r.field === "selects" || r.field === "rating") && (
+      {(r.field === "score" || r.field === "duration" || r.field === "selects" || r.field === "rating" || r.field === "speakers") && (
         <>
           <select aria-label="Comparison" className={ctl} value={r.op} onChange={(e) => onChange({ ...r, op: e.target.value as ">=" | "<=" })}>
             <option value=">=">at least</option>

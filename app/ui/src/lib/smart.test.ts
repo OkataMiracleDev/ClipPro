@@ -76,5 +76,6 @@ describe("AI smart rules", () => {
     expect(pick({ match: "all", rules: [{ field: "shot", op: "not", value: "wide" }] })).toEqual([1]);
     expect(describeRule({ field: "person", op: "is", value: 7, name: "Sarah" })).toBe("Sarah appears");
     expect(describeRule({ field: "shot", op: "is", value: "close_up" })).toBe("Shot is close-up");
+    expect(pick({ match: "all", rules: [{ field: "speakers", op: ">=", value: 1 }] })).toEqual([]);
   });
 });

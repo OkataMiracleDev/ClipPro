@@ -78,3 +78,44 @@ fn ai_pass_people_search_and_content() {
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// P12.6: the three takes of one shot group together and take 2 (the steady one) ranks best.
+#[test]
+fn takes_group_and_best_take() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let gen = root.join("testdata/gen");
+    if !gen.join("takes_1.mp4").exists() || clippro_ai::models::installed_path("clip-b32-vision").is_none() {
+        eprintln!("corpus or CLIP missing: skipping");
+        return;
+    }
+    let tmp = root.join("target/tmp-ai-takes");
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("media")).unwrap();
+    for i in 1..=3 {
+        std::fs::copy(gen.join(format!("takes_{i}.mp4")), tmp.join(format!("media/takes_{i}.mp4"))).unwrap();
+    }
+    let s = Session::create(&tmp.join("p.clippro"), "Takes", SessionOptions::default()).unwrap();
+    s.import(&[tmp.join("media")]).unwrap();
+    s.queue_analysis().unwrap();
+    s.wait(|_| {});
+    let opts = AiOptions { clip: true, deterministic: true, ..AiOptions::default() };
+    for c in s.ai_pending(&opts).unwrap() {
+        s.run_ai(c, &opts, &AtomicBool::new(false), |_, _| {}).unwrap();
+    }
+    let names = s.clip_names().unwrap();
+    // Cleanup keeps all three takes; one select each.
+    let mut settings = Settings::from_preset(&builtin("Cleanup").unwrap()).unwrap();
+    settings.max_per_clip = Some(1);
+    let sel = s.score(&settings).unwrap();
+    let groups = s.take_groups(&sel).unwrap();
+    let clips_in_group = |g: usize| groups.iter().filter(|x| x.1 == g).map(|x| names[&sel.clips[x.0 .0].clip].0.clone()).collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(groups.len(), 3, "{groups:?}");
+    assert_eq!(clips_in_group(groups[0].1).len(), 3, "all three takes in one group: {groups:?}");
+    settings.best_take_only = true;
+    let best = s.score(&settings).unwrap();
+    let kept: Vec<String> = best.clips.iter().filter(|c| !c.segments.is_empty()).map(|c| names[&c.clip].0.clone()).collect();
+    assert_eq!(kept, vec!["takes_2".to_string()]);
+    assert_eq!(best.summary.segment_count, 1);
+    s.close().unwrap();
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

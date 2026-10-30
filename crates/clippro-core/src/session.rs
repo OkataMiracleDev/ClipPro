@@ -681,6 +681,8 @@ impl Session {
         drop(db);
         let mut selects = Vec::new();
         let mut meta = Vec::new();
+        let people: HashMap<i64, String> = self.people().map(|v| v.into_iter().map(|p| (p.id, p.name)).collect()).unwrap_or_default();
+        let clip_media: HashMap<ClipId, MediaId> = self.clip_statuses()?.into_iter().map(|c| (c.clip, c.media)).collect();
         for r in &refs {
             let Some(&mi) = index.get(&r.clip) else { continue };
             meta.push((r.clip, infos[mi].clone()));
@@ -701,6 +703,7 @@ impl Session {
                 })
                 .unwrap_or_default();
             let ann = crate::annotate::best_match(&annotations, r.clip, r.segment.start_us, r.segment.end_us);
+            let ai = clip_media.get(&r.clip).and_then(|m| self.ai_data(*m).ok()).filter(|d| !d.is_empty());
             selects.push(SelectInput {
                 media: mi,
                 start_us: r.segment.start_us,
@@ -712,6 +715,9 @@ impl Session {
                 rating: ann.map_or(0, |a| a.rating),
                 label: ann.and_then(|a| a.label.as_deref().and_then(clippro_interchange::MarkerColor::parse)),
                 note: ann.map(|a| a.note.clone()).unwrap_or_default(),
+                transcript: ai.as_ref().and_then(|d| d.transcript.as_ref()).map(|t| t.words_in(r.segment.start_us, r.segment.end_us).map(|w| w.text.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default(),
+                people: ai.as_ref().map(|d| d.people_in(r.segment.start_us, r.segment.end_us).iter().filter_map(|p| people.get(p).cloned()).collect()).unwrap_or_default(),
+                shot: ai.as_ref().and_then(|d| d.shot_in(r.segment.start_us, r.segment.end_us)).map(|s| s.0.label().to_string()).unwrap_or_default(),
             });
         }
         Ok((media, selects, meta))

@@ -247,6 +247,8 @@ export interface Scored {
   clips: ClipScore[];
   selects: Select[];
   summary: { count: number; selectsUs: number; footageUs: number; percent: number; flagRuns: [string, number][] };
+  /** Take groups (AI, P12.6): rank 1 is the best take of its group. */
+  takes: { clip: number; startUs: number; group: number; rank: number; size: number }[];
 }
 
 export interface AnalysisEvent {
@@ -560,6 +562,7 @@ export function adaptScore(r: ScoreResult): Scored {
       percent: n(r.summary.percent),
       flagRuns: r.summary.flag_runs.map(([f, c]) => [f, n(c)] as [string, number]),
     },
+    takes: r.takes.map((t) => ({ clip: n(t.clip), startUs: n(t.start_us), group: t.group, rank: t.rank, size: t.size })),
   };
 }
 

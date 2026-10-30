@@ -105,7 +105,7 @@ mod tests {
     use super::*;
 
     fn sel(score: f32, rating: u8, label: Option<MarkerColor>) -> SelectInput {
-        SelectInput { media: 0, start_us: 0, end_us: 1_000_000, in_us: 0, out_us: 1_000_000, score, flags: vec![], rating, label, note: String::new() }
+        SelectInput { media: 0, start_us: 0, end_us: 1_000_000, in_us: 0, out_us: 1_000_000, score, flags: vec![], rating, label, note: String::new(), transcript: String::new(), people: vec![], shot: String::new() }
     }
 
     fn info(camera: Option<&str>, date: Option<&str>) -> MediaInfo {

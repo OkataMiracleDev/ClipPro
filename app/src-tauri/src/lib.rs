@@ -149,6 +149,18 @@ pub struct ScoreResult {
     pub clips: Vec<ClipScore>,
     pub selects: Vec<SelectRef>,
     pub summary: Summary,
+    /// Take groups of two or more selects (P12.6), when local AI is on.
+    pub takes: Vec<TakeRow>,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct TakeRow {
+    pub clip: f64,
+    pub start_us: f64,
+    pub group: u32,
+    /// 1 = best take.
+    pub rank: u32,
+    pub size: u32,
 }
 
 /// Media a watch folder added (P9.5); the UI refreshes its clip list.
@@ -483,6 +495,7 @@ async fn preset_export(name: String, description: String, settings: Settings, pa
 #[specta::specta]
 async fn score(state: State<'_, AppState>, settings: Settings, sort: SortOrder) -> Result<ScoreResult, String> {
     let s = state.session()?;
+    let ai = lock(&state.settings).ai_consent;
     blocking(move || {
         let sel = s.score(&settings).map_err(|e| e.to_string())?;
         let inputs = s.clip_inputs().map_err(|e| e.to_string())?;
@@ -505,7 +518,9 @@ async fn score(state: State<'_, AppState>, settings: Settings, sort: SortOrder) 
                 }
             })
             .collect();
-        Ok(ScoreResult { clips, selects: sel.sorted(sort), summary: sel.summary.clone() })
+        let takes = if ai { s.take_ranking(&sel).unwrap_or_default() } else { Vec::new() };
+        let takes = takes.into_iter().map(|t| TakeRow { clip: t.0 .0 as f64, start_us: t.1 as f64, group: t.2 as u32, rank: t.3 as u32, size: t.4 as u32 }).collect();
+        Ok(ScoreResult { clips, selects: sel.sorted(sort), summary: sel.summary.clone(), takes })
     })
     .await
 }

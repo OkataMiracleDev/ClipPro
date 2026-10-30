@@ -999,6 +999,8 @@ export type ScoreResult = {
 	clips: ClipScore[],
 	selects: SelectRef[],
 	summary: Summary,
+	/**  Take groups of two or more selects (P12.6), when local AI is on. */
+	takes: TakeRow[],
 };
 
 export type SearchRow = {
@@ -1178,6 +1180,15 @@ export type SystemInfo = {
 	/**  D3D11VA hardware decoding works on this machine. */
 	hw_decode: boolean,
 	version: string,
+};
+
+export type TakeRow = {
+	clip: number | null,
+	start_us: number | null,
+	group: number,
+	/**  1 = best take. */
+	rank: number,
+	size: number,
 };
 
 /**  What a flag does to scoring (ALGORITHMS §6.4). */

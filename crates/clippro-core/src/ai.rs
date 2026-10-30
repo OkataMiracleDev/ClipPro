@@ -697,45 +697,84 @@ impl Session {
             };
             Some(take_similarity(c, t, h))
         };
-        // Average-linkage agglomerative clustering at similarity ≥ 0.80.
-        let mut groups: Vec<Vec<usize>> = (0..n).map(|i| vec![i]).collect();
+        // Average-linkage agglomerative clustering at similarity ≥ 0.80, on a similarity matrix
+        // updated in place (sum and count per cluster pair; a pair that may not group blocks).
+        let mut sum = vec![0f32; n * n];
+        let mut cnt = vec![0u32; n * n];
+        let mut blocked = vec![false; n * n];
+        for i in 0..n {
+            for j in i + 1..n {
+                match sim(i, j) {
+                    Some(v) => {
+                        sum[i * n + j] = v;
+                        sum[j * n + i] = v;
+                        cnt[i * n + j] = 1;
+                        cnt[j * n + i] = 1;
+                    }
+                    None => {
+                        blocked[i * n + j] = true;
+                        blocked[j * n + i] = true;
+                    }
+                }
+            }
+        }
+        let mut members: Vec<Vec<usize>> = (0..n).map(|i| vec![i]).collect();
+        let mut alive: Vec<bool> = vec![true; n];
         loop {
             let mut best: Option<(f32, usize, usize)> = None;
-            for i in 0..groups.len() {
-                for j in i + 1..groups.len() {
-                    let mut sum = 0.0;
-                    let mut cnt = 0;
-                    let mut ok = true;
-                    for &a in &groups[i] {
-                        for &b in &groups[j] {
-                            match sim(a, b) {
-                                Some(v) => {
-                                    sum += v;
-                                    cnt += 1;
-                                }
-                                None => ok = false,
-                            }
-                        }
-                    }
-                    if !ok || cnt == 0 {
+            for i in (0..n).filter(|&i| alive[i]) {
+                for j in (i + 1..n).filter(|&j| alive[j]) {
+                    let k = i * n + j;
+                    if blocked[k] || cnt[k] == 0 {
                         continue;
                     }
-                    let avg = sum / cnt as f32;
+                    let avg = sum[k] / cnt[k] as f32;
                     if avg >= 0.80 && best.is_none_or(|b| avg > b.0) {
                         best = Some((avg, i, j));
                     }
                 }
             }
             let Some((_, i, j)) = best else { break };
-            let g = groups.remove(j);
-            groups[i].extend(g);
+            alive[j] = false;
+            let moved = std::mem::take(&mut members[j]);
+            members[i].extend(moved);
+            for k in (0..n).filter(|&k| alive[k] && k != i) {
+                let (ik, jk) = (i * n + k, j * n + k);
+                let (s2, c2, b2) = (sum[ik] + sum[jk], cnt[ik] + cnt[jk], blocked[ik] || blocked[jk]);
+                for x in [ik, k * n + i] {
+                    sum[x] = s2;
+                    cnt[x] = c2;
+                    blocked[x] = b2;
+                }
+            }
         }
         let mut out = Vec::new();
-        for (gi, g) in groups.iter().enumerate() {
+        for (gi, g) in members.iter().filter(|g| !g.is_empty()).enumerate() {
             for &i in g {
                 out.push((items[i].0, gi));
             }
         }
+        Ok(out)
+    }
+
+    /// Take groups with ranks (1 = best: highest mean, then longer): (clip, select start µs,
+    /// group, rank, group size). Only groups of two or more are returned.
+    pub fn take_ranking(&self, sel: &Selects) -> Result<Vec<(ClipId, i64, usize, usize, usize)>> {
+        let groups = self.take_groups(sel)?;
+        let mut by: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
+        for &(k, g) in &groups {
+            by.entry(g).or_default().push(k);
+        }
+        let mut out = Vec::new();
+        for (g, mut v) in by.into_iter().filter(|x| x.1.len() > 1) {
+            let seg = |k: &(usize, usize)| &sel.clips[k.0].segments[k.1];
+            v.sort_by(|a, b| seg(b).mean.total_cmp(&seg(a).mean).then(seg(b).len_us().cmp(&seg(a).len_us())));
+            let size = v.len();
+            for (r, k) in v.iter().enumerate() {
+                out.push((sel.clips[k.0].clip, seg(k).start_us, g, r + 1, size));
+            }
+        }
+        out.sort_by_key(|x| (x.2, x.3));
         Ok(out)
     }
 
@@ -786,6 +825,29 @@ impl Session {
     }
 }
 
+/// Best thumbnail sample of samples `a..b` (ALGORITHMS §8.7): the argmax of
+/// `F · (0.5 + 0.5·face_in_focus, when faces ran) · (1 − 0.5·motion_blur)`, ignoring the outer 10%
+/// of the span. Falls back to `a` when nothing scores.
+pub fn best_thumbnail(scores: &[f32], flags: &[u32], face_focus: Option<&[f32]>, a: usize, b: usize) -> usize {
+    let b = b.min(scores.len());
+    if a >= b {
+        return a;
+    }
+    let edge = (b - a) / 10;
+    let (lo, hi) = if b - a > 2 * edge + 1 { (a + edge, b - edge) } else { (a, b) };
+    let blur = FlagKind::MotionBlur.bit();
+    let value = |k: usize| {
+        let f = scores[k];
+        if !f.is_finite() {
+            return f32::NAN;
+        }
+        let face = face_focus.map(|v| 0.5 + 0.5 * v.get(k).copied().filter(|x| x.is_finite()).unwrap_or(0.0)).unwrap_or(1.0);
+        let mb = if flags.get(k).is_some_and(|x| x & blur != 0) { 0.5 } else { 1.0 };
+        f * face * mb
+    };
+    (lo..hi).filter(|&k| value(k).is_finite()).max_by(|&i, &j| value(i).total_cmp(&value(j)).then(j.cmp(&i))).unwrap_or(a)
+}
+
 /// Mono 16 kHz audio of a file (empty when it has none).
 fn mono_16k(path: &std::path::Path, info: &MediaInfo, index: Option<usize>) -> Result<Vec<f32>> {
     let mut out = Vec::new();
@@ -822,6 +884,18 @@ mod tests {
         assert!(j3("a b", "c d").is_none());
         let e = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
         assert_eq!(decode_embeddings(&encode_embeddings(&e)), e);
+    }
+
+    #[test]
+    fn thumbnail_prefers_sharp_faces_away_from_edges() {
+        let scores = vec![0.99, 0.6, 0.7, 0.7, 0.65, 0.6, 0.6, 0.6, 0.6, 0.6, 0.99];
+        assert_eq!(best_thumbnail(&scores, &[], None, 0, 11), 2, "edges ignored; first of ties");
+        let face = vec![f32::NAN, 0.1, 0.1, 0.2, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        assert_eq!(best_thumbnail(&scores, &[], Some(&face), 0, 11), 4);
+        let mut flags = vec![0u32; 11];
+        flags[4] = FlagKind::MotionBlur.bit();
+        assert_eq!(best_thumbnail(&scores, &flags, Some(&face), 0, 11), 3);
+        assert_eq!(best_thumbnail(&[f32::NAN; 3], &[], None, 0, 3), 0);
     }
 
     #[test]

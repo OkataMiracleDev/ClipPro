@@ -198,7 +198,8 @@ pub struct ExportOptions {
     pub gap_s: f64,
     pub with_audio: bool,
     /// Marker name and comment templates; tokens: {clip} {index} {score} {flags} {duration} {tc_in}
-    /// {tc_out} {rating} {label} {note}. A colour label sets the marker colour.
+    /// {tc_out} {rating} {label} {note}, and with the AI modules {transcript} {people} {shot}.
+    /// A colour label sets the marker colour.
     pub marker_name: String,
     pub marker_comment: String,
     pub markers: bool,
@@ -236,6 +237,12 @@ pub struct SelectInput {
     pub rating: u8,
     pub label: Option<MarkerColor>,
     pub note: String,
+    /// What is said during the select (AI transcripts), empty without one.
+    pub transcript: String,
+    /// Names of the people seen (AI faces).
+    pub people: Vec<String>,
+    /// Shot type label, e.g. "Close-up" (AI).
+    pub shot: String,
 }
 
 pub fn score_color(score: f32) -> MarkerColor {
@@ -260,6 +267,9 @@ fn fill(tpl: &str, clip: &str, index: usize, s: &SelectInput, m: &MediaRef, from
         .replace("{rating}", &"★".repeat(s.rating.min(5) as usize))
         .replace("{label}", s.label.map(MarkerColor::name).unwrap_or(""))
         .replace("{note}", &s.note)
+        .replace("{transcript}", &s.transcript)
+        .replace("{people}", &s.people.join(", "))
+        .replace("{shot}", &s.shot)
 }
 
 /// Builds a timeline from selects (already in the desired order).
@@ -427,9 +437,9 @@ pub(crate) mod tests {
 
     pub fn selects() -> Vec<SelectInput> {
         vec![
-            SelectInput { media: 0, start_us: 1_000_000, end_us: 4_000_000, in_us: 250_000, out_us: 4_750_000, score: 0.82, flags: vec![], rating: 0, label: None, note: String::new() },
-            SelectInput { media: 0, start_us: 6_000_000, end_us: 8_000_000, in_us: 5_250_000, out_us: 8_750_000, score: 0.61, flags: vec!["Shaky".into()], rating: 4, label: Some(MarkerColor::Blue), note: "Great reaction".into() },
-            SelectInput { media: 1, start_us: 0, end_us: 5_000_000, in_us: 0, out_us: 5_750_000, score: 0.9, flags: vec![], rating: 0, label: None, note: String::new() },
+            SelectInput { media: 0, start_us: 1_000_000, end_us: 4_000_000, in_us: 250_000, out_us: 4_750_000, score: 0.82, flags: vec![], rating: 0, label: None, note: String::new(), transcript: String::new(), people: vec![], shot: String::new() },
+            SelectInput { media: 0, start_us: 6_000_000, end_us: 8_000_000, in_us: 5_250_000, out_us: 8_750_000, score: 0.61, flags: vec!["Shaky".into()], rating: 4, label: Some(MarkerColor::Blue), note: "Great reaction".into(), transcript: "So it began".into(), people: vec!["Sarah".into()], shot: "Close-up".into() },
+            SelectInput { media: 1, start_us: 0, end_us: 5_000_000, in_us: 0, out_us: 5_750_000, score: 0.9, flags: vec![], rating: 0, label: None, note: String::new(), transcript: String::new(), people: vec![], shot: String::new() },
         ]
     }
 
@@ -458,6 +468,9 @@ pub(crate) mod tests {
         assert_eq!(clips[1].markers[0].name, "★★★★ blue");
         assert_eq!(clips[1].markers[0].comment, "Great reaction");
         assert_eq!(clips[1].markers[0].color, MarkerColor::Blue, "a colour label wins over the score colour");
+        let ai = build(media(2), &selects(), &ExportOptions { marker_name: "{people} · {shot}".into(), marker_comment: "{transcript}".into(), ..ExportOptions::default() });
+        let Item::Clip(c) = ai.video[0].items.iter().filter(|i| matches!(i, Item::Clip(_))).nth(1).unwrap() else { panic!() };
+        assert_eq!((c.markers[0].name.as_str(), c.markers[0].comment.as_str()), ("Sarah · Close-up", "So it began"));
         assert_eq!(clips[0].markers[0].name.trim(), "");
         assert_eq!(MarkerColor::parse(" Purple "), Some(MarkerColor::Purple));
     }

@@ -65,6 +65,8 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
   const [audio, setAudio] = useState(true);
   const [markers, setMarkers] = useState(true);
   const [markerName, setMarkerName] = useState("Select {index} · {score}");
+  const [markerComment, setMarkerComment] = useState("{flags}");
+  const aiOn = useApp((st) => st.appSettings?.ai_consent ?? false);
   const [busy, setBusy] = useState(false);
   const [copy, setCopy] = useState(true);
   const [nearest, setNearest] = useState(false);
@@ -106,7 +108,7 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
         with_audio: audio,
         markers,
         marker_name: markerName,
-        marker_comment: "{flags}",
+        marker_comment: markerComment,
         generated: new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }),
       });
       toast(`Exported ${r.selects} select${r.selects === 1 ? "" : "s"} to ${r.path.split(/[\\/]/).pop()}`);
@@ -263,16 +265,26 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
           </div>
         )}
         {markers && !REPORTS.has(format) && format !== "render" && (
-          <label className="flex flex-col gap-1">
-            <span className="text-[12px] text-text-2">Marker name</span>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="export-marker-name" className="text-[12px] text-text-2">Marker name</label>
             <input
               id="export-marker-name"
               value={markerName}
               onChange={(e) => setMarkerName(e.target.value)}
               className="h-7 rounded border border-separator-strong bg-control px-2 text-[12px]"
             />
-            <span className="text-[11px] text-text-3">Tokens: {"{clip} {index} {score} {flags} {duration} {tc_in} {tc_out}"}. The comment lists flags.</span>
-          </label>
+            <label htmlFor="export-marker-comment" className="text-[12px] text-text-2">Marker comment</label>
+            <input
+              id="export-marker-comment"
+              value={markerComment}
+              onChange={(e) => setMarkerComment(e.target.value)}
+              className="h-7 rounded border border-separator-strong bg-control px-2 text-[12px]"
+            />
+            <span className="text-[11px] text-text-3">
+              Tokens: {"{clip} {index} {score} {flags} {duration} {tc_in} {tc_out} {rating} {label} {note}"}
+              {aiOn && " {transcript} {people} {shot}"}
+            </span>
+          </div>
         )}
         <div className="flex items-center justify-between border-t border-separator pt-3">
           <span className="text-[12px] text-text-3">{count} select{count === 1 ? "" : "s"} with the current settings</span>
