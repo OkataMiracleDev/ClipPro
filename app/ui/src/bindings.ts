@@ -391,8 +391,15 @@ export type ExportRequest_Deserialize = {
 	format: string,
 	path: string,
 	name: string,
-	/**  selects | with_rejects */
+	/**  selects | with_rejects | stringout */
 	layout: string,
+	/**  Stringouts: clip | camera | date | reel | rating | label. */
+	group_by?: string | null,
+	/**  Stringouts: key | best_first. */
+	group_order?: string | null,
+	/**  Stringouts: none | gap | slug, and its length in seconds. */
+	separator?: string | null,
+	separator_s?: number | null,
 	handles: boolean,
 	gap_s: number | null,
 	with_audio: boolean,
@@ -408,8 +415,15 @@ export type ExportRequest_Serialize = {
 	format: string,
 	path: string,
 	name: string,
-	/**  selects | with_rejects */
+	/**  selects | with_rejects | stringout */
 	layout: string,
+	/**  Stringouts: clip | camera | date | reel | rating | label. */
+	group_by: string | null,
+	/**  Stringouts: key | best_first. */
+	group_order: string | null,
+	/**  Stringouts: none | gap | slug, and its length in seconds. */
+	separator: string | null,
+	separator_s: number | null,
 	handles: boolean,
 	gap_s: number | null,
 	with_audio: boolean,

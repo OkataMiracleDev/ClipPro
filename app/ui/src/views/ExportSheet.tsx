@@ -28,13 +28,29 @@ const FORMATS: FormatDef[] = [
   { value: "pdf", label: "PDF contact sheet", hint: "Best frame of each select, for clients", ext: "pdf", filter: "PDF", timeline: false },
 ];
 
+type GroupBy = "clip" | "camera" | "date" | "reel" | "rating" | "label";
+
+const GROUPS: { value: GroupBy; label: string }[] = [
+  { value: "clip", label: "Clip" },
+  { value: "camera", label: "Camera" },
+  { value: "date", label: "Date recorded" },
+  { value: "reel", label: "Reel" },
+  { value: "rating", label: "Rating" },
+  { value: "label", label: "Colour label" },
+];
+
 /** Reports have no markers, handles or audio. */
 const REPORTS = new Set(["html", "pdf"]);
 
 export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { settings, sort, project, scored, toast } = useApp();
   const [format, setFormat] = useState("xmeml");
-  const [layout, setLayout] = useState<"selects" | "with_rejects">("selects");
+  // `?export=stringout` (screenshots) starts on the stringout layout.
+  const [layout, setLayout] = useState<"selects" | "with_rejects" | "stringout">(() => (new URLSearchParams(location.search).get("export") === "stringout" ? "stringout" : "selects"));
+  const [groupBy, setGroupBy] = useState<GroupBy>("clip");
+  const [groupOrder, setGroupOrder] = useState<"key" | "best_first">("key");
+  const [separator, setSeparator] = useState<"none" | "gap" | "slug">("slug");
+  const [sepSeconds, setSepSeconds] = useState("2");
   const [handles, setHandles] = useState(true);
   const [gap, setGap] = useState("0");
   const [audio, setAudio] = useState(true);
@@ -56,6 +72,10 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
         path,
         name: base,
         layout,
+        group_by: groupBy,
+        group_order: groupOrder,
+        separator,
+        separator_s: Math.max(0, Number(sepSeconds) || 0),
         handles,
         gap_s: Math.max(0, Number(gap) || 0),
         with_audio: audio,
@@ -101,8 +121,61 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
               options={[
                 { value: "selects", label: "Selects only" },
                 { value: "with_rejects", label: "With rejects on V2" },
+                { value: "stringout", label: "Stringout", title: "Selects grouped, with gaps or titled slugs between groups" },
               ]}
             />
+          </div>
+        )}
+        {def.timeline && layout === "stringout" && (
+          <div className="flex flex-col gap-2.5 rounded-(--radius-control) bg-control-hover/40 p-2.5 ring-1 ring-separator ring-inset">
+            <div className={row}>
+              <span className="text-[12px] text-text-2">Group by</span>
+              <span className="flex items-center gap-2">
+                <select aria-label="Group by" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)} className="h-6 rounded border border-separator-strong bg-control px-1.5 text-[12px]">
+                  {GROUPS.map((g) => (
+                    <option key={g.value} value={g.value}>
+                      {g.label}
+                    </option>
+                  ))}
+                </select>
+                <Segmented
+                  size="sm"
+                  label="Group order"
+                  value={groupOrder}
+                  onChange={setGroupOrder}
+                  options={[
+                    { value: "key", label: groupBy === "rating" || groupBy === "label" ? "Best first" : groupBy === "date" ? "Oldest first" : "A–Z", title: "By the group's name or value" },
+                    { value: "best_first", label: "Best select first", title: "The group holding the highest-scoring select plays first" },
+                  ]}
+                />
+              </span>
+            </div>
+            <div className={row}>
+              <span className="text-[12px] text-text-2">Between groups</span>
+              <span className="flex items-center gap-2">
+                <Segmented
+                  size="sm"
+                  label="Between groups"
+                  value={separator}
+                  onChange={setSeparator}
+                  options={[
+                    { value: "none", label: "Nothing" },
+                    { value: "gap", label: "Gap" },
+                    { value: "slug", label: "Titled slug", title: "A black slug named after the group, before each group" },
+                  ]}
+                />
+                {separator !== "none" && (
+                  <input
+                    aria-label="Separator length in seconds"
+                    value={sepSeconds}
+                    onChange={(e) => setSepSeconds(e.target.value)}
+                    inputMode="decimal"
+                    className="h-6 w-12 rounded border border-separator-strong bg-control px-1.5 text-right font-mono text-[12px]"
+                  />
+                )}
+                {separator !== "none" && <span className="text-[11px] text-text-3">s</span>}
+              </span>
+            </div>
           </div>
         )}
         {!REPORTS.has(format) && (

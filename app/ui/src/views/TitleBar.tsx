@@ -91,7 +91,7 @@ function AnalysisStatus() {
 export function TitleBar() {
   const { project, importPaths, openProject, selectsOnly, toggleSelectsOnly, sort, setSort, inspectorOpen, toggleInspector, appSettings } = useApp();
   const windowsControls = appSettings?.window_controls === "windows";
-  const [exportOpen, setExportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(() => new URLSearchParams(location.search).has("export"));
   // `?review=1` opens the timeline review (screenshots).
   const [reviewOpen, setReviewOpen] = useState(() => new URLSearchParams(location.search).get("review") === "1");
   useEffect(() => {

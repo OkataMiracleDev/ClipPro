@@ -443,8 +443,15 @@ pub struct ExportRequest {
     pub format: String,
     pub path: String,
     pub name: String,
-    /// selects | with_rejects
+    /// selects | with_rejects | stringout
     pub layout: String,
+    /// Stringouts: clip | camera | date | reel | rating | label.
+    pub group_by: Option<String>,
+    /// Stringouts: key | best_first.
+    pub group_order: Option<String>,
+    /// Stringouts: none | gap | slug, and its length in seconds.
+    pub separator: Option<String>,
+    pub separator_s: Option<f64>,
     pub handles: bool,
     pub gap_s: f64,
     pub with_audio: bool,
@@ -482,6 +489,21 @@ async fn export_selects(app: tauri::AppHandle, state: State<'_, AppState>, setti
             rate: None,
         };
         let path = PathBuf::from(&request.path);
+        if request.layout == "stringout" {
+            use clippro_core::stringout::{GroupBy, GroupOrder};
+            let by = serde_json::from_value::<GroupBy>(serde_json::Value::String(request.group_by.clone().unwrap_or_else(|| "clip".into()))).map_err(|e| e.to_string())?;
+            let order = if request.group_order.as_deref() == Some("best_first") { GroupOrder::BestFirst } else { GroupOrder::Key };
+            let secs = request.separator_s.unwrap_or(2.0).clamp(0.0, 30.0);
+            let sep = match request.separator.as_deref() {
+                Some("gap") => clippro_interchange::Separator::Gap { seconds: secs },
+                Some("slug") => clippro_interchange::Separator::Slug { seconds: secs },
+                _ => clippro_interchange::Separator::None,
+            };
+            let tl = s.stringout_timeline(&settings, sort, &opts, by, order, sep).map_err(|e| e.to_string())?;
+            let json = serde_json::json!({ "options": opts, "group_by": by, "group_order": order, "separator": sep }).to_string();
+            let n = s.write_timeline(&tl, format, &path, &json).map_err(|e| e.to_string())?;
+            return Ok(ExportResult { path: request.path, selects: n as u32 });
+        }
         let n = s.export_to(&settings, sort, &opts, format, &path).map_err(|e| e.to_string())?;
         Ok(ExportResult { path: request.path, selects: n as u32 })
     })
@@ -804,6 +826,10 @@ async fn pdf_check(app: &tauri::AppHandle, out: &std::path::Path, clips: &[PathB
         path: out.to_string_lossy().into_owned(),
         name: "PDF check".into(),
         layout: "selects".into(),
+        group_by: None,
+        group_order: None,
+        separator: None,
+        separator_s: None,
         handles: true,
         gap_s: 0.0,
         with_audio: false,
