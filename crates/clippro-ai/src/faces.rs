@@ -311,6 +311,23 @@ mod tests {
         assert_ne!(labels[0], labels[2]);
     }
 
+    /// DirectML smoke test (run on demand on a GPU machine): `cargo test --release -p clippro-ai
+    /// -- --ignored directml`.
+    #[test]
+    #[ignore]
+    fn directml_detects_and_embeds() {
+        let (Ok(mut gpu), Ok(mut cpu), Some(a)) = (FaceEngine::load(false), FaceEngine::load(true), load("einstein.jpg")) else { return };
+        let (fg, fc) = (gpu.detect(&a.0, a.1, a.2).unwrap(), cpu.detect(&a.0, a.1, a.2).unwrap());
+        assert_eq!((fg.len(), fc.len()), (1, 1));
+        assert!(cosine(&fg[0].embedding, &fc[0].embedding) > 0.98);
+        let (mut cg, mut cc) = (crate::clip::Clip::load(false).unwrap(), crate::clip::Clip::load(true).unwrap());
+        let img = [crate::clip::preprocess(&a.0, a.1, a.2)];
+        let (vg, vc) = (cg.embed_images(&img).unwrap(), cc.embed_images(&img).unwrap());
+        let (tg, tc) = (cg.embed_texts(&["a photo of a man"]).unwrap(), cc.embed_texts(&["a photo of a man"]).unwrap());
+        eprintln!("image {:.4} text {:.4}", crate::clip::cosine(&vg[0], &vc[0]), crate::clip::cosine(&tg[0], &tc[0]));
+        assert!(crate::clip::cosine(&vg[0], &vc[0]) > 0.98 && crate::clip::cosine(&tg[0], &tc[0]) > 0.98);
+    }
+
     fn load(name: &str) -> Option<(Vec<u8>, usize, usize)> {
         let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/faces").join(name);
         let o = Command::new("ffmpeg").args(["-hide_banner", "-loglevel", "error", "-i"]).arg(&p).args(["-f", "rawvideo", "-pix_fmt", "rgb24", "-"]).output().ok()?;
@@ -357,3 +374,4 @@ mod tests {
         assert_ne!(labels[0], labels[2]);
     }
 }
+

@@ -119,3 +119,79 @@ fn takes_group_and_best_take() {
     s.close().unwrap();
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// P12.8: core analysis throughput drops at most 15% while the AI queue runs (it yields to
+/// analysis). Timing-sensitive, so run on demand: `cargo test --release -p clippro-core --test ai
+/// -- --ignored throughput`.
+#[test]
+#[ignore]
+fn throughput_with_ai_running() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let gen = root.join("testdata/gen");
+    if !gen.join("takes_1.mp4").exists() || clippro_ai::models::installed_path("clip-b32-vision").is_none() {
+        eprintln!("corpus or CLIP missing: skipping");
+        return;
+    }
+    let tmp = root.join("target/tmp-ai-throughput");
+    let _ = std::fs::remove_dir_all(&tmp);
+    // Most of the corpus (about 30 clips), so the batch takes long enough to measure.
+    let batch: Vec<String> = std::fs::read_dir(&gen)
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+        .filter(|f| !f.starts_with("takes_") && !f.starts_with("long_clip") && !f.ends_with(".json") && !f.contains("Proxy"))
+        .collect();
+    let opts = || SessionOptions { cache_path: None, ..SessionOptions::default() };
+    let analyse = |s: &Session| {
+        let t = std::time::Instant::now();
+        s.queue_analysis().unwrap();
+        s.wait(|_| {});
+        t.elapsed().as_secs_f64()
+    };
+    let setup = |name: &str| {
+        let d = tmp.join(name);
+        std::fs::create_dir_all(d.join("ai")).unwrap();
+        std::fs::create_dir_all(d.join("batch")).unwrap();
+        for i in 1..=3 {
+            std::fs::copy(gen.join(format!("takes_{i}.mp4")), d.join(format!("ai/takes_{i}.mp4"))).unwrap();
+        }
+        for f in &batch {
+            if gen.join(f).is_file() {
+                std::fs::copy(gen.join(f), d.join("batch").join(f)).unwrap();
+            }
+        }
+        let s = Session::create(&d.join("p.clippro"), name, opts()).unwrap();
+        s.import(&[d.join("ai")]).unwrap();
+        analyse(&s);
+        s.import(&[d.join("batch")]).unwrap();
+        (s, d)
+    };
+    // Baseline: the batch alone.
+    let (s, _) = setup("base");
+    let base = analyse(&s);
+    s.close().unwrap();
+    // The same batch while the AI queue works on the takes.
+    let (s, _) = setup("ai");
+    let s = std::sync::Arc::new(s);
+    let ai_opts = AiOptions { faces: true, clip: true, ..AiOptions::default() };
+    let mut pending = s.ai_pending(&ai_opts).unwrap();
+    // Steady state: the models are loaded and the queue is mid-way when new footage arrives.
+    s.run_ai(pending.remove(0), &ai_opts, &AtomicBool::new(false), |_, _| {}).unwrap();
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let worker = {
+        let (s, stop) = (s.clone(), stop.clone());
+        std::thread::spawn(move || {
+            for c in pending {
+                let _ = s.run_ai(c, &ai_opts, &stop, |_, _| {});
+            }
+        })
+    };
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let with_ai = analyse(&s);
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    worker.join().unwrap();
+    let loss = 1.0 - base / with_ai;
+    eprintln!("analysis alone {base:.2}s, with AI {with_ai:.2}s, throughput drop {:.1}%", loss * 100.0);
+    assert!(loss <= 0.15, "throughput dropped {:.1}%", loss * 100.0);
+    drop(s);
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

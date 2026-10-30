@@ -21,10 +21,21 @@ fn cpu_threads() -> usize {
 pub fn session(model: &Path, deterministic: bool) -> Result<Session, String> {
     let builder = Session::builder(env()?).map_err(|e| e.to_string())?;
     let builder = builder.with_intra_threads(cpu_threads()).map_err(|e| e.to_string())?;
+    // Idle pool threads sleep instead of spinning, so a paused AI pass costs analysis nothing.
+    let builder = builder.with_intra_op_spinning(false).map_err(|e| e.to_string())?;
     let mut builder = if deterministic {
         builder.with_deterministic_compute(true).map_err(|e| e.to_string())?
     } else {
+        // DirectML needs memory patterns off and sequential execution (ONNX Runtime docs), and
+        // basic graph optimisation only: the extended fusions crash ORT 1.31's DirectML EP on the
+        // 8-bit CLIP image encoder.
         builder
+            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level1)
+            .map_err(|e| e.to_string())?
+            .with_memory_pattern(false)
+            .map_err(|e| e.to_string())?
+            .with_parallel_execution(false)
+            .map_err(|e| e.to_string())?
             .with_execution_providers([ort::ep::DirectML::default().build(), ort::ep::CPU::default().build()])
             .map_err(|e| e.to_string())?
     };

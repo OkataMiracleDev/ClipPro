@@ -181,6 +181,14 @@ fn model_hash(id: &str) -> String {
     clippro_ai::models::model(id).map(|m| m.sha256).unwrap_or_default()
 }
 
+/// Models loaded by the AI pass, kept so each clip doesn't reload them (seconds of CPU).
+#[derive(Default)]
+pub struct AiEngines {
+    deterministic: bool,
+    faces: Option<FaceEngine>,
+    clip: Option<Clip>,
+}
+
 /// Stages reported by `run_ai`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -287,11 +295,29 @@ impl Session {
         let (media, path, info) = self.media_of(clip)?;
         let err = SessionError::Other;
         let cancelled = || cancel.load(std::sync::atomic::Ordering::Relaxed);
+        // AI yields to core analysis (P12.8): it waits whenever analysis jobs are running.
+        let yield_to_analysis = || {
+            while !self.sched.is_idle() && !cancelled() {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        };
         if opts.faces || opts.clip {
+            yield_to_analysis();
             // Colour frames at 2 Hz from the proxy when there is one.
             let (vpath, vinfo) = self.preview_source(media)?.unwrap_or((path.clone(), info.clone()));
-            let mut faces = if opts.faces { Some(FaceEngine::load(opts.deterministic).map_err(err)?) } else { None };
-            let mut clipm = if opts.clip { Some(Clip::load(opts.deterministic).map_err(err)?) } else { None };
+            let (mut faces, mut clipm) = {
+                let mut e = lock(&self.ai_engines);
+                if e.deterministic != opts.deterministic {
+                    *e = AiEngines { deterministic: opts.deterministic, ..AiEngines::default() };
+                }
+                (if opts.faces { e.faces.take() } else { None }, if opts.clip { e.clip.take() } else { None })
+            };
+            if opts.faces && faces.is_none() {
+                faces = Some(FaceEngine::load(opts.deterministic).map_err(err)?);
+            }
+            if opts.clip && clipm.is_none() {
+                clipm = Some(Clip::load(opts.deterministic).map_err(err)?);
+            }
             let mut dec = clippro_media::VideoDecoder::open(&vpath, &vinfo, &self.opts.analyze.decode).map_err(|e| SessionError::Other(e.to_string()))?;
             let n = ((vinfo.duration_us.max(1) + STEP_US - 1) / STEP_US) as usize;
             let mut samples: Vec<VisionSample> = Vec::with_capacity(n);
@@ -299,6 +325,7 @@ impl Session {
             let mut embeddings: Vec<Vec<f32>> = Vec::new();
             let mut batch: Vec<Vec<f32>> = Vec::new();
             for k in 0..n {
+                yield_to_analysis();
                 if cancelled() {
                     return Err(SessionError::Other("cancelled".into()));
                 }
@@ -312,7 +339,7 @@ impl Session {
                 };
                 if clipm.is_some() {
                     batch.push(clippro_ai::clip::preprocess(&rgb, w, h));
-                    if batch.len() == 8 {
+                    if batch.len() == clippro_ai::clip::BATCH {
                         embeddings.extend(clipm.as_mut().map(|c| c.embed_images(&batch)).transpose().map_err(err)?.unwrap_or_default());
                         batch.clear();
                     }
@@ -347,6 +374,13 @@ impl Session {
                 }
                 lock(&self.db).set_face_tracks(media, &rows)?;
             }
+            {
+                let mut e = lock(&self.ai_engines);
+                if e.deterministic == opts.deterministic {
+                    e.faces = e.faces.take().or(faces);
+                    e.clip = e.clip.take().or(clipm);
+                }
+            }
             let db = lock(&self.db);
             let json = serde_json::to_vec(&samples).unwrap_or_default();
             let ids = [opts.faces.then_some("yunet-2023mar+sface-2021dec"), opts.clip.then_some("clip-b32-vision")].into_iter().flatten().collect::<Vec<_>>().join("+");
@@ -359,6 +393,7 @@ impl Session {
         if opts.transcripts || opts.speakers {
             let audio = mono_16k(&path, &info, self.opts.analyze.audio_stream)?;
             if opts.transcripts && !audio.is_empty() {
+                yield_to_analysis();
                 progress(AiStage::Transcript, 0.0);
                 let model = clippro_ai::models::installed_path(&opts.whisper).ok_or_else(|| SessionError::Other(format!("the {} model isn't installed", opts.whisper)))?;
                 let threads = std::thread::available_parallelism().map(|n| (n.get() / 2).max(1)).unwrap_or(2);
@@ -369,6 +404,7 @@ impl Session {
                 progress(AiStage::Transcript, 1.0);
             }
             if opts.speakers && !audio.is_empty() {
+                yield_to_analysis();
                 progress(AiStage::Speakers, 0.0);
                 let t = match transcript.take() {
                     Some(t) => Some(t),
@@ -564,11 +600,11 @@ impl Session {
     /// Semantic visual search (AI-5): CLIP text vs stored image embeddings, best moments first.
     pub fn search_visual(&self, query: &str, deterministic: bool, limit: usize) -> Result<Vec<SearchHit>> {
         let q = {
-            let mut g = lock(&self.clip_model);
-            if g.is_none() {
-                *g = Some(Clip::load(deterministic).map_err(SessionError::Other)?);
+            let mut e = lock(&self.ai_engines);
+            if e.clip.is_none() {
+                *e = AiEngines { deterministic, faces: if e.deterministic == deterministic { e.faces.take() } else { None }, clip: Some(Clip::load(deterministic).map_err(SessionError::Other)?) };
             }
-            g.as_mut().map(|c| c.embed_texts(&[query])).transpose().map_err(SessionError::Other)?.and_then(|v| v.into_iter().next()).unwrap_or_default()
+            e.clip.as_mut().map(|c| c.embed_texts(&[query])).transpose().map_err(SessionError::Other)?.and_then(|v| v.into_iter().next()).unwrap_or_default()
         };
         let mut hits = Vec::new();
         for c in self.clip_statuses()? {

@@ -12,6 +12,8 @@ use std::collections::HashMap;
 pub const DIM: usize = 512;
 const SIZE: usize = 224;
 const MEAN: [f32; 3] = [0.481_454_66, 0.457_827_5, 0.408_210_73];
+/// Image batch size (fixed, see `embed_images`).
+pub const BATCH: usize = 8;
 const STD: [f32; 3] = [0.268_629_54, 0.261_302_58, 0.275_777_1];
 
 /// Shot classes (ALGORITHMS §8.6), in the order of `SHOT_PROMPTS`.
@@ -245,14 +247,25 @@ impl Clip {
         if images.is_empty() {
             return Ok(Vec::new());
         }
+        if images.len() > BATCH {
+            let mut out = Vec::with_capacity(images.len());
+            for c in images.chunks(BATCH) {
+                out.extend(self.embed_images(c)?);
+            }
+            return Ok(out);
+        }
+        // Always a full batch: a new input shape makes the GPU provider recompile (seconds).
         let n = images.len();
-        let flat: Vec<f32> = images.iter().flatten().copied().collect();
-        let arr = Array4::from_shape_vec((n, 3, SIZE, SIZE), flat).map_err(|e| e.to_string())?;
+        let mut flat: Vec<f32> = Vec::with_capacity(BATCH * 3 * SIZE * SIZE);
+        for k in 0..BATCH {
+            flat.extend_from_slice(&images[k.min(n - 1)]);
+        }
+        let arr = Array4::from_shape_vec((BATCH, 3, SIZE, SIZE), flat).map_err(|e| e.to_string())?;
         let input = Tensor::from_array(arr).map_err(|e| e.to_string())?;
         let out = self.vision.run(ort::inputs!["pixel_values" => input]).map_err(|e| e.to_string())?;
         let (shape, data) = out["image_embeds"].try_extract_tensor::<f32>().map_err(|e| e.to_string())?;
         let d = *shape.last().unwrap_or(&(DIM as i64)) as usize;
-        Ok(data.chunks(d).map(|c| {
+        Ok(data.chunks(d).take(n).map(|c| {
             let mut v = c.to_vec();
             l2(&mut v);
             v

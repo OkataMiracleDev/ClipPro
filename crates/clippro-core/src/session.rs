@@ -92,7 +92,7 @@ struct Probed {
 pub struct Session {
     pub db: Arc<Mutex<Db>>,
     store: Arc<ProjectStore>,
-    sched: Scheduler,
+    pub(crate) sched: Scheduler,
     events: Mutex<Receiver<Event>>,
     pub(crate) engine: Mutex<Engine>,
     pub(crate) opts: SessionOptions,
@@ -102,8 +102,8 @@ pub struct Session {
     loaded_audio: Mutex<HashMap<i64, Option<Arc<clippro_audio::AudioSet>>>>,
     /// Stored AI results by media id (P12).
     pub(crate) ai_cache: Mutex<HashMap<i64, Arc<crate::ai::AiData>>>,
-    /// CLIP, loaded on the first visual search.
-    pub(crate) clip_model: Mutex<Option<clippro_ai::clip::Clip>>,
+    /// Loaded AI models, kept between clips and searches.
+    pub(crate) ai_engines: Mutex<crate::ai::AiEngines>,
 }
 
 impl Session {
@@ -131,7 +131,7 @@ impl Session {
             loaded: Mutex::new(HashMap::new()),
             loaded_audio: Mutex::new(HashMap::new()),
             ai_cache: Mutex::new(HashMap::new()),
-            clip_model: Mutex::new(None),
+            ai_engines: Mutex::new(crate::ai::AiEngines::default()),
         }
     }
 
