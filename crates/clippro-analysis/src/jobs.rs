@@ -382,7 +382,7 @@ impl Inner {
                     // Audio (P10): one decode of the audio stream; failures leave the clip without
                     // audio data (the Audio group is then unavailable) rather than failing it.
                     if spec.opts.groups.contains(clippro_types::MetricGroup::Audio) && !spec.info.audio.is_empty() {
-                        if let Some(a) = crate::clip::analyze_audio(&spec.path, &spec.info) {
+                        if let Some(a) = crate::clip::analyze_audio(&spec.path, &spec.info, spec.opts.audio_stream) {
                             self.store.audio_finished(id, &a);
                         }
                     }

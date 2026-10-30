@@ -63,6 +63,44 @@ function StateIcon({ c }: { c: Clip }) {
 const ROW_H = 44;
 const OVERSCAN = 8;
 
+/** "Audio stream ›" for clips with more than one audio stream (P10.2). */
+function AudioStreamMenu({ c, item }: { c: Clip; item: string }) {
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof api.audioStreams>> | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.audioStreams(c.clip).then((r) => live && setInfo(r), () => {});
+    return () => {
+      live = false;
+    };
+  }, [c.clip]);
+  if (!info || info.streams.length < 2) return null;
+  const choose = (s: number | null) =>
+    void api.audioStreamSet(c.clip, s).then(
+      () => {
+        useApp.getState().toast("Re-analysing the audio");
+        void useApp.getState().refreshClips();
+      },
+      (e) => useApp.getState().toast(`${e}`, "error"),
+    );
+  return (
+    <CM.Sub>
+      <CM.SubTrigger className={item}>Audio stream ›</CM.SubTrigger>
+      <CM.Portal>
+        <CM.SubContent className="z-50 min-w-48 rounded-lg bg-raised p-1 shadow-(--shadow-float) ring-1 ring-separator-strong">
+          <CM.Item className={item} onSelect={() => choose(null)}>
+            {info.selected === null ? "✓ " : ""}Automatic
+          </CM.Item>
+          {info.streams.map((s, i) => (
+            <CM.Item key={s.index} className={item} onSelect={() => choose(s.index)}>
+              {info.selected === s.index ? "✓ " : ""}Track {i + 1} · {s.codec} {s.channels}ch{s.language ? ` · ${s.language}` : ""}
+            </CM.Item>
+          ))}
+        </CM.SubContent>
+      </CM.Portal>
+    </CM.Sub>
+  );
+}
+
 /** Right-click menu for a clip (SPEC P5.3). */
 function ClipMenu({ c, children }: { c: Clip; children: React.ReactNode }) {
   const { retryClip, bumpClip, linkProxy, toast } = useApp.getState();
@@ -103,6 +141,7 @@ function ClipMenu({ c, children }: { c: Clip; children: React.ReactNode }) {
               </CM.SubContent>
             </CM.Portal>
           </CM.Sub>
+          <AudioStreamMenu c={c} item={item} />
           <CM.Separator className="my-1 h-px bg-separator" />
           <CM.Item className={item} onSelect={() => void api.reveal(c.path).catch((e) => toast(`${e}`, "error"))}>
             Reveal in Explorer

@@ -53,6 +53,9 @@ export const commands = {
 	audioWaveforms: () => typedError<Waveform_Serialize[], string>(__TAURI_INVOKE("audio_waveforms")),
 	/**  Playback meters (P10.2); call at display rate during frame playback. */
 	audioLevels: () => typedError<AudioLevels, string>(__TAURI_INVOKE("audio_levels")),
+	audioStreams: (clip: number | null) => typedError<AudioStreams_Serialize, string>(__TAURI_INVOKE("audio_streams", { clip })),
+	/**  Picks the audio stream to analyse and play for a clip (null = automatic); re-analyses it. */
+	audioStreamSet: (clip: number | null, stream: number | null) => typedError<null, string>(__TAURI_INVOKE("audio_stream_set", { clip, stream })),
 	/**  Per-source-channel playback gains: 0 mutes, 1 plays (solo = mute the others). */
 	audioChannelGains: (gains: (number | null)[]) => typedError<null, string>(__TAURI_INVOKE("audio_channel_gains", { gains })),
 	/**  Save As (PRJ-1): writes a consistent copy and continues in it. */
@@ -237,6 +240,29 @@ export type AudioLevels = {
 	/**  Peak per output channel since the last call (dBFS). */
 	levels: (number | null)[],
 	source_channels: number,
+};
+
+export type AudioStreamDto = {
+	/**  Container stream index. */
+	index: number,
+	codec: string,
+	channels: number,
+	layout: string,
+	language: string,
+};
+
+export type AudioStreams = AudioStreams_Serialize | AudioStreams_Deserialize;
+
+export type AudioStreams_Deserialize = {
+	streams: AudioStreamDto[],
+	/**  The chosen stream's index; `null` = automatic (the best stream). */
+	selected?: number | null,
+};
+
+export type AudioStreams_Serialize = {
+	streams: AudioStreamDto[],
+	/**  The chosen stream's index; `null` = automatic (the best stream). */
+	selected: number | null,
 };
 
 export type BenchClip = {

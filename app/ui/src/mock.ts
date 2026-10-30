@@ -311,6 +311,17 @@ export const mockBackend: Backend = {
   getSettings: async () => mockSettings,
   cacheInfo: async () => ({ path: "C:/Users/you/AppData/Local/ClipPro/cache/measure-cache.sqlite", entries: 312, bytes: 211_000_000 }),
   cacheClear: async () => 312,
+  audioStreams: async (clip) => ({
+    streams:
+      clip % 3 === 0
+        ? [
+            { index: 1, codec: "pcm_s24le", channels: 2, layout: "stereo", language: "" },
+            { index: 2, codec: "pcm_s24le", channels: 2, layout: "stereo", language: "" },
+          ]
+        : [{ index: 1, codec: "aac", channels: 2, layout: "stereo", language: "eng" }],
+    selected: null,
+  }),
+  audioStreamSet: async () => {},
   audioLevels: async () => ({ levels: [-12 - Math.random() * 10, -13 - Math.random() * 10], sourceChannels: 2 }),
   audioChannelGains: async () => {},
   audioWaveforms: async () =>

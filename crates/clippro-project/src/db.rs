@@ -5,7 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 
 pub const APPLICATION_ID: i32 = 0x434C_5052; // "CLPR"
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -132,6 +132,9 @@ CREATE TABLE tuning_state(id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'hi
 CREATE TABLE timeline_import(id INTEGER PRIMARY KEY, source_path TEXT NOT NULL, format TEXT NOT NULL, data_json TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE sync_group(id INTEGER PRIMARY KEY, name TEXT NOT NULL, method TEXT NOT NULL, data_json TEXT NOT NULL);
 CREATE TABLE export_history(id INTEGER PRIMARY KEY, format TEXT NOT NULL, path TEXT NOT NULL, settings_json TEXT NOT NULL, created_at TEXT NOT NULL);
+"#, r#"
+-- v2 (P10.2): the audio stream analysed and played for a media item (NULL = the best one).
+ALTER TABLE media ADD COLUMN audio_stream INTEGER;
 "#];
 
 pub fn now() -> String {

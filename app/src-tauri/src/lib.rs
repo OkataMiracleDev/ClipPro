@@ -1043,6 +1043,42 @@ async fn media_relink_folder(state: State<'_, AppState>, folder: String) -> Resu
 }
 
 #[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct AudioStreamDto {
+    /// Container stream index.
+    pub index: u32,
+    pub codec: String,
+    pub channels: u32,
+    pub layout: String,
+    pub language: String,
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
+pub struct AudioStreams {
+    pub streams: Vec<AudioStreamDto>,
+    /// The chosen stream's index; `null` = automatic (the best stream).
+    pub selected: Option<u32>,
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn audio_streams(state: State<'_, AppState>, clip: f64) -> Result<AudioStreams, String> {
+    let s = state.session()?;
+    let (streams, sel) = s.audio_streams(clippro_types::ClipId(clip as i64)).map_err(|e| e.to_string())?;
+    Ok(AudioStreams {
+        streams: streams.into_iter().map(|a| AudioStreamDto { index: a.index as u32, codec: a.codec, channels: a.channels, layout: a.layout, language: a.language }).collect(),
+        selected: sel.map(|v| v as u32),
+    })
+}
+
+/// Picks the audio stream to analyse and play for a clip (null = automatic); re-analyses it.
+#[tauri::command]
+#[specta::specta]
+async fn audio_stream_set(state: State<'_, AppState>, clip: f64, stream: Option<u32>) -> Result<(), String> {
+    let s = state.session()?;
+    blocking(move || s.set_audio_stream(clippro_types::ClipId(clip as i64), stream.map(|v| v as usize)).map_err(|e| e.to_string())).await
+}
+
+#[derive(Serialize, Deserialize, Type, Clone, Debug)]
 pub struct AudioLevels {
     /// Peak per output channel since the last call (dBFS).
     pub levels: Vec<f32>,
@@ -1360,7 +1396,10 @@ async fn audio_play(state: State<'_, AppState>, media: f64, us: f64) -> Result<b
         state.audio.stop();
         return Ok(false);
     }
-    state.audio.play(path, info.start_us, us.max(0.0) as i64, 1.0)?;
+    // The chosen stream applies to the original; a proxy plays its best stream.
+    let stream = s.clip_statuses().ok().and_then(|cs| cs.into_iter().find(|c| c.media.0 == media as i64)).and_then(|c| s.audio_streams(c.clip).ok()).and_then(|(_, sel)| sel);
+    let stream = stream.filter(|i| info.audio.iter().any(|a| a.index == *i));
+    state.audio.play(path, stream, info.start_us, us.max(0.0) as i64, 1.0)?;
     Ok(true)
 }
 
@@ -1465,6 +1504,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             cache_info,
             audio_waveforms,
             audio_levels,
+            audio_streams,
+            audio_stream_set,
             audio_channel_gains,
             project_save_as,
             media_relink,

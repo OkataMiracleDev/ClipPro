@@ -21,18 +21,20 @@ pub struct AnalyzeOptions {
     pub pair_sampling: bool,
     pub groups: GroupMask,
     pub decode: DecodeOptions,
+    /// Audio stream to analyse (container index); `None` = the best one.
+    pub audio_stream: Option<usize>,
 }
 
 impl Default for AnalyzeOptions {
     fn default() -> Self {
-        AnalyzeOptions { rate: SampleRate::Standard, pair_sampling: true, groups: GroupMask::ALL_COMPUTE, decode: DecodeOptions::default() }
+        AnalyzeOptions { rate: SampleRate::Standard, pair_sampling: true, groups: GroupMask::ALL_COMPUTE, decode: DecodeOptions::default(), audio_stream: None }
     }
 }
 
 /// Audio measurements for a clip's first audio stream (`None` if it can't be decoded).
-pub fn analyze_audio(path: &std::path::Path, info: &clippro_media::MediaInfo) -> Option<clippro_audio::AudioSet> {
+pub fn analyze_audio(path: &std::path::Path, info: &clippro_media::MediaInfo, stream: Option<usize>) -> Option<clippro_audio::AudioSet> {
     let mut a: Option<clippro_audio::AudioAnalyzer> = None;
-    let st = clippro_media::audio::decode_audio(path, None, info.start_us, |block| {
+    let st = clippro_media::audio::decode_audio(path, stream, info.start_us, |block| {
         a.get_or_insert_with(|| clippro_audio::AudioAnalyzer::new(block.len(), 0)).push(block);
         true
     })

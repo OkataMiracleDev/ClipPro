@@ -309,7 +309,9 @@ impl Session {
             if m.is_proxy || db.run_for(m.id, &params)?.state == RunState::Done {
                 continue;
             }
-            if self.queue_media(&db, &m, &params, self.opts.analyze.clone())? {
+            let mut opts = self.opts.analyze.clone();
+            opts.audio_stream = m.audio_stream.map(|s| s as usize);
+            if self.queue_media(&db, &m, &params, opts)? {
                 n += 1;
             }
         }
@@ -341,12 +343,37 @@ impl Session {
         db.media(c.media_id)?.ok_or_else(|| SessionError::Other("The clip's media is missing".into()))
     }
 
+    /// The audio streams of a clip's media and the chosen one (`None` = automatic).
+    pub fn audio_streams(&self, clip: ClipId) -> Result<(Vec<clippro_media::probe::AudioInfo>, Option<usize>)> {
+        let db = lock(&self.db);
+        let m = self.clip_media(&db, clip)?;
+        let info: MediaInfo = serde_json::from_str(&m.probe_json).map_err(|e| SessionError::Other(e.to_string()))?;
+        Ok((info.audio, m.audio_stream.map(|s| s as usize)))
+    }
+
+    /// Chooses the audio stream of a clip's media and re-analyses it (P10.2 stream picker). The
+    /// index is the container's stream index from the probe (`AudioInfo::index`).
+    pub fn set_audio_stream(&self, clip: ClipId, stream: Option<usize>) -> Result<()> {
+        let params = self.run_params();
+        let db = lock(&self.db);
+        let m = self.clip_media(&db, clip)?;
+        db.set_audio_stream(m.id, stream.map(|s| s as i64))?;
+        let run = db.run_for(m.id, &params)?;
+        lock(&self.loaded_audio).remove(&run.id.0);
+        let m = db.media(m.id)?.ok_or_else(|| SessionError::Other("The clip's media is missing".into()))?;
+        let mut opts = self.opts.analyze.clone();
+        opts.audio_stream = stream;
+        self.queue_media(&db, &m, &params, opts)?;
+        Ok(())
+    }
+
     /// Analyses a clip again (context menu "Retry"); `force_cpu` decodes without the GPU.
     pub fn retry(&self, clip: ClipId, force_cpu: bool) -> Result<bool> {
         let params = self.run_params();
         let db = lock(&self.db);
         let m = self.clip_media(&db, clip)?;
         let mut opts = self.opts.analyze.clone();
+        opts.audio_stream = m.audio_stream.map(|s| s as usize);
         if force_cpu {
             opts.decode.hw = clippro_media::video::HwMode::Off;
         }

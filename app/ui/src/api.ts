@@ -194,6 +194,9 @@ export interface Backend {
   /** Global measurement cache (Settings → Cache). */
   cacheInfo(): Promise<{ path: string; entries: number; bytes: number }>;
   /** Audio peak envelopes per clip (100 ms bins, 0–1). */
+  /** Audio streams of a clip and the chosen one (null = automatic). */
+  audioStreams(clip: number): Promise<{ streams: { index: number; codec: string; channels: number; layout: string; language: string }[]; selected: number | null }>;
+  audioStreamSet(clip: number, stream: number | null): Promise<void>;
   audioLevels(): Promise<{ levels: number[]; sourceChannels: number }>;
   audioChannelGains(gains: number[]): Promise<void>;
   audioWaveforms(): Promise<{ clip: number; startUs: number; peaks: Float32Array; lufs: number | null }[]>;
@@ -393,6 +396,11 @@ const tauriBackend: Backend = {
     return { path: r.path, entries: n(r.entries), bytes: n(r.bytes) };
   },
   cacheClear: async () => n(unwrap(await commands.cacheClear())),
+  audioStreams: async (clip) => {
+    const r = unwrap(await commands.audioStreams(clip));
+    return { streams: r.streams, selected: r.selected ?? null };
+  },
+  audioStreamSet: async (clip, stream) => void unwrap(await commands.audioStreamSet(clip, stream)),
   audioLevels: async () => {
     const r = unwrap(await commands.audioLevels());
     return { levels: r.levels.map((v) => n(v, -120)), sourceChannels: r.source_channels };

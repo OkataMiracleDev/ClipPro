@@ -43,6 +43,8 @@ pub struct MediaRow {
     pub is_proxy: bool,
     pub duration_us: i64,
     pub profile: String,
+    /// Chosen audio stream (container index); `None` = FFmpeg's best stream.
+    pub audio_stream: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -182,11 +184,17 @@ impl Db {
             is_proxy: r.get::<_, i64>(8)? != 0,
             duration_us: r.get::<_, Option<i64>>(9)?.unwrap_or(0),
             profile: r.get(10)?,
+            audio_stream: r.get(11)?,
         })
     }
 
     const MEDIA_COLS: &'static str =
-        "id, path, fingerprint, content_fingerprint, size, probe_json, status, proxy_media_id, is_proxy, duration_us, profile";
+        "id, path, fingerprint, content_fingerprint, size, probe_json, status, proxy_media_id, is_proxy, duration_us, profile, audio_stream";
+
+    pub fn set_audio_stream(&self, media: MediaId, stream: Option<i64>) -> Result<()> {
+        self.conn.execute("UPDATE media SET audio_stream = ?1 WHERE id = ?2", params![stream, media.0])?;
+        Ok(())
+    }
 
     pub fn media_all(&self) -> Result<Vec<MediaRow>> {
         let mut st = self.conn.prepare(&format!("SELECT {} FROM media ORDER BY id", Self::MEDIA_COLS))?;

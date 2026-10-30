@@ -96,7 +96,7 @@ impl AudioOut {
 
     /// Starts playing `path`'s audio from `from_us` (relative to the first video frame) at
     /// `gain` (1 = unity, 0 = silent but clocked). Returns once the device stream is running.
-    pub fn play(&self, path: PathBuf, video_start_us: i64, from_us: i64, gain: f32) -> Result<(), String> {
+    pub fn play(&self, path: PathBuf, stream: Option<usize>, video_start_us: i64, from_us: i64, gain: f32) -> Result<(), String> {
         self.stop();
         let host = cpal::default_host();
         let device = host.default_output_device().ok_or("No audio output device")?;
@@ -125,7 +125,7 @@ impl AudioOut {
             std::thread::Builder::new()
                 .name("audio-decode".into())
                 .spawn(move || {
-                    let opts = AudioOptions { index: None, video_start_us, from_us: Some(from_us), out_rate: rate as i32 };
+                    let opts = AudioOptions { index: stream, video_start_us, from_us: Some(from_us), out_rate: rate as i32 };
                     let limit = (rate as f64 * AHEAD_S) as usize * channels;
                     let _ = decode_audio_with(&path, &opts, |block| {
                         let n = block.first().map_or(0, Vec::len);
@@ -235,7 +235,7 @@ mod tests {
             return;
         }
         let out = AudioOut::default();
-        out.play(clip, 0, 1_000_000, 0.0).unwrap(); // silent: only the clock matters here
+        out.play(clip, None, 0, 1_000_000, 0.0).unwrap(); // silent: only the clock matters here
         std::thread::sleep(Duration::from_millis(500)); // device warm-up
         let (p0, t0) = (out.position_us().unwrap(), Instant::now());
         std::thread::sleep(Duration::from_secs(5));
