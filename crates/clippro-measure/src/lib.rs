@@ -12,4 +12,4 @@ pub mod temporal;
 pub mod util;
 
 /// Version of the measurement maths. Bump whenever ALGORITHMS.md §0–§5 changes.
-pub const ENGINE_VERSION: u32 = 3;
+pub const ENGINE_VERSION: u32 = 4;
