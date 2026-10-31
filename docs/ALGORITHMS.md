@@ -170,7 +170,7 @@ The values are stored as `cam_u_x, cam_u_y, cam_zr, cam_wr, cam_mag, cam_conf`.
 ### 1.6 Pattern detectors (per sample)
 - **Solid colour**: `std(L) < 0.010` and `max(std(Cb_thumb), std(Cr_thumb)) < 0.010`. Sub-type: black if `mean < 0.05`, white if `mean > 0.95`, otherwise "colour".
 - **Colour bars**: divide the chroma and luma thumbs into 7 equal vertical bands over the top 2/3. Each band's internal std must be < 0.03 and the inter-band luma ordering must match the SMPTE/EBU descending pattern with Pearson r ≥ 0.9 against the template. Templates are stored for SMPTE RP 219 and EBU 100/75.
-- **Horizon tilt**: Hough transform on Canny edges of the level-0 image, restricted to lines within ±15° of horizontal. `tilt_deg` = the angle of the strongest accumulator peak if its votes ≥ 0.45·W_m (long, frame-spanning lines only), otherwise NaN.
+- **Horizon tilt**: two Hough transforms on edges of the level-0 image, one for lines within ±15° of horizontal and one for lines within ±15° of vertical (a camera roll turns both by the same angle; turning left or right leaves verticals vertical). Long lines only: a horizontal peak needs ≥ 0.45·W_m votes, a vertical one ≥ 0.4·H_m. With both, `tilt_deg` is their mean when they agree within 1.5°, else the smaller angle; with one, that angle; with neither, NaN. Perspective only tilts lines away from level, so when |tilt| > 1° but a level (or plumb) line within ±1° has ≥ 0.25 of the frame's width (or height) in votes and is a peak over the angles ±1° around it (not the spill-over of a stronger line nearby), `tilt_deg` is that line's angle. Without these checks a whiteboard, table or ceiling edge seen in perspective flagged level interview shots.
 
 ## 2. Temporal pass (per clip, after all samples are measured)
 

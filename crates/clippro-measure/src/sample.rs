@@ -328,14 +328,73 @@ pub fn detect_active_area(frames: &[&Image]) -> Rect {
     Rect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
-/// Horizon tilt (degrees, CCW positive) from a Hough transform over near-horizontal edges
-/// of the level-0 motion image (ALGORITHMS §1.6). NaN when no strong line exists.
+/// Horizon tilt (degrees, CCW positive) of the level-0 motion image (ALGORITHMS §1.6), from
+/// long near-horizontal and near-vertical lines. NaN when there is no long line.
+///
+/// The longest horizontal line misleads indoors: a whiteboard, table or ceiling edge seen at an
+/// angle slopes by perspective in a level shot. Two checks keep that from reading as a tilt:
+/// a camera roll turns verticals by the same angle as the horizon (turning left or right leaves
+/// them vertical), so when the two disagree the smaller angle is taken; and perspective only
+/// tilts lines away from level, so a reasonably long level or plumb line means a level camera.
 pub fn horizon_tilt(img: &Image) -> f32 {
-    let (w, h) = (img.w, img.h);
-    if w < 16 || h < 16 {
+    let (w, h) = (img.w as f32, img.h as f32);
+    if img.w < 16 || img.h < 16 {
         return f32::NAN;
     }
-    const STEPS: usize = 61; // −15°..15° in 0.5° steps
+    let hv = line_votes(img, false);
+    let vv = line_votes(img, true);
+    // Only long lines count: the horizon spans the frame; verticals span much of its height.
+    let strongest = |v: &[u32], need: f32, vertical: bool| {
+        let (i, &n) = v.iter().enumerate().max_by_key(|&(i, &n)| (n, std::cmp::Reverse(i.abs_diff(STEPS / 2))))?;
+        (n as f32 >= need).then(|| bin_tilt(i, vertical))
+    };
+    let tilt = match (strongest(&hv, 0.45 * w, false), strongest(&vv, 0.4 * h, true)) {
+        (Some(a), Some(b)) if (a - b).abs() <= 1.5 => 0.5 * (a + b),
+        (Some(a), Some(b)) => {
+            if a.abs() <= b.abs() {
+                a
+            } else {
+                b
+            }
+        }
+        (Some(a), None) | (None, Some(a)) => a,
+        (None, None) => return f32::NAN,
+    };
+    // A level or plumb line (within ±1°) a quarter of the frame long settles it. It must be a line
+    // of its own, a peak over the neighbouring angles: a long line a few degrees off also spills
+    // votes into the level bins, rising towards its own angle.
+    let level = |v: &[u32], need: f32, vertical: bool| {
+        (STEPS / 2 - 2..=STEPS / 2 + 2)
+            .filter(|&i| v[i] as f32 >= need && (i - 2..=i + 2).all(|j| v[j] <= v[i]))
+            .max_by_key(|&i| v[i])
+            .map(|i| (v[i] as f32 / need, bin_tilt(i, vertical)))
+    };
+    let flat = [level(&hv, 0.25 * w, false), level(&vv, 0.25 * h, true)].into_iter().flatten().max_by(|a, b| a.0.total_cmp(&b.0));
+    match flat {
+        Some((_, a)) if tilt.abs() > 1.0 => a,
+        _ => tilt,
+    }
+}
+
+/// Hough angle bins: −15°..15° in 0.5° steps.
+const STEPS: usize = 61;
+
+/// CCW tilt in degrees of angle bin `i`. In y-down coordinates a horizontal line with positive θ
+/// descends to the right (a clockwise tilt on screen); a vertical line with positive θ leans
+/// right going down (counter-clockwise).
+fn bin_tilt(i: usize, vertical: bool) -> f32 {
+    let theta = -15.0 + 0.5 * i as f32;
+    if vertical {
+        theta
+    } else {
+        -theta
+    }
+}
+
+/// For each angle bin within ±15° of horizontal (or of vertical), the votes of the strongest
+/// line at that angle: a Hough transform over edges whose gradient is perpendicular to such lines.
+fn line_votes(img: &Image, vertical: bool) -> Vec<u32> {
+    let (w, h) = (img.w, img.h);
     let angles: Vec<(f32, f32)> = (0..STEPS)
         .map(|i| {
             let a = (-15.0 + 0.5 * i as f32).to_radians();
@@ -350,30 +409,20 @@ pub fn horizon_tilt(img: &Image) -> f32 {
             let gx = img.at(x + 1, y) - img.at(x - 1, y);
             let gy = img.at(x, y + 1) - img.at(x, y - 1);
             let m = gx.hypot(gy);
-            // Strong edge whose gradient is close to vertical (i.e. a near-horizontal line).
-            if m < 0.08 || gx.abs() > gy.abs() * 0.47 {
+            // A near-horizontal line has a near-vertical gradient, and the other way round.
+            let (along, across) = if vertical { (gy, gx) } else { (gx, gy) };
+            if m < 0.08 || along.abs() > across.abs() * 0.47 {
                 continue;
             }
+            // Horizontal: lines y = y0 + x·tan θ. Vertical: lines x = x0 + y·tan θ.
+            let (u, v) = if vertical { (y as f32, x as f32) } else { (x as f32, y as f32) };
             for (i, (s, c)) in angles.iter().enumerate() {
-                let rho = -(x as f32) * s + y as f32 * c + diag;
+                let rho = -u * s + v * c + diag;
                 acc[i * nrho + rho as usize] += 1;
             }
         }
     }
-    let (mut best, mut bi) = (0u32, 0usize);
-    for (k, v) in acc.iter().enumerate() {
-        if *v > best {
-            best = *v;
-            bi = k / nrho;
-        }
-    }
-    // Only long, frame-spanning lines count as a horizon.
-    if (best as f32) < 0.45 * w as f32 {
-        return f32::NAN;
-    }
-    // Line direction (cos θ, sin θ) in y-down coordinates: positive θ descends to the right,
-    // which is a clockwise tilt on screen.
-    -(-15.0 + 0.5 * bi as f32)
+    acc.chunks(nrho).map(|bin| bin.iter().copied().max().unwrap_or(0)).collect()
 }
 
 #[cfg(test)]
@@ -415,6 +464,60 @@ mod tests {
                 }
             });
             let got = horizon_tilt(&img);
+            assert!((got - deg).abs() <= 0.6, "{deg}: {got}");
+        }
+    }
+
+    /// A room seen through a camera rolled `deg` counter-clockwise: two wall seams and a long
+    /// edge that slopes `slope` degrees in the room itself (perspective, e.g. a whiteboard top).
+    fn room(deg: f32, slope: f32) -> Image {
+        let (s, c) = (deg.to_radians().sin(), deg.to_radians().cos());
+        let t = slope.to_radians().tan();
+        Image::from_fn(320, 180, |x, y| {
+            let (x, y) = (x as f32 - 160.0, y as f32 - 90.0);
+            // Image point → room point (y down): undo the roll.
+            let (wx, wy) = (x * c - y * s, x * s + y * c);
+            let wall = if wx < -70.0 { 0.25 } else if wx < 60.0 { 0.45 } else { 0.3 };
+            if wy < -40.0 - wx * t {
+                wall + 0.35
+            } else {
+                wall
+            }
+        })
+    }
+
+    #[test]
+    fn perspective_lines_in_a_level_shot_are_not_a_tilt() {
+        for &slope in &[4.0f32, -4.0] {
+            let got = horizon_tilt(&room(0.0, slope));
+            assert!(got.abs() <= 0.6, "level shot with a {slope}° perspective edge read as {got}°");
+        }
+    }
+
+    #[test]
+    fn a_level_desk_edge_outweighs_a_leaning_mic_arm() {
+        // A mic boom leaning 8.5° across the whole height, and a level desk edge 40% of the width.
+        let t = 8.5f32.to_radians().tan();
+        let img = Image::from_fn(320, 180, |x, y| {
+            let (x, y) = (x as f32, y as f32);
+            let arm = (x - (120.0 + y * t)).abs() < 3.0;
+            let desk = y >= 130.0 && (100.0..228.0).contains(&x);
+            if arm {
+                0.05
+            } else if desk {
+                0.7
+            } else {
+                0.35
+            }
+        });
+        let got = horizon_tilt(&img);
+        assert!(got.abs() <= 0.6, "read as {got}°");
+    }
+
+    #[test]
+    fn a_rolled_room_reads_its_roll() {
+        for &deg in &[3.0f32, -4.0] {
+            let got = horizon_tilt(&room(deg, 0.0));
             assert!((got - deg).abs() <= 0.6, "{deg}: {got}");
         }
     }
