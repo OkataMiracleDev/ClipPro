@@ -156,13 +156,19 @@ export function Sheet({ open, onOpenChange, title, children }: { open: boolean; 
     <RDialog.Root open={open} onOpenChange={onOpenChange}>
       <RDialog.Portal>
         <RDialog.Overlay className="fixed inset-0 z-40 bg-black/25" />
-        <RDialog.Content className="fixed top-(--h-titlebar) left-1/2 z-50 w-[520px] max-w-[92vw] -translate-x-1/2 rounded-b-(--radius-sheet) bg-raised p-5 shadow-(--shadow-float) ring-1 ring-separator-strong data-[state=open]:animate-[sheet_220ms_var(--ease-spring)]">
+        {/* Never taller than the window: the body scrolls, and a SheetFooter stays in view. */}
+        <RDialog.Content className="fixed top-(--h-titlebar) left-1/2 z-50 max-h-[calc(100vh-var(--h-titlebar)-12px)] w-[520px] max-w-[92vw] -translate-x-1/2 overflow-y-auto overscroll-contain rounded-b-(--radius-sheet) bg-raised p-5 shadow-(--shadow-float) ring-1 ring-separator-strong data-[state=open]:animate-[sheet_220ms_var(--ease-spring)]">
           <RDialog.Title className="mb-3 text-[15px] font-semibold">{title}</RDialog.Title>
           {children}
         </RDialog.Content>
       </RDialog.Portal>
     </RDialog.Root>
   );
+}
+
+/** A sheet's action row: pinned to the bottom of the sheet while its body scrolls. */
+export function SheetFooter({ className, children }: { className?: string; children: ReactNode }) {
+  return <div className={cx("sticky -bottom-5 z-10 -mx-5 -mb-5 border-t border-separator bg-raised px-5 py-3", className)}>{children}</div>;
 }
 
 export function EmptyState({ icon, title, children }: { icon: ReactNode; title: string; children?: ReactNode }) {

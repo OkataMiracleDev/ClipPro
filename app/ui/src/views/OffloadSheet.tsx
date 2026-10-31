@@ -5,7 +5,7 @@ import { CheckCircle2, FolderOpen, HardDrive, Plus, X, XCircle } from "lucide-re
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { api, type OffloadProgress, type OffloadSummary } from "../api";
-import { Button, cx, IconButton, Sheet, Switch } from "../components/ui";
+import { Button, cx, IconButton, Sheet, SheetFooter, Switch } from "../components/ui";
 import { pickFolder } from "../lib/dialogs";
 import { useApp } from "../store";
 
@@ -153,7 +153,7 @@ export function OffloadSheet({ open, onOpenChange }: { open: boolean; onOpenChan
               </div>
             )}
             {error && <div className="rounded-(--radius-control) bg-control-hover/50 p-2.5 text-[12px] text-text-2">{error}</div>}
-            <div className="flex justify-end gap-2 border-t border-separator pt-3">
+            <SheetFooter className="flex justify-end gap-2">
               {running ? (
                 <Button onClick={() => void api.offloadCancel()}>Cancel offload</Button>
               ) : (
@@ -164,7 +164,7 @@ export function OffloadSheet({ open, onOpenChange }: { open: boolean; onOpenChan
                   </Button>
                 </>
               )}
-            </div>
+            </SheetFooter>
           </>
         ) : (
           <>
@@ -213,12 +213,12 @@ export function OffloadSheet({ open, onOpenChange }: { open: boolean; onOpenChan
             <p className="text-[11.5px] text-text-3">
               Each destination gets an <span className="font-mono">ascmhl</span> folder with the checksums. Stopping and starting again resumes: verified files are skipped.
             </p>
-            <div className="flex justify-end gap-2 border-t border-separator pt-3">
+            <SheetFooter className="flex justify-end gap-2">
               <Button onClick={() => onOpenChange(false)}>Cancel</Button>
               <Button variant="primary" disabled={!source || !dests.length} onClick={() => void start()}>
                 Start offload
               </Button>
-            </div>
+            </SheetFooter>
           </>
         )}
       </div>

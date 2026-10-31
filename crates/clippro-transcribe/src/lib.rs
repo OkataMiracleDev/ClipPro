@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 pub const RATE: usize = 16_000;
@@ -51,12 +51,14 @@ pub fn version() -> &'static str {
 const CHUNK: usize = RATE * 600;
 
 /// Transcribes mono 16 kHz audio (`audio[0]` is time 0). `language` None detects it.
-pub fn transcribe(model: &Path, audio: &[f32], language: Option<&str>, threads: usize, cancel: Arc<AtomicBool>) -> Result<Transcript, String> {
+/// `progress` gets the fraction done (0–1) a few times a second, on the calling thread.
+pub fn transcribe(model: &Path, audio: &[f32], language: Option<&str>, threads: usize, cancel: Arc<AtomicBool>, progress: &mut dyn FnMut(f32)) -> Result<Transcript, String> {
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
     let ctx = WhisperContext::new_with_params(model, WhisperContextParameters::default()).map_err(|e| format!("whisper: {e}"))?;
     let mut state = ctx.create_state().map_err(|e| format!("whisper: {e}"))?;
     let mut t = Transcript::default();
     let mut lang = language.map(str::to_string);
+    let chunks = audio.len().div_ceil(CHUNK).max(1) as f32;
     for (ci, chunk) in audio.chunks(CHUNK).enumerate() {
         if cancel.load(Ordering::Relaxed) {
             return Err("cancelled".into());
@@ -74,7 +76,22 @@ pub fn transcribe(model: &Path, audio: &[f32], language: Option<&str>, threads: 
         p.set_print_special(false);
         p.set_print_timestamps(false);
         p.set_suppress_blank(true);
-        state.full(p, chunk).map_err(|e| format!("whisper: {e}"))?;
+        // whisper reports 0–100 within the chunk from inside `full`, on the thread running it: run
+        // that on a helper thread and relay the percentage from here, where `progress` lives.
+        let pct = Arc::new(AtomicU32::new(0));
+        let sink = pct.clone();
+        p.set_progress_callback_safe(move |v: i32| sink.store(v.clamp(0, 100) as u32, Ordering::Relaxed));
+        let st = &mut state;
+        std::thread::scope(|sc| {
+            let run = sc.spawn(move || st.full(p, chunk));
+            while !run.is_finished() {
+                progress((ci as f32 + pct.load(Ordering::Relaxed) as f32 / 100.0) / chunks);
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            run.join().unwrap_or_else(|_| Err(whisper_rs::WhisperError::GenericError(-1)))
+        })
+        .map_err(|e| format!("whisper: {e}"))?;
+        progress((ci + 1) as f32 / chunks);
         if lang.is_none() {
             lang = whisper_rs::get_lang_str(state.full_lang_id_from_state()).map(str::to_string);
         }
@@ -285,14 +302,19 @@ mod tests {
         }
         // A 440 Hz tone with silence: Whisper returns quickly (often nothing).
         let audio: Vec<f32> = (0..RATE * 3).map(|i| if i < RATE { 0.1 * (i as f32 * 440.0 * std::f32::consts::TAU / RATE as f32).sin() } else { 0.0 }).collect();
-        let t = transcribe(&model, &audio, Some("en"), 4, Arc::new(AtomicBool::new(false))).unwrap();
+        let t = transcribe(&model, &audio, Some("en"), 4, Arc::new(AtomicBool::new(false)), &mut |_| {}).unwrap();
         assert_eq!(t.language, "en");
         assert!(t.words.iter().all(|w| w.end_us >= w.start_us));
         // Real speech (Windows TTS, testdata/speech/fox.wav: 16 kHz mono PCM).
         let wav = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/speech/fox.wav")).unwrap();
         let data = wav.windows(4).position(|w| w == b"data").unwrap() + 8;
         let pcm: Vec<f32> = wav[data..].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0).collect();
-        let t = transcribe(&model, &pcm, None, 4, Arc::new(AtomicBool::new(false))).unwrap();
+        let mut seen = Vec::new();
+        let t = transcribe(&model, &pcm, None, 4, Arc::new(AtomicBool::new(false)), &mut |f| seen.push(f)).unwrap();
+        // Progress climbs to 1 without going back.
+        assert_eq!(seen.last(), Some(&1.0), "{seen:?}");
+        assert!(seen.windows(2).all(|w| w[1] >= w[0]), "{seen:?}");
+        eprintln!("progress reports: {}", seen.len());
         let text = t.text().to_lowercase();
         eprintln!("{} [{}]", text, t.language);
         assert_eq!(t.language, "en", "detected");

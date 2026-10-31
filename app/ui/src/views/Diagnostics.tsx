@@ -4,7 +4,7 @@
 import { FolderOpen, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import { Button, cx, IconButton, Segmented, Sheet } from "../components/ui";
+import { Button, cx, IconButton, Segmented, Sheet, SheetFooter } from "../components/ui";
 import { pickDiagnosticsPath } from "../lib/dialogs";
 import { useApp } from "../store";
 
@@ -75,12 +75,12 @@ export function Diagnostics({ open, onOpenChange }: { open: boolean; onOpenChang
         <p className="text-[11.5px] text-text-3">
           The report has your system details, settings, the recent log and any crash reports. File paths are removed and no media is included.
         </p>
-        <div className="flex justify-end gap-2 border-t border-separator pt-3">
+        <SheetFooter className="flex justify-end gap-2">
           <Button onClick={() => onOpenChange(false)}>Close</Button>
           <Button variant="primary" onClick={() => void save()}>
             Save report…
           </Button>
-        </div>
+        </SheetFooter>
       </div>
     </Sheet>
   );

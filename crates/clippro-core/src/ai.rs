@@ -406,7 +406,8 @@ impl Session {
                 progress(AiStage::Transcript, 0.0);
                 let model = clippro_ai::models::installed_path(&opts.whisper).ok_or_else(|| SessionError::Other(format!("the {} model isn't installed", opts.whisper)))?;
                 let threads = std::thread::available_parallelism().map(|n| (n.get() / 2).max(1)).unwrap_or(2);
-                let t = clippro_transcribe::transcribe(&model, &audio, opts.language.as_deref(), threads, Arc::new(AtomicBool::new(cancelled()))).map_err(err)?;
+                let t = clippro_transcribe::transcribe(&model, &audio, opts.language.as_deref(), threads, Arc::new(AtomicBool::new(cancelled())), &mut |f| progress(AiStage::Transcript, f))
+                    .map_err(err)?;
                 let segs: Vec<(i64, String)> = t.segments.iter().map(|s| (s.start_us, s.text.clone())).collect();
                 lock(&self.db).save_transcript(media, &t.language, &serde_json::to_vec(&t).unwrap_or_default(), &segs)?;
                 transcript = Some(t);

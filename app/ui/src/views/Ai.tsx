@@ -210,7 +210,7 @@ export function TranscriptPanel() {
             <Spinner />
           </div>
         ) : !t ? (
-          <div className="py-6 text-center text-[12px] text-text-3">{info?.transcript === false && appSettings?.ai_transcripts ? "Not transcribed yet: it will be once analysis finishes." : "No transcript for this clip."}</div>
+          <TranscriptPending clip={selectedClip} waiting={info?.transcript !== true && !!appSettings?.ai_transcripts} done={!!info?.clipDone} />
         ) : (
           <>
             <div className="mb-2 flex items-center justify-between">
@@ -261,6 +261,40 @@ export function TranscriptPanel() {
   );
 }
 
+/** Where a clip's transcript is: being made (with progress), queued behind other clips, or
+ *  waiting for the clip's analysis. */
+function TranscriptPending({ clip, waiting, done }: { clip: number; waiting: boolean; done: boolean }) {
+  const { aiJob, clips } = useApp();
+  const mine = aiJob?.clip === clip;
+  if (!waiting || (done && !mine)) {
+    return <div className="py-6 text-center text-[12px] text-text-3">{waiting ? "No speech found in this clip." : "No transcript for this clip."}</div>;
+  }
+  const analysed = clips.find((c) => c.clip === clip)?.state === "done";
+  const pct = aiJob ? Math.round(aiJob.fraction * 100) : 0;
+  const line = mine
+    ? aiJob.stage === "transcript"
+      ? `Transcribing this clip · ${pct}%`
+      : aiJob.stage === "vision"
+        ? `Finding faces and shots first · ${pct}%. Transcribing comes next.`
+        : "Finishing this clip…"
+    : aiJob
+      ? `Queued: local AI is on clip ${aiJob.index + 1} of ${aiJob.count}. This clip's transcript follows.`
+      : analysed
+        ? "Not transcribed yet: it will be once the other clips finish analysing."
+        : "Not transcribed yet: it will be once this clip is analysed.";
+  return (
+    <div className="flex flex-col items-center gap-3 py-6 text-center text-[12px] text-text-2" role="status">
+      {(mine || aiJob) && <Spinner />}
+      <span className="tabular">{line}</span>
+      {mine && aiJob.stage === "transcript" && (
+        <div className="h-1 w-40 overflow-hidden rounded-full bg-separator" aria-hidden>
+          <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- Status bar ----------
 
 export function AiStatus() {
@@ -271,7 +305,7 @@ export function AiStatus() {
   return (
     <span className="flex items-center gap-1.5 tabular" title={name}>
       <Spinner size={10} /> AI · {aiJob.index + 1} of {aiJob.count} · {stage}
-      {aiJob.stage === "vision" ? ` ${Math.round(aiJob.fraction * 100)}%` : ""}
+      {aiJob.stage === "vision" || aiJob.stage === "transcript" ? ` ${Math.round(aiJob.fraction * 100)}%` : ""}
       <button aria-label="Stop AI analysis" className="rounded text-text-3 hover:text-text" onClick={() => void api.aiCancel()}>
         <X size={11} />
       </button>

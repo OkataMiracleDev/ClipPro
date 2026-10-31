@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { FINISHED } from "./lib/progress";
 import type { CubeLut } from "./lib/cube";
 import { History } from "./lib/history";
 import { setBindings } from "./lib/keys";
@@ -51,6 +52,7 @@ interface AppState {
   rate: number;
   /** Loop the select under the playhead (or the clip) during playback. */
   loop: boolean;
+  /** `jobs`: each analysis job's progress, 0–1 (1 while it finishes), or FINISHED once done. */
   analysis: { active: boolean; paused: boolean; jobs: Record<number, number> };
   inspectorOpen: boolean;
   overlay: Overlay;
@@ -902,9 +904,10 @@ function onAiEvent(e: import("./api").AiProgress, set: (p: Partial<AppState>) =>
 function onAnalysisEvent(e: AnalysisEvent, set: (p: Partial<AppState>) => void, get: () => AppState) {
   const a = get().analysis;
   if (e.kind === "progress" && e.job !== null) {
+    if (a.jobs[e.job] === FINISHED) return; // a late progress event for a finished job
     set({ analysis: { ...a, active: true, jobs: { ...a.jobs, [e.job]: (e.done ?? 0) / Math.max(1, e.total ?? 1) } } });
   } else if (e.kind === "finished" || e.kind === "failed") {
-    if (e.job !== null) set({ analysis: { ...a, jobs: { ...a.jobs, [e.job]: 1 } } });
+    if (e.job !== null) set({ analysis: { ...a, jobs: { ...a.jobs, [e.job]: FINISHED } } });
     void get().refreshClips().then(() => {
       const busy = get().clips.some((c) => c.state === "queued" || c.state === "running");
       if (!busy) set({ analysis: { active: false, paused: false, jobs: {} } });

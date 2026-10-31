@@ -7,6 +7,7 @@ import { useHelp } from "./Help";
 import { api, isTauri, type SortOrder } from "../api";
 import { cx, IconButton, Popover, PopoverClose, Spinner } from "../components/ui";
 import { actionFor } from "../lib/keys";
+import { analysisProgress } from "../lib/progress";
 import { useApp } from "../store";
 import { pickMedia, pickProjectToOpen, pickSaveAs } from "../lib/dialogs";
 
@@ -75,13 +76,13 @@ function AnalysisStatus() {
     return total ? <span className="text-[12px] text-text-3">{done === total ? `${total} clip${total === 1 ? "" : "s"} analysed` : `${done} of ${total} analysed`}</span> : null;
   }
   // Finished clips count fully; running jobs add their partial progress.
-  const partial = Object.values(analysis.jobs).filter((f) => f < 1).reduce((a, b) => a + b, 0);
-  const pct = Math.round((100 * (done + partial)) / Math.max(1, total));
+  const { fraction, finishing } = analysisProgress(analysis.jobs, done, total);
+  const pct = Math.round(100 * fraction);
   return (
     <span className="no-drag flex items-center gap-2 text-[12px] text-text-2">
       {analysis.paused ? <span className="text-text-3">Paused</span> : <Spinner size={12} />}
       <span className="tabular">
-        Analysing · {pct}%
+        {finishing ? "Finishing" : "Analysing"} · {pct}%
       </span>
       <IconButton label={analysis.paused ? "Resume analysis" : "Pause analysis"} onClick={() => void togglePause()}>
         {analysis.paused ? <Play size={14} /> : <Pause size={14} />}

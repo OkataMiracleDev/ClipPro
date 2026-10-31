@@ -130,6 +130,10 @@ struct JobRt {
 
 impl JobRt {
     fn done(&self) -> usize {
+        // Finishing takes the measured samples out of the sections; every sample is measured by then.
+        if self.finishing {
+            return self.plan.len();
+        }
         self.sections.iter().map(|s| s.measured.len()).sum()
     }
     fn running_units(&self) -> usize {

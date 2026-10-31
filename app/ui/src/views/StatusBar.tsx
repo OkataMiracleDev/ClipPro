@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { Spinner } from "../components/ui";
 import { formatDuration } from "../lib/typed";
+import { analysisProgress } from "../lib/progress";
 import { useApp } from "../store";
 import { JobStatus } from "./Jobs";
 import { AiStatus } from "./Ai";
@@ -44,8 +45,7 @@ export function StatusBar() {
   const done = clips.filter((c) => c.state === "done").length;
   const failed = clips.filter((c) => c.state === "failed").length;
   const working = analysis.active && clips.some((c) => c.state === "running" || c.state === "queued");
-  const partial = Object.values(analysis.jobs).filter((f) => f < 1).reduce((a, b) => a + b, 0);
-  const fraction = total ? Math.min(1, (done + failed + partial) / total) : 0;
+  const { fraction, finishing } = analysisProgress(analysis.jobs, done + failed, total);
   const eta = useEta(fraction, working && !analysis.paused);
   const s = scored?.summary;
 
@@ -56,7 +56,7 @@ export function StatusBar() {
         {total === 0
           ? "No clips"
           : working
-            ? `${analysis.paused ? "Paused" : "Analysing"} · ${done} of ${total} done · ${Math.round(fraction * 100)}%${eta !== null && !analysis.paused ? ` · about ${formatDuration(Math.max(1, Math.round(eta)))} left` : ""}`
+            ? `${analysis.paused ? "Paused" : finishing ? "Finishing" : "Analysing"} · ${done} of ${total} done · ${Math.round(fraction * 100)}%${eta !== null && !analysis.paused ? ` · about ${formatDuration(Math.max(1, Math.round(eta)))} left` : ""}`
             : `${done} of ${total} analysed${failed ? ` · ${failed} failed` : ""}`}
       </span>
       <JobStatus />

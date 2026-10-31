@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { api } from "../api";
-import { Button, Segmented, Sheet, Switch } from "../components/ui";
+import { Button, Segmented, Sheet, SheetFooter, Switch } from "../components/ui";
 import { pickExportPath, pickFolder } from "../lib/dialogs";
 import { useApp } from "../store";
 
@@ -292,7 +292,7 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
             </span>
           </div>
         )}
-        <div className="flex items-center justify-between border-t border-separator pt-3">
+        <SheetFooter className="flex items-center justify-between">
           <span className="text-[12px] text-text-3">{count} select{count === 1 ? "" : "s"} with the current settings</span>
           <div className="flex gap-2">
             <Button onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -300,7 +300,7 @@ export function ExportSheet({ open, onOpenChange }: { open: boolean; onOpenChang
               {busy ? "Exporting…" : "Export…"}
             </Button>
           </div>
-        </div>
+        </SheetFooter>
       </div>
     </Sheet>
   );
