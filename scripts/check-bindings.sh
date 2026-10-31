@@ -2,8 +2,9 @@
 # Fails if app/ui/src/bindings.ts is stale. Usage: scripts/check-bindings.sh [--write]
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-cargo build -q -p clippro-app
-exe="$root/target/debug/ClipPro.exe"
+# Release, like the tests before it in verify.ps1, so a cold CI runner compiles once.
+cargo build -q --release -p clippro-app
+exe="$root/target/release/ClipPro.exe"
 if [ "${1:-}" = "--write" ]; then
   "$exe" --export-bindings "$root/app/ui/src/bindings.ts"
   echo "bindings written"

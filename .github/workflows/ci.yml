@@ -38,9 +38,11 @@ jobs:
         with:
           key: ci
 
+      # ffmpeg-gpl only encodes the test corpus (libx264, as on a dev machine); the app links the
+      # LGPL build.
       - name: FFmpeg, UI dependencies and pyaaf2
         shell: pwsh
-        run: ./scripts/bootstrap.ps1 -Only ffmpeg,npm,pyaaf2
+        run: ./scripts/bootstrap.ps1 -Only ffmpeg,ffmpeg-gpl,npm,pyaaf2
 
       - name: Doctor
         shell: pwsh
@@ -50,6 +52,7 @@ jobs:
         shell: bash
         run: |
           source scripts/env.sh
+          export CLIPPRO_FFMPEG_DEV="$PWD/third_party/ffmpeg-gpl/bin/ffmpeg.exe"
           cargo build --release -p clippro-testgen
           ./target/release/clippro-testgen.exe --out testdata/gen --mini
 

@@ -31,11 +31,11 @@ if ($LASTEXITCODE -ne 0) { & (Join-Path $PSScriptRoot 'doctor.ps1'); throw 'doct
 Run 'clippy (deny-level lints)' 'cargo clippy --workspace --release --all-targets --quiet'
 Run 'UI type-check' 'cd app/ui && npx tsc --noEmit -p .'
 Run 'UI tests' 'npm --prefix app/ui test --silent'
-Run 'bindings drift' 'timeout 900 bash scripts/check-bindings.sh < /dev/null'
 if (-not $Quick) {
     Run 'Rust tests (release)' 'cargo test --workspace --release --quiet'
     Run 'licences' 'python scripts/licenses.py'
 }
+Run 'bindings drift' 'timeout 1800 bash scripts/check-bindings.sh < /dev/null'
 # Tests clean up after themselves; anything left is a bug.
 Run 'no test residue' '! ls target | grep -q ^tmp-'
 

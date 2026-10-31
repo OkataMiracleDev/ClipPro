@@ -83,6 +83,20 @@ Step 'ffmpeg' { Test-Path (Join-Path $tp 'ffmpeg\include\libavcodec\avcodec.h') 
     Move-Item (Get-ChildItem $x -Directory | Select-Object -First 1).FullName (Join-Path $tp 'ffmpeg')
 }
 
+# FFmpeg GPL (BtbN), for generating the test corpus only: clippro-testgen encodes with libx264.
+# The LGPL build's fallback H.264 encoders make static shots bit-identical frame to frame, which
+# the duplicate-frame checks then flag. Never bundled. Opt-in: -Only ffmpeg-gpl.
+if ($Only -contains 'ffmpeg-gpl') {
+    Step 'ffmpeg-gpl' { Test-Path (Join-Path $tp 'ffmpeg-gpl\bin\ffmpeg.exe') } {
+        $v = $FFMPEG.TrimStart('n')
+        $zip = Fetch "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-$FFMPEG-latest-win64-gpl-$v.zip" "ffmpeg-gpl-$FFMPEG.zip"
+        $x = Join-Path $tmp 'ffmpeg-gpl-x'
+        Remove-Item -Recurse -Force $x -ErrorAction SilentlyContinue
+        Expand-Archive $zip $x
+        Move-Item (Get-ChildItem $x -Directory | Select-Object -First 1).FullName (Join-Path $tp 'ffmpeg-gpl')
+    }
+}
+
 # libclang and clang's headers only (for bindgen), from the LLVM release tarball
 Step 'llvm' { Test-Path (Join-Path $tp 'llvm\bin\libclang.dll') } {
     $name = "clang+llvm-$LLVM-x86_64-pc-windows-msvc"
