@@ -100,11 +100,9 @@ try {
             if (git status --porcelain) { Fail "You have uncommitted changes. Commit (or stash) them first, so the release is exactly what's on GitHub." }
             git fetch -q origin
             $branch = git rev-parse --abbrev-ref HEAD
-            if (git rev-list "origin/$branch..HEAD") {
-                Write-Host "Pushing your commits first..."
-                git push -q origin $branch
-                if ($LASTEXITCODE -ne 0) { Fail "Could not push $branch." }
-            }
+            # Releases build from main: the version commit goes on this branch, then main is
+            # fast-forwarded to it. A main with commits this branch doesn't have stops here.
+            if (git rev-list "HEAD..origin/main") { Fail "origin/main has commits that $branch doesn't. Merge main into $branch first." }
 
             # Record the version (and its notes in the in-app What's new), then ask GitHub to build it.
             python scripts\set_version.py $v | Out-Null
@@ -116,11 +114,16 @@ try {
             if (Test-Path release-notes) { git add -A release-notes }
             git commit -q -m "Release $v"
             if ($LASTEXITCODE -ne 0) { Fail "Could not commit the version change." }
-            git push -q origin $branch
-            if ($LASTEXITCODE -ne 0) { Fail "Could not push the version change." }
+            if ($branch -ne "main") {
+                git push -q origin $branch
+                if ($LASTEXITCODE -ne 0) { Fail "Could not push $branch." }
+            }
+            git push -q origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { Fail "Could not fast-forward main to the release commit." }
+            if ($branch -ne "main") { git branch -f main HEAD 2>$null | Out-Null; $global:LASTEXITCODE = 0 }
             $tmp = Join-Path $env:TEMP "clippro-notes-$v.md"
             [IO.File]::WriteAllText($tmp, $text)
-            gh workflow run release.yml --repo $Repo --ref $branch -f version=$v -F notes=@$tmp
+            gh workflow run release.yml --repo $Repo --ref main -f version=$v -F notes=@$tmp
             if ($LASTEXITCODE -ne 0) { Fail "Could not start the build." }
             Write-Host "Building ClipPro $v as a draft (about 30-40 minutes)." -ForegroundColor Green
             Write-Host "Follow it with:  .\release.ps1 watch"

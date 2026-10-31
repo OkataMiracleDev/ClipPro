@@ -32,6 +32,8 @@ concurrency:
 
 jobs:
   build:
+    # Releases come from main only (release.ps1 fast-forwards main and starts the build there).
+    if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
     timeout-minutes: 120
     steps:

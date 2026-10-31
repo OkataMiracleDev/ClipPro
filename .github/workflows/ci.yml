@@ -3,9 +3,10 @@
 # (no models are downloaded here); GPU decoding falls back to the CPU on the runner.
 name: ci
 
+# main only: dev is the working branch, and pushing to main (release.ps1 does it) runs the tests.
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

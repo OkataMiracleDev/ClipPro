@@ -1,6 +1,6 @@
 # Releasing ClipPro
 
-Pushing code never makes a release. A release happens only when you start one, and users only see it once you publish it. Publishing does two things:
+Pushing code never makes a release. Work on `dev`: pushing there runs nothing. The tests (Actions → ci) run when `main` changes, which "new" below does for you. A release happens only when you start one, and users only see it once you publish it. Publishing does two things:
 
 - ClipPro offers the update at its next start-up, with your release notes.
 - okata.space shows the new version, its notes and its download within about 10 minutes.
@@ -33,7 +33,7 @@ What "new" does:
 
 1. It commits any changes you confirm.
 2. It writes the version into the source and adds your notes to the in-app What's new.
-3. It commits "Release x.y.z", pushes, and starts **Actions → Release** on GitHub.
+3. It commits "Release x.y.z" on your branch (usually `dev`), pushes it, fast-forwards `main` to it and starts **Actions → Release** on `main`. Releases only ever build from `main`.
 
 The workflow builds the installer and portable ZIP, signs the update, and creates a **draft** release containing:
 
