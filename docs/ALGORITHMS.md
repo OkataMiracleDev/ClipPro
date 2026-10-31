@@ -110,7 +110,9 @@ With pair sampling the signal is the row-mean *difference* between the sample an
 - Before matching, each block is zero-meaned and divided by `(std + 0.01)`, which makes matching robust to lighting changes.
 - A block is **textured** if its pre-normalisation std ≥ `max(0.015, 2·σ_n)`. Only textured blocks are matched.
 - Coarse-to-fine: a global translation search at level 2 (80 px, ±16 px around the prior); then per block, an 8×8 search at level 2 (±6 px), level 1 (±3 px) and a 16×16 refinement at level 0 (±2 px) around the upscaled estimate.
-- Sub-pixel refinement: fit a parabola to SAD at the best offset ±1 on each axis.
+- Sub-pixel refinement: an equiangular (V) fit to SAD at the best offset ±1 on each axis. SAD
+  grows linearly away from the match; a parabola there biases offsets toward whole pixels and
+  read slow pans (about 3 px per frame) 10–15% slow.
 - Output: displacement vectors `v_b`, block centres `p_b` (relative to the image centre) and matching cost `c_b`.
 
 This runs for two frame pairs:

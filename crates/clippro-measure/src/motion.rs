@@ -196,8 +196,11 @@ fn global_shift(a: &Image, b: &Image, r: i64, cx: i64, cy: i64, k: usize) -> Vec
     all
 }
 
-fn parabola(sm: f32, s0: f32, sp: f32) -> f32 {
-    let d = sm - 2.0 * s0 + sp;
+/// Sub-pixel offset of the minimum from three SAD costs. An equiangular (V) fit: SAD grows
+/// linearly away from the match, and a parabola there pulls offsets toward whole pixels, which
+/// read slow pans about 10% slow.
+fn subpixel(sm: f32, s0: f32, sp: f32) -> f32 {
+    let d = sm.max(sp) - s0;
     if !d.is_finite() || d <= 1e-9 {
         return 0.0;
     }
@@ -377,7 +380,7 @@ pub fn estimate_with_prior(
                     }
                 }
             }
-            // Level 0 refinement (16×16 block, ±2 px) with sub-pixel parabola fit.
+            // Level 0 refinement (16×16 block, ±2 px) with a sub-pixel fit.
             let (px, py) = (2 * best1.1, 2 * best1.2);
             let mut costs = [[f32::INFINITY; 7]; 7];
             let mut best0 = (f32::INFINITY, px, py);
@@ -395,8 +398,8 @@ pub fn estimate_with_prior(
                 continue;
             }
             let (ox, oy) = ((best0.1 - px + 3) as usize, (best0.2 - py + 3) as usize);
-            let sx = parabola(costs[oy][ox - 1], costs[oy][ox], costs[oy][ox + 1]);
-            let sy = parabola(costs[oy - 1][ox], costs[oy][ox], costs[oy + 1][ox]);
+            let sx = subpixel(costs[oy][ox - 1], costs[oy][ox], costs[oy][ox + 1]);
+            let sy = subpixel(costs[oy - 1][ox], costs[oy][ox], costs[oy + 1][ox]);
             let v = [best0.1 as f32 + sx, best0.2 as f32 + sy];
             let k = j * gw + i;
             est.vectors[k] = v;
