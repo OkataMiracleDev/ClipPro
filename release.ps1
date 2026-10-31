@@ -23,7 +23,9 @@ param(
     [Parameter(Position = 2)][string]$Notes = ""
 )
 
-$ErrorActionPreference = "Stop"
+# Not "Stop": Windows PowerShell turns any stderr from gh or git (progress, "release not found")
+# into a terminating error. Native calls are checked through $LASTEXITCODE instead.
+$ErrorActionPreference = "Continue"
 $Repo = "OkataMiracleDev/ClipPro"
 $Conf = Join-Path $PSScriptRoot "app\src-tauri\tauri.conf.json"
 $WhatsNew = Join-Path $PSScriptRoot "docs\manual\whats-new.md"
@@ -98,7 +100,11 @@ try {
             if (git status --porcelain) { Fail "You have uncommitted changes. Commit (or stash) them first, so the release is exactly what's on GitHub." }
             git fetch -q origin
             $branch = git rev-parse --abbrev-ref HEAD
-            if (git rev-list "origin/$branch..HEAD") { Write-Host "Pushing your commits first..."; git push -q origin $branch }
+            if (git rev-list "origin/$branch..HEAD") {
+                Write-Host "Pushing your commits first..."
+                git push -q origin $branch
+                if ($LASTEXITCODE -ne 0) { Fail "Could not push $branch." }
+            }
 
             # Record the version (and its notes in the in-app What's new), then ask GitHub to build it.
             python scripts\set_version.py $v | Out-Null
@@ -109,7 +115,9 @@ try {
             git add -A Cargo.toml Cargo.lock app/src-tauri/tauri.conf.json app/ui/package.json app/ui/package-lock.json docs/manual/whats-new.md
             if (Test-Path release-notes) { git add -A release-notes }
             git commit -q -m "Release $v"
+            if ($LASTEXITCODE -ne 0) { Fail "Could not commit the version change." }
             git push -q origin $branch
+            if ($LASTEXITCODE -ne 0) { Fail "Could not push the version change." }
             $tmp = Join-Path $env:TEMP "clippro-notes-$v.md"
             [IO.File]::WriteAllText($tmp, $text)
             gh workflow run release.yml --repo $Repo --ref $branch -f version=$v -F notes=@$tmp
@@ -142,6 +150,7 @@ try {
         "unpublish" {
             if (-not $Version) { Fail "Usage: .\release.ps1 unpublish 1.2.0" }
             gh release edit (Tag $Version) --repo $Repo --draft=true
+            if ($LASTEXITCODE -ne 0) { Fail "Unpublishing failed (.elease.ps1 status)." }
             Write-Host "$(Tag $Version) is a draft again; users who haven't updated won't be offered it."
         }
         "delete" {
@@ -149,6 +158,7 @@ try {
             $draft = gh release view (Tag $Version) --repo $Repo --json isDraft --jq ".isDraft"
             if ($draft -ne "true") { Fail "$(Tag $Version) is published. Unpublish it first if you really want to delete it." }
             gh release delete (Tag $Version) --repo $Repo --yes --cleanup-tag
+            if ($LASTEXITCODE -ne 0) { Fail "Deleting failed (.elease.ps1 status)." }
             Write-Host "Deleted draft $(Tag $Version)."
         }
     }
