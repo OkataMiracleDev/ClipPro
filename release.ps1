@@ -150,7 +150,7 @@ try {
         "unpublish" {
             if (-not $Version) { Fail "Usage: .\release.ps1 unpublish 1.2.0" }
             gh release edit (Tag $Version) --repo $Repo --draft=true
-            if ($LASTEXITCODE -ne 0) { Fail "Unpublishing failed (.elease.ps1 status)." }
+            if ($LASTEXITCODE -ne 0) { Fail "Unpublishing failed (.\release.ps1 status)." }
             Write-Host "$(Tag $Version) is a draft again; users who haven't updated won't be offered it."
         }
         "delete" {
@@ -158,7 +158,7 @@ try {
             $draft = gh release view (Tag $Version) --repo $Repo --json isDraft --jq ".isDraft"
             if ($draft -ne "true") { Fail "$(Tag $Version) is published. Unpublish it first if you really want to delete it." }
             gh release delete (Tag $Version) --repo $Repo --yes --cleanup-tag
-            if ($LASTEXITCODE -ne 0) { Fail "Deleting failed (.elease.ps1 status)." }
+            if ($LASTEXITCODE -ne 0) { Fail "Deleting failed (.\release.ps1 status)." }
             Write-Host "Deleted draft $(Tag $Version)."
         }
     }
