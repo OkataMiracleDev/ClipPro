@@ -35,6 +35,14 @@ if [ -n "$_msvc_ver" ]; then
   export CMAKE_C_COMPILER="$(_w "$_vc/bin/Hostx64/x64/cl.exe")"
   export CMAKE_CXX_COMPILER="$(_w "$_vc/bin/Hostx64/x64/cl.exe")"
   unset _sdk_ver _vc _sdk
+elif [ -z "${CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER:-}" ]; then
+  # Git Bash puts its own coreutils link.exe ahead of MSVC's on PATH; point cargo at the
+  # linker next to the developer shell's cl.exe instead.
+  _cl="$(command -v cl.exe 2>/dev/null || true)"
+  if [ -n "$_cl" ]; then
+    export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER="$(_w "$(dirname "$_cl")/link.exe")"
+  fi
+  unset _cl
 fi
 if [ -d "$_tp/llvm/bin" ]; then
   export LIBCLANG_PATH="$(_w "$_tp/llvm/bin")"
