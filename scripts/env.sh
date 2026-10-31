@@ -8,9 +8,9 @@
 _root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 _tp="$_root/third_party"
 _w() { cygpath -w "$1"; }
-_msvc_ver="$(ls "$_tp/msvc/VC/Tools/MSVC" 2>/dev/null | sort | tail -1)"
+_msvc_ver="$(ls "$_tp/msvc/VC/Tools/MSVC" 2>/dev/null | sort | tail -1 || true)"
 if [ -n "$_msvc_ver" ]; then
-  _sdk_ver="$(ls "$_tp/msvc/Windows Kits/10/bin" 2>/dev/null | grep '^10\.' | sort | tail -1)"
+  _sdk_ver="$(ls "$_tp/msvc/Windows Kits/10/bin" 2>/dev/null | grep '^10\.' | sort | tail -1 || true)"
   _vc="$_tp/msvc/VC/Tools/MSVC/$_msvc_ver"
   _sdk="$_tp/msvc/Windows Kits/10"
   export VCINSTALLDIR="$(_w "$_tp/msvc/VC")\\"
@@ -46,7 +46,7 @@ export PATH="$HOME/.cargo/bin:$_tp/ffmpeg/bin:$_tp/llvm/bin:$_tp/cmake/bin:$_tp/
 # AI models for tests and dev runs: CLIPPRO_MODELS from this shell, else the user's Windows
 # environment (shells started before it was set don't see it), else target/models.
 if [ -z "${CLIPPRO_MODELS:-}" ]; then
-  _m="$(reg query 'HKCU\Environment' //v CLIPPRO_MODELS 2>/dev/null | sed -n 's/.*REG_[A-Z_]*SZ[[:space:]]*//p' | tr -d '\r')"
+  _m="$(reg query 'HKCU\Environment' //v CLIPPRO_MODELS 2>/dev/null | sed -n 's/.*REG_[A-Z_]*SZ[[:space:]]*//p' | tr -d '\r' || true)"
   export CLIPPRO_MODELS="${_m:-$(_w "$_root/target/models")}"
   unset _m
 fi
