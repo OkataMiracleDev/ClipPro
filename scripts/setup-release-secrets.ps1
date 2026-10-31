@@ -15,10 +15,11 @@ if (-not (Test-Path $key)) { throw "No signing key at $key." }
 if (-not (Test-Path $pw)) { throw "No key password at $pw." }
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "Install the GitHub CLI first: winget install GitHub.cli" }
 
-# Piped in, so the key never appears on a command line or in the shell history.
-Get-Content $key -Raw | gh secret set TAURI_SIGNING_PRIVATE_KEY --repo $Repo
+# Redirected from the files, so the key never appears on a command line or in the shell history.
+# cmd's < passes the bytes as they are; a PowerShell pipe would add a newline to the password.
+cmd /c "gh secret set TAURI_SIGNING_PRIVATE_KEY --repo $Repo < `"$key`""
 if ($LASTEXITCODE -ne 0) { throw "Setting TAURI_SIGNING_PRIVATE_KEY failed." }
-Get-Content $pw -Raw | gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --repo $Repo
+cmd /c "gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --repo $Repo < `"$pw`""
 if ($LASTEXITCODE -ne 0) { throw "Setting TAURI_SIGNING_PRIVATE_KEY_PASSWORD failed." }
 
 gh secret list --repo $Repo
