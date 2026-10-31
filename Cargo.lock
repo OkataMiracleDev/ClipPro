@@ -621,7 +621,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "clippro-ai"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clippro-types",
  "ndarray",
@@ -636,7 +636,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-analysis"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clippro-audio",
  "clippro-measure",
@@ -651,7 +651,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-app"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "base64 0.23.1",
  "clippro-ai",
@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-audio"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clippro-media",
  "clippro-types",
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-cli"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -714,7 +714,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-core"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "base64 0.23.1",
  "clippro-ai",
@@ -739,11 +739,11 @@ dependencies = [
 
 [[package]]
 name = "clippro-gpu"
-version = "1.0.1"
+version = "1.0.2"
 
 [[package]]
 name = "clippro-ingest"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clippro-media",
  "clippro-types",
@@ -759,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-interchange"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "cfb",
  "clippro-types",
@@ -771,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-measure"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clippro-types",
  "rmp-serde",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-media"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clippro-measure",
  "clippro-types",
@@ -797,11 +797,11 @@ dependencies = [
 
 [[package]]
 name = "clippro-playback"
-version = "1.0.1"
+version = "1.0.2"
 
 [[package]]
 name = "clippro-project"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clippro-measure",
  "clippro-types",
@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-score"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clippro-measure",
  "clippro-types",
@@ -830,7 +830,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-testgen"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "anyhow",
  "rayon",
@@ -839,7 +839,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-transcribe"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -848,7 +848,7 @@ dependencies = [
 
 [[package]]
 name = "clippro-types"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "serde",
  "serde_json",
