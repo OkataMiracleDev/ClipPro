@@ -126,7 +126,7 @@ Status on 2026-10-30, branch `dev`. Each SPEC §5 feature ID is shown with its e
 | OTH-1 | Pass | `app::settings::tests::round_trip_sanitise_and_options`, `ui: lib/keys.test.ts` |
 | OTH-2 | Pass | `ui: lib/markdown.test.tsx` (manual rendering, every shortcut documented). First-run tour: manual check (`?tour=1`) |
 | OTH-3 | Pass | `cli/tests/cli.rs::analyze_score_info_and_exit_codes`, `offload_and_selftest`; `clippro-cli selftest` 10/10 from the installed copy |
-| OTH-4 | Human | Changelog viewer (What's new) is in Help. Auto-update needs **HC-8** (releases repo and update-signing key) |
+| OTH-4 | Done | Changelog viewer (What's new) is in Help. Signed auto-updates from GitHub Releases (`latest.json`): an update bar under the title bar, with What's new, Install and restart, and Skip this version. `ClipPro --update-selftest` updated 0.1.0 to 1.0.1 with the signature verified |
 | OTH-5 | Pass | `app::diag::tests::*`, `ui: views/Diagnostics.test.ts` |
 
 ## Hardening (P14.6)
@@ -154,8 +154,8 @@ After the fixes, every target runs clean.
 | NSIS installer | `ClipPro_0.1.0_x64-setup.exe`, per-user, with the WebView2 bootstrapper embedded. It ships FFmpeg (LGPL, DLLs and `ffmpeg.exe`), `DirectML.dll`, `clippro-cli.exe`, the notices and the `.clippro` association. A silent install into a test folder passed `--pdf-check` and `clippro-cli selftest` with no dev tools on PATH. Uninstall removed the files and registry entries, except the `.clippro` extension key, which the stock Tauri uninstaller leaves with a backup value |
 | Portable ZIP | `scripts/package-portable.ps1` |
 | Signing | **HC-7** (certificate, or accept unsigned builds with SmartScreen warnings) |
-| Updater | **HC-8** |
+| Updater | Done: tauri-plugin-updater with a minisign key, published by `release.bat` through `.github/workflows/release.yml` (see RELEASING.md) |
 | Windows Sandbox test | Not run (installed into a test folder on the dev machine instead) |
 
 ## Owner checks still open
-HC-1 (CI remote), HC-2 (calibration on real footage), HC-3 (NLE imports), HC-4 (AAF in Avid), HC-6 (faces on real footage), HC-7 (signing), HC-8 (updater), HC-9 (look approval and keyboard walk-through).
+HC-1 (CI on GitHub: first green run), HC-2 (calibration on real footage), HC-3 (NLE imports), HC-4 (AAF in Avid), HC-6 (faces on real footage), HC-7 (signing), HC-9 (look approval and keyboard walk-through).
