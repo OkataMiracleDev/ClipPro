@@ -138,3 +138,71 @@ fn bad_file_fails_alone_and_bump_reorders() {
     drop(s);
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// A store whose failure write takes a shared lock, like the project database's mutex in the app.
+/// (Only that write: a worker must reach `fail` without first waiting on the lock.)
+struct LockedStore {
+    inner: MemStore,
+    db: Arc<std::sync::Mutex<()>>,
+}
+
+impl RunStore for LockedStore {
+    fn checkpoints(&self, job: JobId) -> Vec<(u32, Vec<clippro_measure::sample::SampleRaw>)> {
+        self.inner.checkpoints(job)
+    }
+    fn save_checkpoint(&self, job: JobId, section: u32, chunk_index: u32, samples: &[clippro_measure::sample::SampleRaw]) {
+        self.inner.save_checkpoint(job, section, chunk_index, samples)
+    }
+    fn active_area(&self, job: JobId) -> Option<clippro_measure::image::Rect> {
+        self.inner.active_area(job)
+    }
+    fn save_active_area(&self, job: JobId, area: clippro_measure::image::Rect) {
+        self.inner.save_active_area(job, area)
+    }
+    fn finished(&self, job: JobId, ms: &MeasurementSet) {
+        self.inner.finished(job, ms)
+    }
+    fn failed(&self, job: JobId, error: &str) {
+        let _g = self.db.lock().unwrap();
+        self.inner.failed(job, error)
+    }
+}
+
+/// A job failing while another thread holds the database lock and asks the scheduler about
+/// jobs (the app's clip list refresh) must not deadlock. It did: `fail` wrote to the store while
+/// holding the scheduler's lock, which froze every worker mid-analysis.
+#[test]
+fn failure_while_the_database_is_busy_does_not_deadlock() {
+    let Some(dir) = corpus() else { return };
+    let tmp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp-sched-deadlock");
+    std::fs::create_dir_all(&tmp).unwrap();
+    // Probes fine, then disappears: preparing the job fails.
+    let gone = tmp.join("gone.mp4");
+    std::fs::copy(dir.join("pan_right.mp4"), &gone).unwrap();
+    let spec_gone = spec(1, &gone);
+    std::fs::remove_file(&gone).unwrap();
+
+    let db = Arc::new(std::sync::Mutex::new(()));
+    let store = Arc::new(LockedStore { inner: MemStore::default(), db: db.clone() });
+    let s = Arc::new(Scheduler::new(SchedulerConfig { workers: 2, ..SchedulerConfig::default() }, Calibration::embedded().clone(), store, None));
+    let (done_tx, done_rx) = mpsc::channel();
+    {
+        let (s, db) = (s.clone(), db.clone());
+        std::thread::spawn(move || {
+            // The clip list refresh: database lock held while querying job status.
+            let g = db.lock().unwrap();
+            s.add(spec_gone);
+            let until = std::time::Instant::now() + Duration::from_secs(3);
+            while std::time::Instant::now() < until {
+                let _ = s.status(1);
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            drop(g);
+            s.wait_idle();
+            done_tx.send(s.status(1)).unwrap();
+        });
+    }
+    let status = done_rx.recv_timeout(Duration::from_secs(60)).expect("scheduler deadlocked");
+    assert_eq!(status, Some(JobStatus::Failed));
+    std::fs::remove_dir_all(&tmp).ok();
+}

@@ -66,6 +66,8 @@ interface AppState {
   measureOverlay: MeasureOverlayKind;
   rightTab: "tuning" | "frame" | "transcript";
   toasts: Toast[];
+  /** A newer release (SPEC OTH-4) and how its installation is going. */
+  update: { info: import("./api").UpdateInfo; state: "available" | "downloading" | "installing" | "failed"; downloaded: number; total: number | null; message: string | null } | null;
 
   init(): Promise<void>;
   newProject(path: string, name: string): Promise<void>;
@@ -140,6 +142,11 @@ interface AppState {
   toggleMeasureOverlay(o: MeasureOverlayKind): void;
   setRightTab(t: "tuning" | "frame" | "transcript"): void;
   refreshAi(): Promise<void>;
+  /** Looks for a newer release; `manual` also reports "up to date" and ignores a skipped version. */
+  checkForUpdate(manual?: boolean): Promise<void>;
+  installUpdate(): Promise<void>;
+  dismissUpdate(): void;
+  skipUpdate(): void;
   renamePerson(id: number, name: string): Promise<void>;
   mergePeople(into: number, from: number): Promise<void>;
   toast(text: string, tone?: Toast["tone"]): void;
@@ -241,6 +248,7 @@ export const useApp = create<AppState>((set, get) => ({
   measureOverlay: "none",
   rightTab: "tuning",
   toasts: [],
+  update: null,
 
   async init() {
     try {
@@ -253,6 +261,12 @@ export const useApp = create<AppState>((set, get) => ({
       }
       const st = await api.getSettings();
       get().applySettings(st);
+      void api.onUpdate((p) =>
+        set((s) => (s.update ? { update: { ...s.update, state: p.kind, downloaded: p.downloaded, total: p.total ?? s.update.total, message: p.message } } : {})),
+      );
+      void api.onUpdateFound((info) => set((s) => (s.update?.state === "downloading" || s.update?.state === "installing" ? {} : { update: { info, state: "available", downloaded: 0, total: null, message: null } })));
+      // Quietly, after start-up has settled; never in end-to-end runs.
+      if (st.check_updates && !(window as { __clippro?: unknown }).__clippro) setTimeout(() => void get().checkForUpdate(), 4000);
       void api.onSettings((s) => get().applySettings(s));
       void api.onMediaAdded((e) => {
         set((s) => ({ analysis: { ...s.analysis, active: true } }));
@@ -804,6 +818,34 @@ export const useApp = create<AppState>((set, get) => ({
   },
   toggleMeasureOverlay: (o) => set((s) => ({ measureOverlay: s.measureOverlay === o ? "none" : o })),
   setRightTab: (rightTab) => set({ rightTab, inspectorOpen: true }),
+  async checkForUpdate(manual = false) {
+    try {
+      const info = await api.updateCheck();
+      const skipped = get().appSettings?.skipped_update ?? null;
+      if (info && (manual || info.version !== skipped)) set({ update: { info, state: "available", downloaded: 0, total: null, message: null } });
+      else if (manual) get().toast(info ? `ClipPro ${info.version} is available.` : "ClipPro is up to date.");
+    } catch (e) {
+      // Offline or GitHub unreachable: say so only when asked.
+      if (manual) get().toast(`Couldn't check for updates: ${e}`, "error");
+    }
+  },
+  async installUpdate() {
+    const u = get().update;
+    if (!u) return;
+    set({ update: { ...u, state: "downloading", message: null } });
+    try {
+      await api.updateInstall();
+    } catch (e) {
+      set({ update: { ...u, state: "failed", message: String(e) } });
+    }
+  },
+  dismissUpdate: () => set({ update: null }),
+  skipUpdate() {
+    const u = get().update;
+    const s = get().appSettings;
+    set({ update: null });
+    if (u && s) void api.setSettings({ ...s, skipped_update: u.info.version }).then((x) => get().applySettings(x));
+  },
   async refreshAi() {
     if (!get().project) return;
     try {

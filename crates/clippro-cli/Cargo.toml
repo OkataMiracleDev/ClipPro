@@ -12,13 +12,13 @@ workspace = true
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
-clippro-analysis = { version = "0.1.0", path = "../clippro-analysis" }
-clippro-core = { version = "0.1.0", path = "../clippro-core" }
-clippro-ingest = { version = "0.1.0", path = "../clippro-ingest" }
-clippro-interchange = { version = "0.1.0", path = "../clippro-interchange" }
-clippro-measure = { version = "0.1.0", path = "../clippro-measure" }
-clippro-media = { version = "0.1.0", path = "../clippro-media" }
-clippro-project = { version = "0.1.0", path = "../clippro-project" }
-clippro-score = { version = "0.1.0", path = "../clippro-score" }
-clippro-types = { version = "0.1.0", path = "../clippro-types" }
+clippro-analysis = { path = "../clippro-analysis" }
+clippro-core = { path = "../clippro-core" }
+clippro-ingest = { path = "../clippro-ingest" }
+clippro-interchange = { path = "../clippro-interchange" }
+clippro-measure = { path = "../clippro-measure" }
+clippro-media = { path = "../clippro-media" }
+clippro-project = { path = "../clippro-project" }
+clippro-score = { path = "../clippro-score" }
+clippro-types = { path = "../clippro-types" }
 serde_json = "1.0.154"

@@ -18,6 +18,7 @@ pub mod diag;
 pub mod presets;
 pub mod preview;
 pub mod settings;
+pub mod update;
 #[cfg(windows)]
 mod shared;
 
@@ -44,6 +45,8 @@ pub struct AppState {
     ai: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
     /// Model downloads in progress: id → cancel flag.
     ai_downloads: Mutex<std::collections::HashMap<String, Arc<std::sync::atomic::AtomicBool>>>,
+    /// The update found by the last check, kept for "Install and restart".
+    pending_update: Mutex<Option<tauri_plugin_updater::Update>>,
     /// Clips whose AI pass failed this run; the automatic queue skips them until "Run now".
     ai_failed: Mutex<std::collections::HashSet<i64>>,
 }
@@ -2221,6 +2224,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             bench_config,
             bench_report,
             startup_project,
+            update::update_check,
+            update::update_install,
+            update::open_url,
             data::data_info,
             data::data_dir_set,
             ai::ai_models,
@@ -2239,7 +2245,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             ai::transcript_export,
             ai::ai_clear,
         ])
-        .events(collect_events![AnalysisEvent, settings::AppSettings, MediaAdded, OffloadProgress, JobProgress, ai::AiProgress])
+        .events(collect_events![AnalysisEvent, settings::AppSettings, MediaAdded, OffloadProgress, JobProgress, ai::AiProgress, update::UpdateProgress, update::UpdateInfo])
 }
 
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../ui/src/bindings.ts");
@@ -2302,6 +2308,7 @@ pub fn run(bench: Option<Bench>) {
     let invoke = builder.invoke_handler();
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
         .invoke_handler(invoke)
         .register_asynchronous_uri_scheme_protocol("clippro", |ctx, request, responder| {
@@ -2339,6 +2346,16 @@ pub fn run(bench: Option<Bench>) {
                 let data_dir = lock(&state.settings).data_dir.clone();
                 data::apply(data_dir.as_deref());
                 data::finish_pending(&state);
+            }
+            // `--update-selftest <endpoint>`: release testing, window hidden.
+            let args: Vec<String> = std::env::args().collect();
+            if let Some(i) = args.iter().position(|a| a == "--update-selftest") {
+                let (endpoint, app) = (args.get(i + 1).cloned().unwrap_or_default(), app.handle().clone());
+                tauri::async_runtime::spawn(async move {
+                    let code = update::selftest(app.clone(), endpoint).await;
+                    app.exit(code);
+                });
+                return Ok(());
             }
             if let Some(b) = bench.as_ref().filter(|b| b.pdf) {
                 let (out, clips, app) = (b.out.clone(), b.clips.clone(), app.handle().clone());

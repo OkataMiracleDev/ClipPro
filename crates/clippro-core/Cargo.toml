@@ -22,12 +22,12 @@ clippro-score = { path = "../clippro-score" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-clippro-interchange = { version = "0.1.0", path = "../clippro-interchange" }
+clippro-interchange = { path = "../clippro-interchange" }
 image-webp = "0.2.4"
 base64 = "0.23.1"
 notify = "8.2.1"
-clippro-audio = { version = "0.1.0", path = "../clippro-audio" }
-clippro-ingest = { version = "0.1.0", path = "../clippro-ingest" }
+clippro-audio = { path = "../clippro-audio" }
+clippro-ingest = { path = "../clippro-ingest" }
 clippro-ai = { path = "../clippro-ai" }
 clippro-transcribe = { path = "../clippro-transcribe" }
-clippro-testgen = { version = "0.1.0", path = "../clippro-testgen" }
+clippro-testgen = { path = "../clippro-testgen" }

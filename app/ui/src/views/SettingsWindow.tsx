@@ -181,6 +181,7 @@ export function SettingsWindow() {
           </>
         ) : null}
         {s && tab === "general" && <DataFolderRow onSaved={setS} />}
+        {s && tab === "general" && <UpdatesRow s={s} update={update} />}
         {s && tab === "general" && (
           <Row label="Settings file" hint="Move your settings and shortcuts to another PC. Recent projects stay on this one.">
             <div className="flex gap-2">
@@ -222,6 +223,42 @@ export function SettingsWindow() {
         {!isTauri && <p className="mt-6 text-center text-[11px] text-text-3">Browser preview — settings aren't saved.</p>}
       </main>
     </div>
+  );
+}
+
+/** Settings → General → Updates (SPEC OTH-4). A found update appears as a bar in the main window. */
+function UpdatesRow({ s, update }: { s: AppSettings; update: (p: Partial<AppSettings>) => void }) {
+  const [version, setVersion] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.systemInfo().then((i) => setVersion(i.version), () => setVersion(null));
+  }, []);
+  return (
+    <Row label="Updates" hint={version ? `This is ClipPro ${version}. Updates are signed and only install when you choose.` : undefined}>
+      <label className="flex items-center gap-2 text-[13px]">
+        <Switch label="Check for updates at start-up" checked={s.check_updates} onChange={(check_updates) => update({ check_updates })} />
+        Check for updates at start-up
+      </label>
+      <button
+        disabled={busy}
+        className="mt-1 h-7 rounded-(--radius-control) px-3 text-[13px] ring-1 ring-separator-strong hover:bg-control-hover disabled:opacity-40"
+        onClick={async () => {
+          setBusy(true);
+          setNote(null);
+          try {
+            const u = await api.updateCheck();
+            setNote(u ? `ClipPro ${u.version} is available. The main window shows it with its release notes.` : "ClipPro is up to date.");
+          } catch (e) {
+            setNote(`Couldn't check: ${e}`);
+          }
+          setBusy(false);
+        }}
+      >
+        {busy ? "Checking…" : "Check now"}
+      </button>
+      {note && <div className="text-[11px] text-text-2">{note}</div>}
+    </Row>
   );
 }
 

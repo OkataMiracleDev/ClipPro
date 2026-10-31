@@ -1,5 +1,6 @@
-# ClipPro CI (PLAN P0.3): bootstrap the portable toolchain, generate the mini corpus, run
-# scripts/verify.ps1, and upload the installer. Needs a GitHub remote (HC-1).
+# ClipPro CI: the installed Visual Studio, LLVM and CMake on GitHub's Windows runner, FFmpeg
+# from scripts/bootstrap.ps1, the mini test corpus, then scripts/verify.ps1. AI tests skip
+# (no models are downloaded here); GPU decoding falls back to the CPU on the runner.
 name: ci
 
 on:
@@ -15,7 +16,7 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -29,25 +30,17 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Cache portable toolchain
-        uses: actions/cache@v4
+      - uses: ilammy/msvc-dev-cmd@v1
         with:
-          path: third_party
-          key: third-party-${{ hashFiles('scripts/bootstrap.ps1') }}
+          arch: x64
 
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: cargo-
+          key: ci
 
-      - name: Bootstrap
+      - name: FFmpeg, UI dependencies and pyaaf2
         shell: pwsh
-        run: ./scripts/bootstrap.ps1 -AcceptMsvcLicense
+        run: ./scripts/bootstrap.ps1 -Only ffmpeg,npm,pyaaf2
 
       - name: Doctor
         shell: pwsh
@@ -62,18 +55,4 @@ jobs:
 
       - name: Verify
         shell: pwsh
-        # GPU-dependent checks report and skip on the runner's software adapter; AI tests skip
-        # without models (they aren't downloaded in CI).
         run: ./scripts/verify.ps1
-
-      - name: Installer
-        shell: bash
-        run: |
-          source scripts/env.sh
-          cd app && ./ui/node_modules/.bin/tauri build
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ClipPro-setup
-          path: target/release/bundle/nsis/*.exe
-          if-no-files-found: error

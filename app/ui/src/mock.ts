@@ -76,7 +76,7 @@ function makeDemo(): DemoClip[] {
 }
 
 const demo = makeDemo();
-let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, recent_projects: ["D:/Projects/Coast Doc.clippro", "D:/Projects/Sarah Interview.clippro", "E:/Weddings/Okafor.clippro"], workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true, keybindings: {}, colour_blind_scores: false, tour_done: !new URLSearchParams(location.search).has("tour"), ai_consent: true, ai_faces: true, ai_shots: true, ai_transcripts: true, ai_speakers: true, whisper_model: "whisper-small", ai_language: "", ai_deterministic: false, data_dir: null, pending_cache_move: null };
+let mockSettings: AppSettings = { theme: "system", window_controls: "mac", reopen_last: true, last_project: null, recent_projects: ["D:/Projects/Coast Doc.clippro", "D:/Projects/Sarah Interview.clippro", "E:/Weddings/Okafor.clippro"], workers: 0, gpu_decode: true, use_cache: true, sample_rate: "standard", pair_sampling: true, keybindings: {}, colour_blind_scores: false, tour_done: !new URLSearchParams(location.search).has("tour"), ai_consent: true, ai_faces: true, ai_shots: true, ai_transcripts: true, ai_speakers: true, whisper_model: "whisper-small", ai_language: "", ai_deterministic: false, data_dir: null, pending_cache_move: null, check_updates: true, skipped_update: null };
 const settingsListeners = new Set<(s: AppSettings) => void>();
 const mockBins: { id: number; name: string; kind: string; query: string | null }[] = [
   { id: 1, name: "Interviews", kind: "manual", query: null },
@@ -647,6 +647,15 @@ export const mockBackend: Backend = {
     if (m) m.installed = false;
   },
   startupProject: async () => null,
+  // `?update=1` shows the update bar (screenshots).
+  updateCheck: async () =>
+    new URLSearchParams(location.search).has("update")
+      ? { version: "1.1.0", current: "1.0.0", notes: "Faster AI analysis on long interviews.\n\n## New\n\n- Group stringouts by speaker\n\n## Fixes\n\n- Transcript search finds words with accents", date: "2026-11-20" }
+      : null,
+  updateInstall: async () => {},
+  onUpdate: async () => () => {},
+  onUpdateFound: async () => () => {},
+  openUrl: async (url) => void window.open(url, "_blank"),
   dataInfo: async () => mockData(),
   dataDirSet: async (path) => {
     mockSettings = { ...mockSettings, data_dir: path };

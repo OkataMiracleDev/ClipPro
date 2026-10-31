@@ -466,11 +466,21 @@ impl Session {
     pub fn clip_statuses(&self) -> Result<Vec<ClipStatus>> {
         let params = self.run_params();
         let key = params.key();
-        let db = lock(&self.db);
+        // The rows are read under the database lock, which is released before the scheduler is
+        // asked about running jobs: the scheduler takes its own lock and then the database's when
+        // it records a result, so holding both here in the other order could deadlock.
+        let rows = {
+            let db = lock(&self.db);
+            let mut rows = Vec::new();
+            for c in db.clips()? {
+                let Some(m) = db.media(c.media_id)? else { continue };
+                let run = db.run_by_key(m.id, &key)?;
+                rows.push((c, m, run));
+            }
+            rows
+        };
         let mut out = Vec::new();
-        for c in db.clips()? {
-            let Some(m) = db.media(c.media_id)? else { continue };
-            let run = db.run_by_key(m.id, &key)?;
+        for (c, m, run) in rows {
             let (mut state, progress, error) =
                 run.as_ref().map(|r| (r.state, r.progress, r.error.clone())).unwrap_or((RunState::Queued, 0.0, None));
             if let Some(r) = &run {

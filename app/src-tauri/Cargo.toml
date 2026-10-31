@@ -23,12 +23,12 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 base64 = "0.23.1"
-clippro-analysis = { version = "0.1.0", path = "../../crates/clippro-analysis" }
-clippro-core = { version = "0.1.0", path = "../../crates/clippro-core" }
-clippro-measure = { version = "0.1.0", path = "../../crates/clippro-measure" }
-clippro-project = { version = "0.1.0", path = "../../crates/clippro-project" }
-clippro-score = { version = "0.1.0", path = "../../crates/clippro-score", features = ["specta"] }
-clippro-types = { version = "0.1.0", path = "../../crates/clippro-types", features = ["specta"] }
+clippro-analysis = { path = "../../crates/clippro-analysis" }
+clippro-core = { path = "../../crates/clippro-core" }
+clippro-measure = { path = "../../crates/clippro-measure" }
+clippro-project = { path = "../../crates/clippro-project" }
+clippro-score = { path = "../../crates/clippro-score", features = ["specta"] }
+clippro-types = { path = "../../crates/clippro-types", features = ["specta"] }
 serde = { version = "1.0.229", features = ["derive"] }
 specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 clippro-media = { path = "../../crates/clippro-media" }
@@ -38,6 +38,7 @@ serde_json = "1.0.154"
 specta-typescript = "=0.0.13"
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 window-vibrancy = "0.8"
 jpeg-encoder = { version = "0.6", features = ["simd"] }
@@ -46,5 +47,5 @@ cpal = "0.18.2"
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39.1"
 windows-core = "0.62"
-clippro-interchange = { version = "0.1.0", path = "../../crates/clippro-interchange" }
-clippro-ingest = { version = "0.1.0", path = "../../crates/clippro-ingest" }
+clippro-interchange = { path = "../../crates/clippro-interchange" }
+clippro-ingest = { path = "../../crates/clippro-ingest" }

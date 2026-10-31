@@ -164,6 +164,15 @@ export const commands = {
 	benchReport: (report: string) => typedError<null, string>(__TAURI_INVOKE("bench_report", { report })),
 	/**  A project passed on the command line (double-clicking a `.clippro` file), if any. */
 	startupProject: () => __TAURI_INVOKE<string | null>("startup_project"),
+	/**  Asks for a newer published release. `None` when ClipPro is up to date. */
+	updateCheck: () => typedError<UpdateInfo_Serialize | null, string>(__TAURI_INVOKE("update_check")),
+	/**
+	 *  Downloads, verifies and installs the update found by `update_check`. The installer closes
+	 *  ClipPro, updates it and starts it again.
+	 */
+	updateInstall: () => typedError<null, string>(__TAURI_INVOKE("update_install")),
+	/**  Opens an https link (release notes, the releases page) in the default browser. */
+	openUrl: (url: string) => typedError<null, string>(__TAURI_INVOKE("open_url", { url })),
 	dataInfo: () => __TAURI_INVOKE<DataInfo>("data_info"),
 	/**
 	 *  Changes the data folder (`None` = the default) and, with `move_existing`, moves the models
@@ -203,6 +212,8 @@ export const events = {
 	jobProgress: makeEvent<JobProgress_Serialize, JobProgress_Deserialize>("job-progress"),
 	mediaAdded: makeEvent<MediaAdded, MediaAdded>("media-added"),
 	offloadProgress: makeEvent<OffloadProgress_Serialize, OffloadProgress_Deserialize>("offload-progress"),
+	updateInfo: makeEvent<UpdateInfo_Serialize, UpdateInfo_Deserialize>("update-info"),
+	updateProgress: makeEvent<UpdateProgress_Serialize, UpdateProgress_Deserialize>("update-progress"),
 };
 
 /* Types */
@@ -346,6 +357,10 @@ export type AppSettings_Deserialize = {
 	 *  the folder changed); moved at the next start-up.
 	 */
 	pending_cache_move?: string | null,
+	/**  Look for a newer release at start-up (SPEC OTH-4). */
+	check_updates?: boolean,
+	/**  A release the user chose to skip; not offered again (newer ones are). */
+	skipped_update?: string | null,
 };
 
 export type AppSettings_Serialize = {
@@ -395,6 +410,10 @@ export type AppSettings_Serialize = {
 	 *  the folder changed); moved at the next start-up.
 	 */
 	pending_cache_move: string | null,
+	/**  Look for a newer release at start-up (SPEC OTH-4). */
+	check_updates: boolean,
+	/**  A release the user chose to skip; not offered again (newer ones are). */
+	skipped_update: string | null,
 };
 
 export type AudioLevels = {
@@ -1256,6 +1275,50 @@ export type TranscriptRow_Serialize = {
 	words: WordRow[],
 	lines: LineRow_Serialize[],
 	flubs: ([number | null, number | null])[],
+};
+
+/**  Also broadcast as an event, so a check from the Settings window shows the main window's bar. */
+export type UpdateInfo = UpdateInfo_Serialize | UpdateInfo_Deserialize;
+
+/**  Also broadcast as an event, so a check from the Settings window shows the main window's bar. */
+export type UpdateInfo_Deserialize = {
+	version: string,
+	current: string,
+	/**  Release notes (Markdown). */
+	notes: string,
+	/**  Publication date, ISO 8601. */
+	date?: string | null,
+};
+
+/**  Also broadcast as an event, so a check from the Settings window shows the main window's bar. */
+export type UpdateInfo_Serialize = {
+	version: string,
+	current: string,
+	/**  Release notes (Markdown). */
+	notes: string,
+	/**  Publication date, ISO 8601. */
+	date: string | null,
+};
+
+/**  Download progress of an update being installed. */
+export type UpdateProgress = UpdateProgress_Serialize | UpdateProgress_Deserialize;
+
+/**  Download progress of an update being installed. */
+export type UpdateProgress_Deserialize = {
+	/**  downloading | installing | failed */
+	kind: string,
+	downloaded: number | null,
+	total?: number | null,
+	message?: string | null,
+};
+
+/**  Download progress of an update being installed. */
+export type UpdateProgress_Serialize = {
+	/**  downloading | installing | failed */
+	kind: string,
+	downloaded: number | null,
+	total: number | null,
+	message: string | null,
 };
 
 export type WatchFolderDto = {

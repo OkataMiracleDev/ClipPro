@@ -36,21 +36,25 @@ $host_ok = $false
 if (Get-Command rustc -ErrorAction SilentlyContinue) { $host_ok = ((rustc -vV) -match 'host: x86_64-pc-windows-msvc').Count -gt 0 }
 Report 'rust target x86_64-pc-windows-msvc' $host_ok 'default host toolchain'
 
-# MSVC + Windows SDK (portable install via third_party/portable-msvc.py)
+# MSVC + Windows SDK: the portable install (third_party/portable-msvc.py), or an installed Visual
+# Studio in a developer shell (cl.exe on PATH, as on GitHub's runners after msvc-dev-cmd).
 $msvc = Get-ChildItem (Join-Path $tp 'msvc\VC\Tools\MSVC') -Directory -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
-Report 'MSVC build tools' ($null -ne $msvc) ($(if ($msvc) { "third_party/msvc ($($msvc.Name))" } else { 'run bootstrap.ps1 (portable-msvc.py)' }))
+$cl = Get-Command cl.exe -ErrorAction SilentlyContinue
+Report 'MSVC build tools' ($null -ne $msvc -or $null -ne $cl) ($(if ($msvc) { "third_party/msvc ($($msvc.Name))" } elseif ($cl) { $cl.Source } else { 'run bootstrap.ps1, or use a Visual Studio developer shell' }))
 $fxc = Get-ChildItem (Join-Path $tp 'msvc\Windows Kits\10\bin') -Recurse -Filter fxc.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\' } | Select-Object -First 1
-Report 'Windows SDK (fxc.exe, rc.exe)' ($null -ne $fxc) ($(if ($fxc) { $fxc.Directory.Parent.Name } else { 'part of the portable MSVC install' }))
+$rc = Get-Command rc.exe -ErrorAction SilentlyContinue
+Report 'Windows SDK (rc.exe)' ($null -ne $fxc -or $null -ne $rc) ($(if ($fxc) { $fxc.Directory.Parent.Name } elseif ($rc) { $rc.Source } else { 'part of the MSVC install' }))
 
 # LLVM (libclang for bindgen)
-$clang = Join-Path $tp 'llvm\bin\libclang.dll'
-Report 'libclang (bindgen)' (Test-Path $clang) 'third_party/llvm/bin/libclang.dll'
+$clang = @((Join-Path $tp 'llvm\bin\libclang.dll'), $(if ($env:LIBCLANG_PATH) { Join-Path $env:LIBCLANG_PATH 'libclang.dll' }), 'C:\Program Files\LLVM\bin\libclang.dll') | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+Report 'libclang (bindgen)' ($null -ne $clang) ($(if ($clang) { $clang } else { 'third_party/llvm, or LLVM installed' }))
 
-# CMake + Ninja (whisper.cpp)
+# CMake (whisper.cpp); Ninja only matters with the portable MSVC
 $cmake = Join-Path $tp 'cmake\bin\cmake.exe'
+if (-not (Test-Path $cmake)) { $c = Get-Command cmake.exe -ErrorAction SilentlyContinue; if ($c) { $cmake = $c.Source } }
 $cmakeV = if (Test-Path $cmake) { Version-Of $cmake @('--version') } else { $null }
-Report 'CMake' ($null -ne $cmakeV) ($(if ($cmakeV) { $cmakeV } else { 'third_party/cmake' }))
-Report 'Ninja' (Test-Path (Join-Path $tp 'tools\bin\ninja.exe')) 'third_party/tools/bin/ninja.exe'
+Report 'CMake' ($null -ne $cmakeV) ($(if ($cmakeV) { $cmakeV } else { 'third_party/cmake, or CMake installed' }))
+Report 'Ninja' ((Test-Path (Join-Path $tp 'tools\bin\ninja.exe')) -or -not $msvc) 'third_party/tools/bin/ninja.exe (with the portable MSVC)'
 
 # FFmpeg LGPL shared
 $ffmpeg = Join-Path $tp 'ffmpeg'

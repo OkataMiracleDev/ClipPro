@@ -247,8 +247,12 @@ impl Inner {
             if j.status != JobStatus::Failed {
                 j.status = JobStatus::Failed;
                 j.interrupt.store(true, Ordering::Relaxed);
-                self.store.failed(id, &err);
-                self.emit(Event::Failed { job: id, error: err });
+                self.emit(Event::Failed { job: id, error: err.clone() });
+                // Recorded off this thread: the caller holds the scheduler's lock, and the store
+                // takes the project's database lock, which other threads hold while asking the
+                // scheduler about jobs. Writing it here could deadlock every worker.
+                let store = self.store.clone();
+                std::thread::spawn(move || store.failed(id, &err));
             }
         }
     }

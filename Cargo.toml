@@ -7,7 +7,7 @@ default-members = ["crates/*"]
 version = "0.1.0"
 edition = "2021"
 authors = ["Miracle Okata"]
-license = "LicenseRef-Proprietary"
+license = "LicenseRef-MIT-Commons-Clause"
 publish = false
 rust-version = "1.85"
 

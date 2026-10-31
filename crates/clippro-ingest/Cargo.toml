@@ -10,7 +10,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-clippro-types = { version = "0.1.0", path = "../clippro-types" }
+clippro-types = { path = "../clippro-types" }
 md-5 = "0.11.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -20,5 +20,5 @@ thiserror = "2.0.21"
 xxhash-rust = { version = "0.8.19", features = ["xxh64", "xxh3"] }
 
 [dev-dependencies]
-clippro-media = { version = "0.1.0", path = "../clippro-media" }
+clippro-media = { path = "../clippro-media" }
 quick-xml = "0.42.0"

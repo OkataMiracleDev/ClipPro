@@ -96,6 +96,20 @@ export interface JobProgress {
   outputs: string[];
 }
 
+export interface UpdateInfo {
+  version: string;
+  current: string;
+  notes: string;
+  date: string | null;
+}
+
+export interface UpdateProgress {
+  kind: "downloading" | "installing" | "failed";
+  downloaded: number;
+  total: number | null;
+  message: string | null;
+}
+
 /** The Data folder: AI models and the measurement cache. */
 export interface DataInfo {
   root: string;
@@ -440,6 +454,14 @@ export interface Backend {
   diagnosticsSave(path: string): Promise<void>;
   diagnosticsOpenFolder(): Promise<void>;
   onJob(cb: (e: JobProgress) => void): Promise<() => void>;
+  /** A newer published release, or null when up to date. */
+  updateCheck(): Promise<UpdateInfo | null>;
+  /** Downloads, verifies and installs the update; ClipPro restarts. */
+  updateInstall(): Promise<void>;
+  onUpdate(cb: (p: UpdateProgress) => void): Promise<() => void>;
+  /** Any window's check that finds an update. */
+  onUpdateFound(cb: (u: UpdateInfo) => void): Promise<() => void>;
+  openUrl(url: string): Promise<void>;
   dataInfo(): Promise<DataInfo>;
   /** Changes the data folder (null = default), moving the models and cache when asked. */
   dataDirSet(path: string | null, moveExisting: boolean): Promise<{ info: DataInfo; moved: number; notes: string[] }>;
@@ -774,6 +796,18 @@ const tauriBackend: Backend = {
         summary: sm ? { ...sm, bytes: n(sm.bytes), seconds: n(sm.seconds) } : null,
       });
     }),
+  updateCheck: async () => {
+    const u = unwrap(await commands.updateCheck());
+    return u ? { version: u.version, current: u.current, notes: u.notes, date: u.date ?? null } : null;
+  },
+  updateInstall: async () => void unwrap(await commands.updateInstall()),
+  onUpdate: async (cb) =>
+    events.updateProgress.listen((e) => {
+      const p = e.payload;
+      cb({ kind: p.kind as UpdateProgress["kind"], downloaded: n(p.downloaded), total: p.total === null || p.total === undefined ? null : n(p.total), message: p.message ?? null });
+    }),
+  onUpdateFound: async (cb) => events.updateInfo.listen((e) => cb({ version: e.payload.version, current: e.payload.current, notes: e.payload.notes, date: e.payload.date ?? null })),
+  openUrl: async (url) => void unwrap(await commands.openUrl(url)),
   dataInfo: async () => adaptData(await commands.dataInfo()),
   dataDirSet: async (path, moveExisting) => {
     const r = unwrap(await commands.dataDirSet(path, moveExisting));

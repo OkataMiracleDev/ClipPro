@@ -56,6 +56,10 @@ pub struct AppSettings {
     /// A measurement cache still to move into the data folder (an open project was using it when
     /// the folder changed); moved at the next start-up.
     pub pending_cache_move: Option<String>,
+    /// Look for a newer release at start-up (SPEC OTH-4).
+    pub check_updates: bool,
+    /// A release the user chose to skip; not offered again (newer ones are).
+    pub skipped_update: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -84,6 +88,8 @@ impl Default for AppSettings {
             ai_deterministic: false,
             data_dir: None,
             pending_cache_move: None,
+            check_updates: true,
+            skipped_update: None,
         }
     }
 }

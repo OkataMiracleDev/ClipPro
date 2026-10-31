@@ -17,6 +17,7 @@ import { FramePanel } from "./views/FramePanel";
 import { TuningPanel } from "./views/TuningPanel";
 import { Viewer } from "./views/Viewer";
 import { TranscriptPanel } from "./views/Ai";
+import { UpdateBanner } from "./views/UpdateBanner";
 
 function Toasts() {
   const { toasts, dismissToast } = useApp();
@@ -190,6 +191,7 @@ export function App() {
     <RTooltip.Provider>
       <div className="flex h-full flex-col">
         <TitleBar />
+        <UpdateBanner />
         {!project ? (
           <div className="min-h-0 flex-1 bg-window">
             <Welcome />

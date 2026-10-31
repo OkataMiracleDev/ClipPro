@@ -77,9 +77,10 @@
       "licenses/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt",
       "licenses/THIRD-PARTY-RUST.md": "licenses/THIRD-PARTY-RUST.md",
       "licenses/THIRD-PARTY-JS.md": "licenses/THIRD-PARTY-JS.md",
-      "../../target/release/clippro-cli.exe": "clippro-cli.exe"
+      "../../target/release/clippro-cli.exe": "clippro-cli.exe",
+      "../../LICENSE": "LICENSE.txt"
     },
-    "license": "LicenseRef-Proprietary",
+    "license": "LicenseRef-MIT-Commons-Clause",
     "fileAssociations": [
       {
         "ext": [
@@ -90,6 +91,19 @@
         "role": "Editor",
         "mimeType": "application/x-clippro"
       }
-    ]
+    ],
+    "licenseFile": "../../LICENSE",
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUyMjQ5MjA2NDU2N0FGNkEKUldScXIyZEZCcElrNGsyWDZJanFmYzQwNHU4MWZvU3ovV29NL2pGMWpmNEx0T05UUG5jM2xvckEK",
+      "endpoints": [
+        "https://github.com/OkataMiracleDev/ClipPro/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

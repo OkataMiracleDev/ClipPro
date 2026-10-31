@@ -15,7 +15,7 @@ clippro-measure = { path = "../clippro-measure" }
 clippro-media = { path = "../clippro-media" }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
-clippro-audio = { version = "0.1.0", path = "../clippro-audio" }
+clippro-audio = { path = "../clippro-audio" }
 
 [dev-dependencies]
 clippro-score = { path = "../clippro-score" }
