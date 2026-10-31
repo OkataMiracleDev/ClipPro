@@ -130,7 +130,21 @@ try {
   await until("selects-only on", async () => (await state()).selectsOnly);
   check(true, "Selects only is on");
 
-  console.log("6. close, reopen, compare");
+  console.log("6. open and close Settings: the project stays open");
+  const main = await wd("GET", `/session/${session}/window`);
+  await execAsync(`const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke("open_settings").then(() => done(null), (e) => done(String(e)));`);
+  const settingsWin = await until("the Settings window", async () => (await wd("GET", `/session/${session}/window/handles`)).find((h) => h !== main));
+  await wd("POST", `/session/${session}/window`, { handle: settingsWin });
+  // Its own Close button, as a user would: WebDriver's window close skips Tauri's close path.
+  const closeBtn = await until("the Settings close button", () => find('button[aria-label="Close"]'), 30_000);
+  await wd("POST", `/session/${session}/element/${closeBtn}/click`, {});
+  await wd("POST", `/session/${session}/window`, { handle: main });
+  await until("the Settings window to close", async () => (await wd("GET", `/session/${session}/window/handles`)).length === 1);
+  await sleep(1000);
+  const clipsAfter = await execAsync(`const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke("clips_list").then((r) => done(r.length), (e) => done(String(e)));`);
+  check(clipsAfter === 4, `the project is still open after closing Settings (${clipsAfter})`);
+
+  console.log("7. close, reopen, compare");
   await act("closeProject");
   await until("project closed", async () => !(await state()).project);
   await act("openProject", proj);

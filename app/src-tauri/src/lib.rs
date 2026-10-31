@@ -2395,7 +2395,12 @@ pub fn run(bench: Option<Bench>) {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Only the main window owns the project: Settings and the hidden PDF windows close
+            // while a project stays open (closing either used to close the project mid-analysis).
             if let tauri::WindowEvent::Destroyed = event {
+                if window.label() != "main" {
+                    return;
+                }
                 if let Some(state) = window.try_state::<AppState>() {
                     if let Some(s) = lock(&state.session).take() {
                         close_session(s);
